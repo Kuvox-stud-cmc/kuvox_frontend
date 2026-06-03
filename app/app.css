@@ -1,15 +1,115 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
+  /* ── Base font ─────────────────────────────────────────────────────────── */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  /* ── Material Design 3 · Dark palette ──────────────────────────────────── */
+  --color-surface: #131315;
+  --color-surface-dim: #131315;
+  --color-surface-bright: #39393b;
+  --color-surface-container-lowest: #0e0e10;
+  --color-surface-container-low: #1c1b1d;
+  --color-surface-container: #201f22;
+  --color-surface-container-high: #2a2a2c;
+  --color-surface-container-highest: #353437;
+  --color-surface-variant: #353437;
+  --color-surface-tint: #c0c1ff;
+
+  --color-on-surface: #e5e1e4;
+  --color-on-surface-variant: #c7c4d7;
+
+  --color-inverse-surface: #e5e1e4;
+  --color-inverse-on-surface: #313032;
+
+  --color-background: #131315;
+  --color-on-background: #e5e1e4;
+
+  --color-primary: #c0c1ff;
+  --color-primary-container: #8083ff;
+  --color-primary-fixed: #e1e0ff;
+  --color-primary-fixed-dim: #c0c1ff;
+  --color-on-primary: #1000a9;
+  --color-on-primary-container: #0d0096;
+  --color-on-primary-fixed: #07006c;
+  --color-on-primary-fixed-variant: #2f2ebe;
+  --color-inverse-primary: #494bd6;
+
+  --color-secondary: #4edea3;
+  --color-secondary-container: #00a572;
+  --color-secondary-fixed: #6ffbbe;
+  --color-secondary-fixed-dim: #4edea3;
+  --color-on-secondary: #003824;
+  --color-on-secondary-container: #00311f;
+  --color-on-secondary-fixed: #002113;
+  --color-on-secondary-fixed-variant: #005236;
+
+  --color-tertiary: #ffb783;
+  --color-tertiary-container: #d97721;
+  --color-tertiary-fixed: #ffdcc5;
+  --color-tertiary-fixed-dim: #ffb783;
+  --color-on-tertiary: #4f2500;
+  --color-on-tertiary-container: #452000;
+  --color-on-tertiary-fixed: #301400;
+  --color-on-tertiary-fixed-variant: #703700;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error: #690005;
+  --color-on-error-container: #ffdad6;
+
+  --color-outline: #908fa0;
+  --color-outline-variant: #464554;
+
+  /* ── Font sizes (text-* utilities) ─────────────────────────────────────── */
+  --font-size-display: 48px;
+  --font-size-display--line-height: 1.1;
+  --font-size-display--letter-spacing: -0.02em;
+
+  --font-size-headline-lg: 32px;
+  --font-size-headline-lg--line-height: 1.2;
+  --font-size-headline-lg--letter-spacing: -0.02em;
+
+  --font-size-headline-lg-mobile: 24px;
+  --font-size-headline-lg-mobile--line-height: 1.2;
+
+  --font-size-headline-md: 20px;
+  --font-size-headline-md--line-height: 1.4;
+
+  --font-size-body-lg: 16px;
+  --font-size-body-lg--line-height: 1.6;
+
+  --font-size-body-sm: 14px;
+  --font-size-body-sm--line-height: 1.5;
+
+  --font-size-label-md: 12px;
+  --font-size-label-md--line-height: 1.2;
+  --font-size-label-md--letter-spacing: 0.05em;
+
+  --font-size-label-sm: 10px;
+  --font-size-label-sm--line-height: 1;
+
+  /* ── Spacing tokens ────────────────────────────────────────────────────── */
+  --spacing-container-padding: 24px;
+  --spacing-panel-gutter: 1px;
+  --spacing-sidebar-width: 280px;
+  --spacing-element-gap: 8px;
+  --spacing-toolbar-width: 64px;
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+}
 
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+/* Cursor blink for the feature-card terminal animation */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
 }

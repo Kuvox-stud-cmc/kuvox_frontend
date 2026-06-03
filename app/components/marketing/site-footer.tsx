@@ -1,25 +1,34 @@
 import { Link } from "react-router";
 
 const LINKS = [
-  { to: "/about", label: "About us" },
-  { to: "/privacy", label: "Privacy policy" },
-  { to: "/terms", label: "Terms of service" },
-  { to: "/help", label: "Help Center" },
+  { to: "/privacy", label: "Privacy" },
+  { to: "/terms", label: "Terms" },
+  { to: "#", label: "Changelog" },
+  { to: "#", label: "Status" },
+  { to: "#", label: "Twitter" },
 ];
 
 /** Footer shared across the public marketing pages. */
 export function SiteFooter() {
   return (
-    <footer className="border-t border-gray-200">
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
-        <span>© {new Date().getFullYear()} Kuvox</span>
-        <ul className="flex gap-6">
+    <footer className="bg-surface-container-lowest py-8 sm:py-10 lg:py-12 border-t border-outline-variant">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-container-padding flex flex-col gap-4 sm:gap-element-gap sm:flex-row sm:justify-between sm:items-center">
+        <span className="text-on-surface text-body-sm text-center sm:text-left">
+          © {new Date().getFullYear()} Kuvox AI. Precision-engineered for
+          creators.
+        </span>
+
+        <div className="flex flex-wrap justify-center sm:justify-end gap-4 sm:gap-6">
           {LINKS.map((item) => (
-            <li key={item.to}>
-              <Link to={item.to}>{item.label}</Link>
-            </li>
+            <Link
+              key={item.label}
+              to={item.to}
+              className="text-on-surface-variant hover:text-on-surface transition-colors duration-200 text-label-sm font-semibold"
+            >
+              {item.label}
+            </Link>
           ))}
-        </ul>
+        </div>
       </div>
     </footer>
   );
