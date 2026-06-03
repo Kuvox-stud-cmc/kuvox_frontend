@@ -1,5 +1,3 @@
-.DS_Store
-.env
 /node_modules/
 
 # React Router
@@ -7,3 +5,33 @@
 /build/
 
 .claude
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# dependencies
+.pnp
+.pnp.js
+
+# vite default build folder
+/dist/
+/dist-ssr/
+
+# environment variables
+.env.local
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+
+# caches and misc
+.eslintcache
+.stylelintcache
+npm-crash-logs
+Thumbs.db
+.DS_Store
