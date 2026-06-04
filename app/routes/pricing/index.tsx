@@ -130,13 +130,13 @@ export default function Pricing() {
             {/* Plan header */}
             <div className="flex flex-col gap-1.5 sm:gap-2 relative">
               {plan.highlighted && "badge" in plan && (
-                <span className="absolute right-0 top-0 bg-primary/20 text-primary px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full text-label-sm font-semibold border border-primary/30">
+                <span className="absolute right-0 top-0 bg-primary/20 text-primary px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold border border-primary/30">
                   {plan.badge}
                 </span>
               )}
               <h3
                 className={[
-                  "text-headline-lg-mobile sm:text-headline-lg font-semibold",
+                  "text-3xl sm:text-4xl font-bold",
                   plan.highlighted ? "text-primary" : "text-on-surface",
                 ].join(" ")}
               >
