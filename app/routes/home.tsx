@@ -18,7 +18,7 @@ export default function Home() {
     <>
       {/* ── Hero Section ───────────────────────────────────────────────── */}
       <section className="max-w-4xl mx-auto text-center space-y-5 sm:space-y-8 mb-16 sm:mb-24 lg:mb-32 relative z-10 w-full">
-        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-display font-semibold text-on-surface max-w-3xl mx-auto tracking-tight leading-tight">
+        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-display font-semibold text-on-surface max-w-3xl mx-auto tracking-tight leading-tight mt-4">
           Edit video by describing what you want, in plain language.
         </h1>
 
