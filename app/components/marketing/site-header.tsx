@@ -154,7 +154,7 @@ export function SiteHeader() {
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex gap-3 lg:gap-5 items-center">
+          <div className="hidden lg:flex gap-3 lg:gap-5 items-center">
             {NAV_LINKS.map((item) => (
               <NavLink
                 key={item.to}
@@ -196,7 +196,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-3 sm:gap-4">
           <Link
             to="/login"
-            className="text-on-surface-variant font-medium hover:text-primary transition-colors duration-300 text-label-md hidden md:block"
+            className="text-on-surface-variant font-medium hover:text-primary transition-colors duration-300 text-label-md hidden lg:block"
           >
             Sign In
           </Link>
@@ -209,7 +209,7 @@ export function SiteHeader() {
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-surface-container-high transition-colors duration-200"
+            className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-surface-container-high transition-colors duration-200"
             aria-label="Toggle menu"
           >
             <span className="material-symbols-outlined text-on-surface text-[22px]">
@@ -221,7 +221,7 @@ export function SiteHeader() {
 
       {/* ── Mobile Menu Overlay ──────────────────────────────────────────── */}
       <div
-        className={`fixed inset-0 top-14 z-40 bg-surface/95 backdrop-blur-xl md:hidden overflow-y-auto transition-all duration-300 ease-out ${
+        className={`fixed inset-0 top-14 z-40 bg-surface/95 backdrop-blur-xl lg:hidden overflow-y-auto transition-all duration-300 ease-out ${
           mobileOpen
             ? "opacity-100 visible"
             : "opacity-0 invisible pointer-events-none"

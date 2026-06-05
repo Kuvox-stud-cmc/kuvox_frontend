@@ -26,6 +26,7 @@ export default [
     route("about", "routes/about.tsx"),
     route("privacy", "routes/privacy.tsx"),
     route("terms", "routes/terms.tsx"),
+    route("mobile","routes/download-mobile.tsx"),
 
     ...prefix("help", [
       index("routes/help/index.tsx"),
