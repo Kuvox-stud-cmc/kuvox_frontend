@@ -38,6 +38,9 @@ export default function Home() {
           <button className="border border-outline-variant text-on-surface px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg text-label-md font-medium hover:bg-surface-container-high transition-colors">
             View Demo
           </button>
+          <Link to="/mobile" className="border border-outline-variant text-on-surface px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg text-label-md font-medium hover:bg-surface-container-high transition-colors text-center">
+            Download
+          </Link>
         </div>
 
         {/* ── Interface Preview Mockup ──────────────────────────────────── */}
