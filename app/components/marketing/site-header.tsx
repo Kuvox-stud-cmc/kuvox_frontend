@@ -11,31 +11,67 @@ const NAV_LINKS = [
 const NAV_TRAILING = [{ to: "/about", label: "About" }];
 
 /* ── Dropdown definitions ────────────────────────────────────────────────── */
-const HELP_ITEMS = [
-  { to: "/help/getting-started", label: "Getting Started", icon: "rocket_launch" },
-  { to: "/help/upload-processing", label: "Upload & Processing", icon: "cloud_upload" },
-  { to: "/help/editing-guide", label: "Editing Guide", icon: "movie_edit" },
-  { to: "/help/ai-agent-guide", label: "AI Agent Guide", icon: "smart_toy" },
-  { to: "/help/rendering-export", label: "Rendering & Export", icon: "movie_filter" },
-  { to: "/help/faq", label: "FAQ", icon: "help" },
+const HELP_GROUPS = [
+  {
+    title: "Documentation",
+    items: [
+      { to: "/help/getting-started", label: "Getting Started", icon: "rocket_launch" },
+      { to: "/help/upload-processing", label: "Upload & Processing", icon: "cloud_upload" },
+      { to: "/help/editing-guide", label: "Editing Guide", icon: "movie_edit" },
+      { to: "/help/rendering-export", label: "Rendering & Export", icon: "movie_filter" },
+    ],
+  },
+  {
+    title: "AI Features",
+    items: [
+      { to: "/help/ai-agent-guide", label: "AI Agent Guide", icon: "smart_toy" },
+    ],
+  },
+  {
+    title: "Support",
+    items: [
+      { to: "/help/faq", label: "FAQ", icon: "help" },
+      { to: "/help/contact", label: "Contact Support", icon: "support_agent" },
+    ],
+  },
 ];
 
-const COMMUNITY_ITEMS = [
-  { to: "/community/forums", label: "Discussion Forum", icon: "forum" },
-  { to: "/community/forums", label: "Thread Detail", icon: "chat_bubble" },
-  { to: "/community/showcase", label: "Showcase & Inspiration", icon: "palette" },
-  { to: "/community/showcase", label: "Showcase Detail", icon: "photo_library" },
-  { to: "/community/learn", label: "Learning & Tutorials", icon: "school" },
-  { to: "/community/news", label: "News & Announcements", icon: "newspaper" },
+const COMMUNITY_GROUPS = [
+  {
+    title: "Discussions",
+    items: [
+      { to: "/community/forums", label: "Discussion Forum", icon: "forum" },
+      { to: "/community/forums", label: "Popular Discussions", icon: "chat_bubble" },
+    ],
+  },
+  {
+    title: "Showcase",
+    items: [
+      { to: "/community/showcase", label: "Showcase & Inspiration", icon: "palette" },
+      { to: "/community/showcase", label: "Featured Projects", icon: "photo_library" },
+    ],
+  },
+  {
+    title: "Learning",
+    items: [
+      { to: "/community/learn", label: "Learning & Tutorials", icon: "school" },
+    ],
+  },
+  {
+    title: "Updates",
+    items: [
+      { to: "/community/news", label: "News & Announcements", icon: "newspaper" },
+    ],
+  },
 ];
 
 /* ── Desktop Hover Dropdown ──────────────────────────────────────────────── */
 function NavDropdown({
   label,
-  items,
+  groups,
 }: {
   label: string;
-  items: { to: string; label: string; icon: string }[];
+  groups: { title?: string; items: { to: string; label: string; icon: string }[] }[];
 }) {
   return (
     <div className="relative group/dd">
@@ -65,17 +101,26 @@ function NavDropdown({
           z-50 origin-top
         "
       >
-        {items.map((item, i) => (
-          <Link
-            key={item.label + i}
-            to={item.to}
-            className="flex items-center gap-3 mx-1.5 px-3 py-2.5 rounded-lg text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/80 transition-all duration-200 group/item"
-          >
-            <span className="material-symbols-outlined text-[18px] text-on-surface-variant/60 group-hover/item:text-primary transition-colors duration-200">
-              {item.icon}
-            </span>
-            <span>{item.label}</span>
-          </Link>
+        {groups.map((group, gIdx) => (
+          <div key={gIdx} className={gIdx > 0 ? "border-t border-outline-variant/40 mt-1.5 pt-1.5" : ""}>
+            {group.title && (
+              <div className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant/70">
+                {group.title}
+              </div>
+            )}
+            {group.items.map((item, i) => (
+              <Link
+                key={item.label + i}
+                to={item.to}
+                className="flex items-center gap-3 mx-1.5 px-3 py-2.5 rounded-lg text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/80 transition-all duration-200 group/item"
+              >
+                <span className="material-symbols-outlined text-[18px] text-on-surface-variant/60 group-hover/item:text-primary transition-colors duration-200">
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </div>
         ))}
       </div>
     </div>
@@ -85,14 +130,18 @@ function NavDropdown({
 /* ── Mobile Expandable Section ───────────────────────────────────────────── */
 function MobileDropdown({
   label,
-  items,
+  groups,
   onNavigate,
 }: {
   label: string;
-  items: { to: string; label: string; icon: string }[];
+  groups: { title?: string; items: { to: string; label: string; icon: string }[] }[];
   onNavigate: () => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  const totalItems = groups.reduce((acc, g) => acc + g.items.length, 0);
+  const totalTitles = groups.filter((g) => g.title).length;
+  const contentHeight = totalItems * 48 + totalTitles * 32 + 32;
 
   return (
     <div>
@@ -111,23 +160,32 @@ function MobileDropdown({
       <div
         className="overflow-hidden transition-all duration-300 ease-out"
         style={{
-          maxHeight: open ? `${items.length * 48 + 16}px` : "0px",
+          maxHeight: open ? `${contentHeight}px` : "0px",
           opacity: open ? 1 : 0,
         }}
       >
         <div className="ml-4 mt-1 mb-2 flex flex-col gap-0.5 border-l border-outline-variant/40 pl-2">
-          {items.map((item, i) => (
-            <Link
-              key={item.label + i}
-              to={item.to}
-              onClick={onNavigate}
-              className="flex items-center gap-3 text-body-sm font-medium py-2.5 px-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors duration-200"
-            >
-              <span className="material-symbols-outlined text-[18px] text-on-surface-variant/50">
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
+          {groups.map((group, gIdx) => (
+            <div key={gIdx} className={gIdx > 0 ? "mt-2" : ""}>
+              {group.title && (
+                <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant/70">
+                  {group.title}
+                </div>
+              )}
+              {group.items.map((item, i) => (
+                <Link
+                  key={item.label + i}
+                  to={item.to}
+                  onClick={onNavigate}
+                  className="flex items-center gap-3 text-body-sm font-medium py-2.5 px-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors duration-200"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-on-surface-variant/50">
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </Link>
+              ))}
+            </div>
           ))}
         </div>
       </div>
@@ -171,8 +229,8 @@ export function SiteHeader() {
               </NavLink>
             ))}
 
-            <NavDropdown label="Help Center" items={HELP_ITEMS} />
-            <NavDropdown label="Community" items={COMMUNITY_ITEMS} />
+            <NavDropdown label="Help Center" groups={HELP_GROUPS} />
+            <NavDropdown label="Community" groups={COMMUNITY_GROUPS} />
 
             {NAV_TRAILING.map((item) => (
               <NavLink
@@ -247,12 +305,12 @@ export function SiteHeader() {
 
           <MobileDropdown
             label="Help Center"
-            items={HELP_ITEMS}
+            groups={HELP_GROUPS}
             onNavigate={() => setMobileOpen(false)}
           />
           <MobileDropdown
             label="Community"
-            items={COMMUNITY_ITEMS}
+            groups={COMMUNITY_GROUPS}
             onNavigate={() => setMobileOpen(false)}
           />
 
