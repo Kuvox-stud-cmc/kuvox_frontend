@@ -92,10 +92,14 @@
 
   /* ── Spacing tokens ────────────────────────────────────────────────────── */
   --spacing-container-padding: 24px;
+  --spacing-container-margin: 24px;
   --spacing-panel-gutter: 1px;
   --spacing-sidebar-width: 280px;
   --spacing-element-gap: 8px;
   --spacing-toolbar-width: 64px;
+  --spacing-toolbar-height: 48px;
+  --spacing-panel-padding: 12px;
+  --spacing-gutter: 16px;
 }
 
 html,
@@ -154,4 +158,40 @@ body {
 /* Material Symbols baseline */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Community Hub Custom Styles mapped to theme tokens */
+.glass-panel {
+  background: color-mix(in srgb, var(--color-surface-container) 70%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--color-outline-variant) 30%, transparent);
+}
+
+.glass-card {
+  background: color-mix(in srgb, var(--color-surface-container-high) 40%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--color-outline-variant) 30%, transparent);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: color-mix(in srgb, var(--color-surface-container) 60%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  transform: translateY(-2px);
+}
+
+.hero-gradient {
+  background: radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--color-primary) 15%, transparent) 0%, transparent 60%);
+}
+
+/* Custom Scrollbar for Community Sidebar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface-container-lowest);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-outline-variant);
+  border-radius: 10px;
 }

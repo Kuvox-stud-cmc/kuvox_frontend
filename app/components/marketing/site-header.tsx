@@ -40,15 +40,15 @@ const COMMUNITY_GROUPS = [
   {
     title: "Discussions",
     items: [
-      { to: "/community/forums", label: "Discussion Forum", icon: "forum" },
-      { to: "/community/forums", label: "Popular Discussions", icon: "chat_bubble" },
+      { to: "/community/forums#discussion-forum", label: "Discussion Forum", icon: "forum" },
+      { to: "/community/forums#popular-discussions", label: "Popular Discussions", icon: "chat_bubble" },
     ],
   },
   {
     title: "Showcase",
     items: [
       { to: "/community/showcase", label: "Showcase & Inspiration", icon: "palette" },
-      { to: "/community/showcase", label: "Featured Projects", icon: "photo_library" },
+      { to: "/community/showcase?filter=featured", label: "Featured Projects", icon: "photo_library" },
     ],
   },
   {
