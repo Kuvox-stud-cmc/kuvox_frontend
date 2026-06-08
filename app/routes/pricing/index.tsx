@@ -49,7 +49,7 @@ const PLANS = [
   },
   {
     name: "Studio",
-    price: "$99",
+    price: "$25",
     description: "For teams and heavy users requiring maximum power.",
     cta: "Contact us",
     ctaStyle: "outlined" as const,
@@ -106,15 +106,16 @@ export default function Pricing() {
       </section>
 
       {/* ── Pricing Cards ─────────────────────────────────────────────────── */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 items-stretch">
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 place-content-center gap-4 sm:gap-6 items-stretch">
         {PLANS.map((plan) => (
           <div
             key={plan.name}
             className={[
               "rounded-xl p-5 sm:p-6 lg:p-8 flex flex-col gap-6 sm:gap-8 relative overflow-hidden",
               plan.highlighted
-                ? "bg-surface-container border border-primary md:-translate-y-4 shadow-[0_0_40px_rgba(192,193,255,0.1)]"
+                ? "bg-surface-container border border-primary lg:-translate-y-4 shadow-[0_0_40px_rgba(192,193,255,0.1)]"
                 : "bg-surface-container border border-outline-variant group",
+              plan.name === "Studio" && "md:col-span-2 lg:col-span-1", 
             ].join(" ")}
           >
             {/* Hover gradient for non-highlighted cards */}
@@ -130,7 +131,7 @@ export default function Pricing() {
             {/* Plan header */}
             <div className="flex flex-col gap-1.5 sm:gap-2 relative">
               {plan.highlighted && "badge" in plan && (
-                <span className="absolute right-0 top-0 bg-primary/20 text-primary px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold border border-primary/30">
+                <span className="absolute right-0 top-0 bg-primary/20 text-primary px-2 lg:px-2.5 py-0.5 rounded-full text-[10px] lg:text-xs font-semibold border border-primary/30">
                   {plan.badge}
                 </span>
               )}
@@ -142,7 +143,7 @@ export default function Pricing() {
               >
                 {plan.name}
               </h3>
-              <p className="text-body-sm text-on-surface-variant h-auto sm:h-10 pr-20 sm:pr-24">
+              <p className="text-body-sm text-on-surface-variant h-auto">
                 {plan.description}
               </p>
             </div>
@@ -152,7 +153,7 @@ export default function Pricing() {
               <span className="text-4xl sm:text-display font-semibold text-on-surface">
                 {plan.price}
               </span>
-              <span className="text-body-sm text-on-surface-variant">/mo</span>
+              <span className="text-body-sm text-on-surface-variant">{plan.name !== "Studio" ? "/mo" : "/per-seat/mo"}</span>
             </div>
 
             {/* CTA */}
