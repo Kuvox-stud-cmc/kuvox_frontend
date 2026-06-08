@@ -18,23 +18,23 @@ export function meta(_: Route.MetaArgs) {
 const TEAM_MEMBERS = [
   {
     name: "Nghiem Gia Bao",
-    role: "Chief Executive Officer",
-    bio: "Former head of AI research at Global Tech, leading our vision for computational creativity.",
+    role: "Team Lead",
+    bio: "In charge of overall vision, strategy, architecture, and execution.",
   },
   {
     name: "Nguyen Hoang Dieu Chau",
-    role: "Chief Technology Officer",
-    bio: "Pioneer in neural rendering pipelines and real-time processing architectures.",
+    role: "AI Engineer & Full Stack Developer",
+    bio: "Responsible for AI development and end-to-end system integration, ensuring seamless user experiences.",
   },
   {
     name: "Nguyen Lan Huong",
-    role: "Head of Product",
-    bio: "Bridging the gap between complex AI models and intuitive creative tools.",
+    role: "AI Engineer & Frontend Developer",
+    bio: "Focuses on AI model development and crafting intuitive user interfaces for our creative tools.",
   },
   {
     name: "Tran Anh Nguyet",
-    role: "Lead AI Researcher",
-    bio: "Focusing on generative adversarial networks and high-fidelity media synthesis.",
+    role: "AI Engineer & Backend Developer",
+    bio: "Specializes in AI model optimization and building scalable backend infrastructure to support our services.",
   },
 ] as const;
 
@@ -171,15 +171,14 @@ export default function About() {
         </div>
       </section>
 
-      {/* ── Team / Leadership Section ─────────────────────────────────── */}
+      {/* ── Team / Founder Section ─────────────────────────────────── */}
       <section className="py-16 sm:py-20 lg:py-24 max-w-7xl mx-auto w-full border-b border-outline-variant">
         <div className="mb-10 sm:mb-16 text-center max-w-2xl mx-auto">
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold mb-3 sm:mb-4 tracking-tight">
-            Leadership
+            Founders
           </h2>
           <p className="text-body-sm sm:text-body-lg text-on-surface-variant">
-            Guided by experts in artificial intelligence, computational media,
-            and creative workflows.
+            Founded by a team of passionate creators and technologists.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
