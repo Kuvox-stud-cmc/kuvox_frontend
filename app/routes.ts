@@ -28,14 +28,16 @@ export default [
     route("terms", "routes/terms.tsx"),
     route("mobile","routes/download-mobile.tsx"),
 
-    ...prefix("help", [
-      index("routes/help/index.tsx"),
-      route("getting-started", "routes/help/getting-started.tsx"),
-      route("upload-processing", "routes/help/upload-processing.tsx"),
-      route("editing-guide", "routes/help/editing-guide.tsx"),
-      route("ai-agent-guide", "routes/help/ai-agent-guide.tsx"),
-      route("rendering-export", "routes/help/rendering-export.tsx"),
-      route("faq", "routes/help/faq.tsx"),
+    layout("components/help-center/help-center-layout.tsx", [
+      ...prefix("help", [
+        index("routes/help/index.tsx"),
+        route("getting-started", "routes/help/getting-started.tsx"),
+        route("upload-processing", "routes/help/upload-processing.tsx"),
+        route("editing-guide", "routes/help/editing-guide.tsx"),
+        route("ai-agent-guide", "routes/help/ai-agent-guide.tsx"),
+        route("rendering-export", "routes/help/rendering-export.tsx"),
+        route("faq", "routes/help/faq.tsx"),
+      ])
     ]),
 
     ...prefix("community", [
