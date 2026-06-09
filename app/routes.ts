@@ -26,7 +26,7 @@ export default [
     route("about", "routes/about.tsx"),
     route("privacy", "routes/privacy.tsx"),
     route("terms", "routes/terms.tsx"),
-    route("mobile","routes/download-mobile.tsx"),
+    route("mobile", "routes/download-mobile.tsx"),
 
     layout("components/help-center/help-center-layout.tsx", [
       ...prefix("help", [
@@ -37,6 +37,8 @@ export default [
         route("ai-agent-guide", "routes/help/ai-agent-guide.tsx"),
         route("rendering-export", "routes/help/rendering-export.tsx"),
         route("faq", "routes/help/faq.tsx"),
+        route("contact-support", "routes/help/contact-support.tsx"),
+        route("report-issue", "routes/help/report-issue.tsx"),
       ])
     ]),
 

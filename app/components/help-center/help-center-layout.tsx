@@ -7,13 +7,19 @@ const SIDEBAR_LINKS = [
   { to: "/help/ai-agent-guide", label: "AI Agent Guide", icon: "psychology" },
   { to: "/help/rendering-export", label: "Rendering & Export", icon: "export_notes" },
   { to: "/help/faq", label: "FAQ", icon: "help" },
+  { to: "/help/report-issue", label: "Report Issue", icon: "bug_report" },
 ] as const;
+
+/** Pages that bypass the sidebar layout and render their own full-width layout. */
+const BYPASS_PATHS = ["/help", "/help/", "/help/report-issue", "/help/contact-support"];
 
 export default function HelpCenterLayout() {
   const location = useLocation();
-  const isIndex = location.pathname === "/help" || location.pathname === "/help/";
+  const shouldBypass = BYPASS_PATHS.some(
+    (p) => location.pathname === p || location.pathname === p + "/"
+  );
 
-  if (isIndex) {
+  if (shouldBypass) {
     return <Outlet />;
   }
 
