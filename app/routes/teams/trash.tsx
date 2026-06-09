@@ -1,5 +1,5 @@
 import { TrashView } from "~/components/workspace/trash-view";
-import { PERSONAL, toTrashEntries, type ResourceKind, type TrashEntry } from "~/lib/api";
+import { toTrashEntries, type ResourceKind, type TrashEntry, type Workspace } from "~/lib/api";
 import {
   ApiError,
   listMediaTrash,
@@ -13,10 +13,12 @@ import { getSession } from "~/lib/session.server";
 import type { Route } from "./+types/trash";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Trash · Kuvox" }];
+  return [{ title: "Team trash · Kuvox" }];
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
+
+export async function loader({ request, params }: Route.LoaderArgs) {
   await requireUser(request);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
@@ -25,9 +27,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     return { entries: [] as TrashEntry[], error: "Your session expired. Please sign in again." };
   }
 
+  const ws = studioWs(params.studioId);
   const [projectsResult, mediaResult] = await Promise.allSettled([
-    listProjectTrash(accessToken, PERSONAL),
-    listMediaTrash(accessToken, PERSONAL),
+    listProjectTrash(accessToken, ws),
+    listMediaTrash(accessToken, ws),
   ]);
 
   const entries = toTrashEntries(
@@ -75,13 +78,13 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-export default function Trash({ loaderData, actionData }: Route.ComponentProps) {
+export default function TeamTrash({ loaderData, actionData }: Route.ComponentProps) {
   return (
     <TrashView
       entries={loaderData.entries}
       loadError={loaderData.error}
       actionData={actionData}
-      subtitle="Deleted items are kept for 7 days, then permanently removed."
+      subtitle="Deleted team items are kept for 7 days, then permanently removed."
     />
   );
 }

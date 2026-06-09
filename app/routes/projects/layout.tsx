@@ -1,6 +1,13 @@
 import { Link, NavLink, Outlet } from "react-router";
 
+import { requireUser } from "~/lib/auth.server";
+
 import type { Route } from "./+types/layout";
+
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireUser(request);
+  return null;
+}
 
 export default function ProjectDetailLayout({ params }: Route.ComponentProps) {
   const { projectId } = params;
