@@ -31,7 +31,7 @@ const HELP_GROUPS = [
     title: "Support",
     items: [
       { to: "/help/faq", label: "FAQ", icon: "help" },
-      { to: "/help/contact", label: "Contact Support", icon: "support_agent" },
+      { to: "/help/contact-support", label: "Contact Support", icon: "support_agent" },
       { to: "/help/report-issue", label: "Report Issue", icon: "bug_report" },
     ],
   },

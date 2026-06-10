@@ -38,7 +38,7 @@ const FOOTER_COLUMNS = [
   {
     title: "Support",
     links: [
-      { to: "/help/contact", label: "Contact Support" },
+      { to: "/help/contact-support", label: "Contact Support" },
       { to: "/help/report-issue", label: "Report Issue" },
     ],
   },
