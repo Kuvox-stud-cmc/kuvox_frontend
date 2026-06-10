@@ -32,6 +32,7 @@ const HELP_GROUPS = [
     items: [
       { to: "/help/faq", label: "FAQ", icon: "help" },
       { to: "/help/contact", label: "Contact Support", icon: "support_agent" },
+      { to: "/help/report-issue", label: "Report Issue", icon: "bug_report" },
     ],
   },
 ];
@@ -218,10 +219,9 @@ export function SiteHeader() {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `text-label-md font-medium transition-colors duration-300 ${
-                    isActive
-                      ? "text-primary"
-                      : "text-on-surface-variant hover:text-primary"
+                  `text-label-md font-medium transition-colors duration-300 ${isActive
+                    ? "text-primary"
+                    : "text-on-surface-variant hover:text-primary"
                   }`
                 }
               >
@@ -237,10 +237,9 @@ export function SiteHeader() {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `text-label-md font-medium transition-colors duration-300 ${
-                    isActive
-                      ? "text-primary"
-                      : "text-on-surface-variant hover:text-primary"
+                  `text-label-md font-medium transition-colors duration-300 ${isActive
+                    ? "text-primary"
+                    : "text-on-surface-variant hover:text-primary"
                   }`
                 }
               >
@@ -279,11 +278,10 @@ export function SiteHeader() {
 
       {/* ── Mobile Menu Overlay ──────────────────────────────────────────── */}
       <div
-        className={`fixed inset-0 top-14 z-40 bg-surface/95 backdrop-blur-xl lg:hidden overflow-y-auto transition-all duration-300 ease-out ${
-          mobileOpen
+        className={`fixed inset-0 top-14 z-40 bg-surface/95 backdrop-blur-xl lg:hidden overflow-y-auto transition-all duration-300 ease-out ${mobileOpen
             ? "opacity-100 visible"
             : "opacity-0 invisible pointer-events-none"
-        }`}
+          }`}
       >
         <div className="flex flex-col px-6 py-6 gap-1">
           {NAV_LINKS.map((item) => (
@@ -292,10 +290,9 @@ export function SiteHeader() {
               to={item.to}
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
-                `text-body-lg font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${
-                  isActive
-                    ? "text-primary bg-surface-container-high"
-                    : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                `text-body-lg font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
+                  ? "text-primary bg-surface-container-high"
+                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
                 }`
               }
             >
@@ -320,10 +317,9 @@ export function SiteHeader() {
               to={item.to}
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
-                `text-body-lg font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${
-                  isActive
-                    ? "text-primary bg-surface-container-high"
-                    : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                `text-body-lg font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
+                  ? "text-primary bg-surface-container-high"
+                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
                 }`
               }
             >
