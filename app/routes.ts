@@ -28,7 +28,7 @@ export default [
     route("terms", "routes/terms.tsx"),
     route("mobile", "routes/download-mobile.tsx"),
 
-    layout("components/help-center/help-center-layout.tsx", [
+    layout("components/help/help-center-layout.tsx", [
       ...prefix("help", [
         index("routes/help/index.tsx"),
         route("getting-started", "routes/help/getting-started.tsx"),

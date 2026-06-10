@@ -1,4 +1,4 @@
-import { ProjectsView } from "~/components/workspace/projects-view";
+import { ProjectsView } from "~/components/dashboard/workspace/projects-view";
 import { PERSONAL, ProjectKind, type ProjectDto } from "~/lib/api";
 import { ApiError, createProject, listProjects, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";

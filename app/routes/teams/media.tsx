@@ -1,4 +1,4 @@
-import { MediaView } from "~/components/workspace/media-view";
+import { MediaView } from "~/components/dashboard/workspace/media-view";
 import { MediaKind, type MediaDto, type Workspace } from "~/lib/api";
 import { ApiError, createMedia, listMedia, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";

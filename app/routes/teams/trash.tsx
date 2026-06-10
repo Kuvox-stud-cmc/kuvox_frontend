@@ -1,4 +1,4 @@
-import { TrashView } from "~/components/workspace/trash-view";
+import { TrashView } from "~/components/dashboard/workspace/trash-view";
 import { toTrashEntries, type ResourceKind, type TrashEntry, type Workspace } from "~/lib/api";
 import {
   ApiError,

@@ -51,7 +51,7 @@ const PLANS = [
     name: "Studio",
     price: "$25",
     description: "For teams and heavy users requiring maximum power.",
-    cta: "Contact us",
+    cta: "Get Studio Plan",
     ctaStyle: "outlined" as const,
     highlighted: false,
     features: [
