@@ -1,5 +1,5 @@
 import { MediaView } from "~/components/dashboard/workspace/media-view";
-import { MediaKind, PERSONAL, type MediaDto } from "~/lib/api";
+import { MediaKind, type MediaDto, type Workspace } from "~/lib/api";
 import { ApiError, createMedia, listMedia, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { getSession } from "~/lib/session.server";
@@ -7,10 +7,12 @@ import { getSession } from "~/lib/session.server";
 import type { Route } from "./+types/media";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Media · Kuvox" }];
+  return [{ title: "Team media · Kuvox" }];
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
+
+export async function loader({ request, params }: Route.LoaderArgs) {
   await requireUser(request);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
@@ -20,15 +22,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   try {
-    const page = await listMedia(accessToken, PERSONAL);
+    const page = await listMedia(accessToken, studioWs(params.studioId));
     return { media: page.items, error: null as string | null };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Couldn't load your media.";
+    const message = error instanceof ApiError ? error.message : "Couldn't load team media.";
     return { media: [] as MediaDto[], error: message };
   }
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request, params }: Route.ActionArgs) {
   await requireUser(request);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
@@ -38,6 +40,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
+  const ws = studioWs(params.studioId);
 
   try {
     if (intent === "create") {
@@ -46,8 +49,7 @@ export async function action({ request }: Route.ActionArgs) {
       if (!filename) {
         return { error: "Enter a filename to import." };
       }
-      // Metadata/record only in Phase 2 — real byte upload to object storage is later.
-      await createMedia(accessToken, PERSONAL, {
+      await createMedia(accessToken, ws, {
         kind,
         filename,
         storageKey: `raw/${filename}`,
@@ -71,13 +73,13 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-export default function Media({ loaderData, actionData }: Route.ComponentProps) {
+export default function TeamMedia({ loaderData, actionData }: Route.ComponentProps) {
   return (
     <MediaView
       media={loaderData.media}
       loadError={loaderData.error}
       actionData={actionData}
-      subtitle="Your personal media library."
+      subtitle="This team's shared media library."
     />
   );
 }

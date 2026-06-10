@@ -28,7 +28,7 @@ export default [
     route("terms", "routes/terms.tsx"),
     route("mobile", "routes/download-mobile.tsx"),
 
-    layout("components/help-center/help-center-layout.tsx", [
+    layout("components/help/help-center-layout.tsx", [
       ...prefix("help", [
         index("routes/help/index.tsx"),
         route("getting-started", "routes/help/getting-started.tsx"),
@@ -59,11 +59,15 @@ export default [
     route("signup", "routes/auth/signup.tsx"),
     route("forgot-password", "routes/auth/forgot-password.tsx"),
   ]),
+  // Action-only route (no UI) — destroys the session cookie.
+  route("logout", "routes/auth/logout.tsx"),
 
   // ── Onboarding ──────────────────────────────────────────────────────────────
   layout("routes/onboarding/layout.tsx", [
     ...prefix("onboarding", [
       route("welcome", "routes/onboarding/welcome.tsx"),
+      route("personalize", "routes/onboarding/personalize.tsx"),
+      route("import-media", "routes/onboarding/import-media.tsx"),
       route("first-project", "routes/onboarding/first-project.tsx"),
     ]),
   ]),
@@ -76,6 +80,18 @@ export default [
       route("media", "routes/dashboard/media.tsx"),
       route("shared", "routes/dashboard/shared.tsx"),
       route("trash", "routes/dashboard/trash.tsx"),
+    ]),
+  ]),
+
+  // ── Team (Studio) workspace ─────────────────────────────────────────────────
+  ...prefix("teams/:studioId", [
+    layout("routes/teams/layout.tsx", [
+      index("routes/teams/home.tsx"),
+      route("projects", "routes/teams/projects.tsx"),
+      route("media", "routes/teams/media.tsx"),
+      route("members", "routes/teams/members.tsx"),
+      route("settings", "routes/teams/settings.tsx"),
+      route("trash", "routes/teams/trash.tsx"),
     ]),
   ]),
 
