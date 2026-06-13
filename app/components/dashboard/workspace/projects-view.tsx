@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Form, Link, useNavigation } from "react-router";
+import { Form, Link, useNavigation, useSearchParams } from "react-router";
 
 import {
   CardGridSkeleton,
@@ -42,6 +42,7 @@ export function ProjectsView({
 }) {
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [filter, setFilter] = useState<"all" | number>("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -51,6 +52,15 @@ export function ProjectsView({
       setCreateOpen(false);
     }
   }, [actionData]);
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setCreateOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("create");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const visible =
     filter === "all" ? projects : projects.filter((project) => project.kind === filter);

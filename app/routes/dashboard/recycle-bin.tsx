@@ -10,10 +10,10 @@ import {
 import { requireUser } from "~/lib/auth.server";
 import { getSession } from "~/lib/session.server";
 
-import type { Route } from "./+types/trash";
+import type { Route } from "./+types/recycle-bin";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Trash · Kuvox" }];
+  return [{ title: "Recycle Bin · Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -78,6 +78,8 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Trash({ loaderData, actionData }: Route.ComponentProps) {
   return (
     <TrashView
+      title="Recycle Bin"
+      emptyTitle="Recycle Bin is empty"
       entries={loaderData.entries}
       loadError={loaderData.error}
       actionData={actionData}

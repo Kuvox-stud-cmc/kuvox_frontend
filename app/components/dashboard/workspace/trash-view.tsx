@@ -20,11 +20,15 @@ export function TrashView({
   loadError,
   actionData,
   subtitle,
+  title = "Trash",
+  emptyTitle = "Trash is empty",
 }: {
   entries: TrashEntry[];
   loadError: string | null;
   actionData?: WorkspaceActionData;
   subtitle?: string;
+  title?: string;
+  emptyTitle?: string;
 }) {
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
@@ -32,7 +36,7 @@ export function TrashView({
 
   return (
     <section>
-      <SectionHeader title="Trash" subtitle={subtitle} />
+      <SectionHeader title={title} subtitle={subtitle} />
 
       {loadError && <ErrorBanner message={loadError} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
@@ -42,7 +46,7 @@ export function TrashView({
       ) : entries.length === 0 ? (
         <EmptyState
           icon="delete"
-          title="Trash is empty"
+          title={emptyTitle}
           hint="Deleted projects and media will appear here."
         />
       ) : (
