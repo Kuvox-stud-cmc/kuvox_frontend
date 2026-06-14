@@ -58,6 +58,8 @@ export default [
     route("login", "routes/auth/login.tsx"),
     route("signup", "routes/auth/signup.tsx"),
     route("forgot-password", "routes/auth/forgot-password.tsx"),
+    route("reset-password", "routes/auth/reset-password.tsx"),
+    route("verify-email", "routes/auth/verify-email.tsx"),
   ]),
   // Action-only route (no UI) — destroys the session cookie.
   route("logout", "routes/auth/logout.tsx"),

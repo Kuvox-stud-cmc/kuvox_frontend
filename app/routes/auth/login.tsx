@@ -1,4 +1,4 @@
-import { Form, Link, redirect, useNavigation } from "react-router";
+import { Form, Link, redirect, useNavigation, useSearchParams } from "react-router";
 
 import {
   ApiError,
@@ -54,6 +54,8 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Login({ actionData, loaderData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+  const [searchParams] = useSearchParams();
+  const resetSuccess = searchParams.get("reset") === "success";
 
   return (
     <section>
@@ -61,6 +63,12 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
       <p className="mt-2 text-body-sm text-on-surface-variant">
         Sign in to continue to Kuvox.
       </p>
+
+      {resetSuccess && (
+        <p className="mt-4 rounded-lg bg-primary/10 px-3 py-2 text-body-sm text-primary">
+          Password reset successful. Sign in with your new password.
+        </p>
+      )}
 
       {actionData?.error && (
         <p className="mt-4 rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">

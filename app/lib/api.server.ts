@@ -27,6 +27,7 @@ interface ApiUserDto {
   displayName: string;
   role: string;
   plan: string;
+  emailVerified: boolean;
   createdAt: string;
 }
 
@@ -54,6 +55,7 @@ function toSessionUser(dto: ApiUserDto): SessionUser {
     email: dto.email,
     displayName: dto.displayName,
     plan: dto.plan,
+    emailVerified: dto.emailVerified,
   };
 }
 
@@ -114,6 +116,34 @@ export async function fetchMe(accessToken: string): Promise<SessionUser> {
   }
 
   return toSessionUser((await response.json()) as ApiUserDto);
+}
+
+// ── Email verification & password reset ─────────────────────────────────────
+
+export async function verifyEmailRequest(token: string): Promise<void> {
+  await postJson("/api/auth/verify-email", { token });
+}
+
+export async function resendVerificationRequest(
+  accessToken: string,
+): Promise<void> {
+  const response = await apiFetch(accessToken, "/api/auth/resend-verification", {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, await readError(response));
+  }
+}
+
+export async function forgotPasswordRequest(email: string): Promise<void> {
+  await postJson("/api/auth/forgot-password", { email });
+}
+
+export async function resetPasswordRequest(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  await postJson("/api/auth/reset-password", { token, newPassword });
 }
 
 /**
