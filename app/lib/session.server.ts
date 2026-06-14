@@ -8,6 +8,7 @@ export interface SessionUser {
   email: string;
   displayName: string;
   plan: string;
+  emailVerified: boolean;
 }
 
 export interface SessionData {

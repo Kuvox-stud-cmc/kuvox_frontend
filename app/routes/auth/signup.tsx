@@ -1,13 +1,7 @@
 import { Form, Link, redirect, useNavigation } from "react-router";
 
-import {
-  ApiError,
-  fetchMe,
-  loginRequest,
-  registerRequest,
-} from "~/lib/api.server";
+import { ApiError, registerRequest } from "~/lib/api.server";
 import { redirectIfAuthenticated } from "~/lib/auth.server";
-import { commitSession, getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/signup";
 
@@ -37,19 +31,9 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     await registerRequest(email, password, displayName);
 
-    // Auto-login: issue tokens and persist the session right away.
-    const tokens = await loginRequest(email, password);
-    const user = await fetchMe(tokens.accessToken);
-
-    const session = await getSession(request);
-    session.set("accessToken", tokens.accessToken);
-    session.set("refreshToken", tokens.refreshToken);
-    session.set("expiresAt", tokens.expiresAt);
-    session.set("user", user);
-
-    return redirect("/onboarding/welcome", {
-      headers: { "Set-Cookie": await commitSession(session) },
-    });
+    // Hard gate: no auto-login. Send the user to the verification-pending page;
+    // they must verify their email before they can sign in.
+    return redirect(`/verify-pending?email=${encodeURIComponent(email)}`);
   } catch (error) {
     if (error instanceof ApiError && error.status === 409) {
       return { error: "An account with this email already exists." };

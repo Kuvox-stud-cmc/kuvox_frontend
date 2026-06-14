@@ -27,6 +27,7 @@ interface ApiUserDto {
   displayName: string;
   role: string;
   plan: string;
+  emailVerified: boolean;
   createdAt: string;
 }
 
@@ -54,6 +55,7 @@ function toSessionUser(dto: ApiUserDto): SessionUser {
     email: dto.email,
     displayName: dto.displayName,
     plan: dto.plan,
+    emailVerified: dto.emailVerified,
   };
 }
 
@@ -70,6 +72,22 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+/**
+ * Low-level POST for endpoints that return no body (e.g. `204 No Content`).
+ * Never calls `response.json()`, so an empty body can't throw a `SyntaxError`.
+ */
+async function postVoid(path: string, body: unknown): Promise<void> {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await readError(response));
+  }
 }
 
 export async function loginRequest(
@@ -114,6 +132,36 @@ export async function fetchMe(accessToken: string): Promise<SessionUser> {
   }
 
   return toSessionUser((await response.json()) as ApiUserDto);
+}
+
+// ── Email verification & password reset ─────────────────────────────────────
+
+export async function verifyEmailRequest(
+  token: string,
+): Promise<{ tokens: AuthTokens; isNewlyVerified: boolean }> {
+  return postJson<{ tokens: AuthTokens; isNewlyVerified: boolean }>(
+    "/api/auth/verify-email",
+    { token },
+  );
+}
+
+/**
+ * Public resend: unverified users have no session/token, so this posts the email
+ * directly. The backend responds neutrally (no user enumeration).
+ */
+export async function resendVerificationRequest(email: string): Promise<void> {
+  await postVoid("/api/auth/resend-verification", { email });
+}
+
+export async function forgotPasswordRequest(email: string): Promise<void> {
+  await postVoid("/api/auth/forgot-password", { email });
+}
+
+export async function resetPasswordRequest(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  await postVoid("/api/auth/reset-password", { token, newPassword });
 }
 
 /**

@@ -88,3 +88,4 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
+
