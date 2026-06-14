@@ -1,9 +1,8 @@
-import { useState } from "react";
-import { Form, Link, NavLink, Outlet, useFetcher } from "react-router";
+import { Form, Link, NavLink, Outlet } from "react-router";
 
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
 import type { StudioDto } from "~/lib/api";
-import { listMyStudios, resendVerificationRequest } from "~/lib/api.server";
+import { listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { getSession } from "~/lib/session.server";
 
@@ -35,30 +34,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { user, studios };
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  const session = await getSession(request);
-  const accessToken = session.get("accessToken");
-  if (!accessToken) {
-    return { resent: false, error: "Not authenticated." };
-  }
-
-  try {
-    await resendVerificationRequest(accessToken);
-    return { resent: true, error: null };
-  } catch {
-    return { resent: false, error: "Failed to resend. Try again later." };
-  }
-}
-
 /** Authenticated app shell with a sidebar for the dashboard section. */
 export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
   const { user, studios } = loaderData;
-  const [bannerDismissed, setBannerDismissed] = useState(false);
-  const fetcher = useFetcher<typeof action>();
-
-  const showBanner =
-    !bannerDismissed && user.emailVerified === false;
-  const resent = fetcher.data?.resent === true;
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -105,37 +83,6 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
         </div>
       </aside>
       <main className="flex-1 p-8">
-        {showBanner && (
-          <div className="mb-6 flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container px-4 py-3">
-            <span className="material-symbols-outlined text-[20px] text-primary">mail</span>
-            <p className="flex-1 text-body-sm text-on-surface-variant">
-              Please verify your email address.{" "}
-              {resent ? (
-                <span className="font-medium text-primary">Verification email sent!</span>
-              ) : (
-                <fetcher.Form method="post" className="inline">
-                  <button
-                    type="submit"
-                    disabled={fetcher.state === "submitting"}
-                    className="font-medium text-primary hover:underline disabled:opacity-60"
-                  >
-                    {fetcher.state === "submitting"
-                      ? "Sending…"
-                      : "Resend verification email"}
-                  </button>
-                </fetcher.Form>
-              )}
-            </p>
-            <button
-              type="button"
-              onClick={() => setBannerDismissed(true)}
-              className="rounded p-1 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-              aria-label="Dismiss"
-            >
-              <span className="material-symbols-outlined text-[18px]">close</span>
-            </button>
-          </div>
-        )}
         <Outlet />
       </main>
     </div>

@@ -1,6 +1,7 @@
-import { Link } from "react-router";
+import { Link, redirect } from "react-router";
 
-import { ApiError, verifyEmailRequest } from "~/lib/api.server";
+import { ApiError, fetchMe, verifyEmailRequest } from "~/lib/api.server";
+import { commitSession, getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/verify-email";
 
@@ -13,45 +14,34 @@ export async function loader({ request }: Route.LoaderArgs) {
   const token = url.searchParams.get("token");
 
   if (!token) {
-    return { success: false, error: "Missing verification token." };
+    return { error: "Missing verification token." };
   }
 
   try {
-    await verifyEmailRequest(token);
-    return { success: true, error: null };
+    const { tokens, isNewlyVerified } = await verifyEmailRequest(token);
+    const user = await fetchMe(tokens.accessToken);
+
+    // Auto-login: establish a session in this browser, then continue into the app.
+    const session = await getSession(request);
+    session.set("accessToken", tokens.accessToken);
+    session.set("refreshToken", tokens.refreshToken);
+    session.set("expiresAt", tokens.expiresAt);
+    session.set("user", user);
+
+    return redirect(isNewlyVerified ? "/onboarding/welcome" : "/dashboard", {
+      headers: { "Set-Cookie": await commitSession(session) },
+    });
   } catch (error) {
     const message =
       error instanceof ApiError
         ? error.message
         : "Something went wrong. Please try again.";
-    return { success: false, error: message };
+    return { error: message };
   }
 }
 
 export default function VerifyEmail({ loaderData }: Route.ComponentProps) {
-  const { success, error } = loaderData;
-
-  if (success) {
-    return (
-      <section className="text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-          <span className="material-symbols-outlined text-[32px] text-primary">
-            verified
-          </span>
-        </div>
-        <h1 className="text-headline-lg text-on-surface">Email verified!</h1>
-        <p className="mt-2 text-body-sm text-on-surface-variant">
-          Your email has been confirmed. You&apos;re all set.
-        </p>
-        <Link
-          to="/dashboard"
-          className="mt-6 inline-block rounded-lg bg-primary px-6 py-2 text-label-md font-medium text-on-primary transition-colors hover:bg-primary-fixed"
-        >
-          Go to Dashboard
-        </Link>
-      </section>
-    );
-  }
+  const { error } = loaderData;
 
   return (
     <section className="text-center">

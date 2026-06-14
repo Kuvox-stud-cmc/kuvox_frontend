@@ -45,9 +45,17 @@ export async function action({ request }: Route.ActionArgs) {
     });
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
-      return { error: "Invalid email or password." };
+      return { error: "Invalid email or password.", unverified: false, email };
     }
-    return { error: "Something went wrong. Please try again." };
+    if (error instanceof ApiError && error.status === 403) {
+      // Hard gate: the account exists but isn't verified yet.
+      return {
+        error: "Please verify your email before signing in.",
+        unverified: true,
+        email,
+      };
+    }
+    return { error: "Something went wrong. Please try again.", unverified: false, email };
   }
 }
 
@@ -71,9 +79,17 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
       )}
 
       {actionData?.error && (
-        <p className="mt-4 rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
-          {actionData.error}
-        </p>
+        <div className="mt-4 rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
+          <p>{actionData.error}</p>
+          {actionData.unverified && (
+            <Link
+              to={`/verify-pending?email=${encodeURIComponent(actionData.email ?? "")}`}
+              className="mt-1 inline-block font-medium underline"
+            >
+              Resend verification email
+            </Link>
+          )}
+        </div>
       )}
 
       <Form method="post" className="mt-6 space-y-4">
