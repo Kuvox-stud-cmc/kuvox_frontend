@@ -18,10 +18,10 @@ import { listSharedMedia, listSharedProjects } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { getSession } from "~/lib/session.server";
 
-import type { Route } from "./+types/shared";
+import type { Route } from "./+types/shared-assets";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Shared with me · Kuvox" }];
+  return [{ title: "Shared Assets · Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -66,7 +66,7 @@ export default function Shared({ loaderData }: Route.ComponentProps) {
   return (
     <section>
       <SectionHeader
-        title="Shared with me"
+        title="Shared Assets"
         subtitle="Projects and media other people shared with you."
       />
 

@@ -79,10 +79,17 @@ export default [
   layout("routes/dashboard/layout.tsx", [
     ...prefix("dashboard", [
       index("routes/dashboard/home.tsx"),
+      route("photos", "routes/dashboard/photos.tsx"),
+      route("videos", "routes/dashboard/videos.tsx"),
+      route("audio", "routes/dashboard/audio.tsx"),
+      route("templates", "routes/dashboard/templates.tsx"),
+      route("ai-tools", "routes/dashboard/ai-tools.tsx"),
       route("projects", "routes/dashboard/projects.tsx"),
-      route("media", "routes/dashboard/media.tsx"),
-      route("shared", "routes/dashboard/shared.tsx"),
-      route("trash", "routes/dashboard/trash.tsx"),
+      route("team", "routes/dashboard/team.tsx"),
+      route("reviews", "routes/dashboard/reviews.tsx"),
+      route("shared-assets", "routes/dashboard/shared-assets.tsx"),
+      route("brand-kits", "routes/dashboard/brand-kits.tsx"),
+      route("recycle-bin", "routes/dashboard/recycle-bin.tsx"),
     ]),
   ]),
 

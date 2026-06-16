@@ -13,7 +13,7 @@ export function SectionHeader({
   return (
     <header className="flex items-start justify-between gap-4">
       <div>
-        <h1 className="text-headline-lg text-on-surface">{title}</h1>
+        <h1 className="text-headline-lg font-bold text-on-surface">{title}</h1>
         {subtitle && (
           <p className="mt-1 text-body-sm text-on-surface-variant">{subtitle}</p>
         )}
