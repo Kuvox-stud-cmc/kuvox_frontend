@@ -6,12 +6,15 @@ import { SidebarNav } from "~/routes/dashboard/sidebar-nav";
 import type { StudioDto } from "~/lib/api";
 import { listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/layout";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const user = await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
 
   // The studios list is kept for future workspace-switcher integration.
   let studios: StudioDto[] = [];
@@ -19,8 +22,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const accessToken = session.get("accessToken");
   if (accessToken) {
     try {
-      studios = await listMyStudios(accessToken);
-    } catch {
+      studios = await listMyStudios(accessToken, reqLog);
+    } catch (error) {
+      reqLog.warn({ err: error }, "failed to load studios for switcher");
       studios = [];
     }
   }

@@ -1,6 +1,7 @@
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
 
 import { resendVerificationRequest } from "~/lib/api.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/verify-pending";
 
@@ -16,10 +17,14 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Email is required.", resent: false };
   }
 
+  const log = createRequestLogger(request);
+
   try {
-    await resendVerificationRequest(email);
-  } catch {
+    await resendVerificationRequest(email, log);
+    log.info("verify-pending resend succeeded");
+  } catch (error) {
     // Swallow — always show a neutral success message (no user enumeration).
+    log.warn({ err: error }, "verify-pending resend failed or swallowed");
   }
 
   return { error: null, resent: true };

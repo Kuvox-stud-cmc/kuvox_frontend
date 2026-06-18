@@ -5,12 +5,15 @@ import { ErrorBanner } from "~/components/dashboard/section";
 import { studioRoleLabel, type StudioDto } from "~/lib/api";
 import { getStudioClaims, listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/layout";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const user = await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, { id: user.id });
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   const studioId = params.studioId;
@@ -20,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Membership is the source of truth (DB-backed); non-members are bounced to Personal.
-  const studios = await listMyStudios(accessToken);
+  const studios = await listMyStudios(accessToken, reqLog);
   const studio = studios.find((s) => s.id === studioId);
   if (!studio) {
     throw redirect("/dashboard");

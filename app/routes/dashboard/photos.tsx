@@ -10,6 +10,7 @@ import {
 import { MediaKind, PERSONAL, type MediaDto } from "~/lib/api";
 import { ApiError, createMedia, listMedia, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/photos";
@@ -19,7 +20,9 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
 
@@ -28,16 +31,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   try {
-    const page = await listMedia(accessToken, PERSONAL);
+    const page = await listMedia(accessToken, PERSONAL, reqLog);
     return { media: page.items, error: null as string | null };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load your media.";
+    reqLog.error({ err: error }, "failed to load media");
     return { media: [] as MediaDto[], error: message };
   }
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   if (!accessToken) {
@@ -55,19 +61,24 @@ export async function action({ request }: Route.ActionArgs) {
         return { error: "Enter a filename to import." };
       }
       // Metadata/record only in Phase 2; real byte upload to object storage is later.
-      await createMedia(accessToken, PERSONAL, {
-        kind,
-        filename,
-        storageKey: `raw/${filename}`,
-        sizeBytes: 0,
-      });
+      await createMedia(
+        accessToken,
+        PERSONAL,
+        {
+          kind,
+          filename,
+          storageKey: `raw/${filename}`,
+          sizeBytes: 0,
+        },
+        reqLog,
+      );
       return { ok: true, intent };
     }
 
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
-        await softDelete(accessToken, "media", id);
+        await softDelete(accessToken, "media", id, reqLog);
       }
       return { ok: true, intent };
     }
@@ -75,6 +86,7 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Unknown action." };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    reqLog.error({ err: error, intent }, "media action failed");
     return { error: message };
   }
 }

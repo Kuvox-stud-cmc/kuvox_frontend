@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/import-media";
 
@@ -12,7 +13,8 @@ export function meta(_: Route.MetaArgs) {
 const ACCEPTED = "video/*,image/*,audio/*";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  await requireUser(request, log);
   return null;
 }
 

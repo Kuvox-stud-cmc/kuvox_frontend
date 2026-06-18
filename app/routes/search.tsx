@@ -1,4 +1,5 @@
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/search";
 
@@ -7,7 +8,8 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  await requireUser(request, log);
   return null;
 }
 

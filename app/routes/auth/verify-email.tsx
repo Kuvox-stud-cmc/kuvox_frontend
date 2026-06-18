@@ -2,6 +2,7 @@ import { Link, redirect } from "react-router";
 
 import { ApiError, fetchMe, verifyEmailRequest } from "~/lib/api.server";
 import { commitSession, getSession } from "~/lib/session.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/verify-email";
 
@@ -17,9 +18,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     return { error: "Missing verification token." };
   }
 
+  const log = createRequestLogger(request);
+
   try {
-    const { tokens, isNewlyVerified } = await verifyEmailRequest(token);
-    const user = await fetchMe(tokens.accessToken);
+    const { tokens, isNewlyVerified } = await verifyEmailRequest(token, log);
+    const user = await fetchMe(tokens.accessToken, log);
+    
+    log.info({ userId: user.id, isNewlyVerified }, "verify-email succeeded");
 
     // Auto-login: establish a session in this browser, then continue into the app.
     const session = await getSession(request);
@@ -36,6 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       error instanceof ApiError
         ? error.message
         : "Something went wrong. Please try again.";
+    log.warn({ err: error, message }, "verify-email failed");
     return { error: message };
   }
 }

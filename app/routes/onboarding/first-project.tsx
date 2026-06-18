@@ -2,6 +2,7 @@ import { Form, Link, redirect, useNavigation } from "react-router";
 
 import { apiFetch } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/first-project";
@@ -16,7 +17,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
 
@@ -41,7 +44,7 @@ export async function action({ request }: Route.ActionArgs) {
         name,
         description: description || null,
       }),
-    });
+    }, reqLog);
 
     if (response.ok) {
       let projectId: string | undefined;
@@ -54,11 +57,13 @@ export async function action({ request }: Route.ActionArgs) {
       return redirect(projectId ? `/editor/${projectId}` : "/dashboard");
     }
 
+    reqLog.warn({ status: response.status }, "first project creation returned non-ok");
     return {
       error:
         "Project creation is coming soon — you can finish setup and create projects later.",
     };
-  } catch {
+  } catch (error) {
+    reqLog.error({ err: error }, "first project creation failed");
     return {
       error:
         "Project creation is coming soon — you can finish setup and create projects later.",

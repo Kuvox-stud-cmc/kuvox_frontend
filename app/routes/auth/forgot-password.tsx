@@ -1,6 +1,7 @@
 import { Form, Link, useNavigation } from "react-router";
 
 import { forgotPasswordRequest } from "~/lib/api.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/forgot-password";
 
@@ -16,10 +17,14 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Email is required.", sent: false };
   }
 
+  const log = createRequestLogger(request);
+
   try {
-    await forgotPasswordRequest(email);
-  } catch {
+    await forgotPasswordRequest(email, log);
+    log.info("forgot-password succeeded");
+  } catch (error) {
     // Swallow — always show a neutral success message (no user enumeration).
+    log.warn({ err: error }, "forgot-password failed or swallowed");
   }
 
   return { error: null, sent: true };
