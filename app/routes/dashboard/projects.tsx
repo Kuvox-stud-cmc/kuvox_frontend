@@ -1,4 +1,4 @@
-import { ProjectsView } from "~/components/dashboard/workspace/projects-view";
+import ProjectsDashboard from "./projects-view";
 import { PERSONAL, ProjectKind, type ProjectDto } from "~/lib/api";
 import { ApiError, createProject, listProjects, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
@@ -73,13 +73,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-export default function Projects({ loaderData, actionData }: Route.ComponentProps) {
-  return (
-    <ProjectsView
-      projects={loaderData.projects}
-      loadError={loaderData.error}
-      actionData={actionData}
-      subtitle="Your personal editing projects."
-    />
-  );
+export default function Projects() {
+  return <ProjectsDashboard />;
 }

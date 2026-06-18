@@ -37,7 +37,6 @@ const MAIN_NAV: NavItemConfig[] = [
     children: [
       { to: "/dashboard/videos", label: "All Videos" },
       { to: "/dashboard/videos?view=projects", label: "Recent Projects" },
-      { to: "/dashboard/videos?view=processing", label: "Processing" },
       { to: "/dashboard/videos?view=archived", label: "Archived" },
     ],
   },
@@ -116,10 +115,9 @@ function SimpleNavItem({ item }: { item: NavItemConfig }) {
       to={item.to}
       end={item.end}
       className={({ isActive }) =>
-        `${baseItemClass} ${
-          isActive
-            ? "bg-surface-container-high text-on-surface"
-            : "text-on-surface-variant hover:text-on-surface"
+        `${baseItemClass} ${isActive
+          ? "bg-surface-container-high text-on-surface"
+          : "text-on-surface-variant hover:text-on-surface"
         }`
       }
     >
@@ -148,17 +146,15 @@ function ExpandableNavItem({ item }: { item: NavItemConfig }) {
     <div>
       {/* Row: link + chevron */}
       <div
-        className={`flex items-center rounded-xl transition-colors ${
-          isActive ? "bg-surface-container-high" : ""
-        }`}
+        className={`flex items-center rounded-xl transition-colors ${isActive ? "bg-surface-container-high" : ""
+          }`}
       >
         <Link
           to={item.to}
-          className={`flex flex-1 items-center gap-3 px-3 py-2.5 text-body-sm transition-colors ${
-            isActive
+          className={`flex flex-1 items-center gap-3 px-3 py-2.5 text-body-sm transition-colors ${isActive
               ? "text-on-surface"
               : "text-on-surface-variant hover:text-on-surface"
-          }`}
+            }`}
         >
           <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
           {item.label}
@@ -195,11 +191,10 @@ function ExpandableNavItem({ item }: { item: NavItemConfig }) {
                   <Link
                     key={child.to}
                     to={child.to}
-                    className={`rounded-lg px-3 py-1.5 text-label-md transition-colors ${
-                      active
+                    className={`rounded-lg px-3 py-1.5 text-label-md transition-colors ${active
                         ? "bg-surface-container-high font-medium text-on-surface"
                         : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-                    }`}
+                      }`}
                   >
                     {child.label}
                   </Link>
