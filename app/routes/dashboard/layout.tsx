@@ -43,7 +43,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
             <img src="/logo.svg" alt="Kuvox" className="h-7" />
           </Link>
 
-          <WorkspaceSwitcher studios={studios} active={{ kind: "personal" }} />
+          <WorkspaceSwitcher studios={studios} active={{ kind: "personal" }} direction="down" />
 
           {/* New Project CTA */}
           <Link

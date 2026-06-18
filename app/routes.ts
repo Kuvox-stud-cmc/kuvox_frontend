@@ -64,6 +64,8 @@ export default [
   ]),
   // Action-only route (no UI) — destroys the session cookie.
   route("logout", "routes/auth/logout.tsx"),
+  // Action-only route (no UI) — creates a team.
+  route("create-studio", "routes/auth/create-studio.tsx"),
 
   // ── Onboarding ──────────────────────────────────────────────────────────────
   layout("routes/onboarding/layout.tsx", [
