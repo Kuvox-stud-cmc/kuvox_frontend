@@ -13,6 +13,7 @@ import {
 import { API_URL } from "./config";
 import { logger, type RequestLogger } from "./logger.server";
 import type { SessionUser } from "./session.server";
+import { API_ROUTES } from "~/const/api-routes";
 
 /** Mirrors the API's `AuthTokenDto`. */
 export interface AuthTokens {
@@ -139,7 +140,7 @@ export async function loginRequest(
   password: string,
   log?: RequestLogger,
 ): Promise<AuthTokens> {
-  return postJson<AuthTokens>("/api/auth/login", { email, password }, log);
+  return postJson<AuthTokens>(`${API_ROUTES.AUTH}/login`, { email, password }, log);
 }
 
 export async function registerRequest(
@@ -149,7 +150,7 @@ export async function registerRequest(
   log?: RequestLogger,
 ): Promise<void> {
   await postJson<ApiUserDto>(
-    "/api/auth/register",
+    `${API_ROUTES.AUTH}/register`,
     {
       email,
       password,
@@ -164,19 +165,19 @@ export async function refreshRequest(
   log?: RequestLogger,
 ): Promise<AuthTokens> {
   // The API's /refresh action binds a raw JSON string body.
-  return postJson<AuthTokens>("/api/auth/refresh", refreshToken, log);
+  return postJson<AuthTokens>(`${API_ROUTES.AUTH}/refresh`, refreshToken, log);
 }
 
 export async function logoutRequest(refreshToken: string, log?: RequestLogger): Promise<void> {
   try {
-    await postJson("/api/auth/logout", refreshToken, log);
+    await postJson(`${API_ROUTES.AUTH}/logout`, refreshToken, log);
   } catch {
     // Best-effort: a failed server-side revoke shouldn't block clearing the cookie.
   }
 }
 
 export async function fetchMe(accessToken: string, log?: RequestLogger): Promise<SessionUser> {
-  const response = await apiFetch(accessToken, "/api/auth/me", {}, log);
+  const response = await apiFetch(accessToken, `${API_ROUTES.AUTH}/me`, {}, log);
 
   if (!response.ok) {
     throw new ApiError(response.status, await readError(response));
@@ -192,7 +193,7 @@ export async function verifyEmailRequest(
   log?: RequestLogger,
 ): Promise<{ tokens: AuthTokens; isNewlyVerified: boolean }> {
   return postJson<{ tokens: AuthTokens; isNewlyVerified: boolean }>(
-    "/api/auth/verify-email",
+    `${API_ROUTES.AUTH}/verify-email`,
     { token },
     log,
   );
@@ -203,11 +204,11 @@ export async function verifyEmailRequest(
  * directly. The backend responds neutrally (no user enumeration).
  */
 export async function resendVerificationRequest(email: string, log?: RequestLogger): Promise<void> {
-  await postVoid("/api/auth/resend-verification", { email }, log);
+  await postVoid(`${API_ROUTES.AUTH}/resend-verification`, { email }, log);
 }
 
 export async function forgotPasswordRequest(email: string, log?: RequestLogger): Promise<void> {
-  await postVoid("/api/auth/forgot-password", { email }, log);
+  await postVoid(`${API_ROUTES.AUTH}/forgot-password`, { email }, log);
 }
 
 export async function resetPasswordRequest(
@@ -215,7 +216,7 @@ export async function resetPasswordRequest(
   newPassword: string,
   log?: RequestLogger,
 ): Promise<void> {
-  await postVoid("/api/auth/reset-password", { token, newPassword }, log);
+  await postVoid(`${API_ROUTES.AUTH}/reset-password`, { token, newPassword }, log);
 }
 
 /**
@@ -271,7 +272,7 @@ async function apiVoid(
 
 /** Studios the caller belongs to (for the workspace switcher). */
 export function listMyStudios(accessToken: string, log?: RequestLogger): Promise<StudioDto[]> {
-  return apiJson<StudioDto[]>(accessToken, "/api/auth/me/studios", undefined, log);
+  return apiJson<StudioDto[]>(accessToken, `${API_ROUTES.AUTH}/me/studios`, undefined, log);
 }
 
 export function listProjects(
@@ -279,7 +280,7 @@ export function listProjects(
   ws: Workspace,
   log?: RequestLogger,
 ): Promise<PagedResult<ProjectDto>> {
-  return apiJson(accessToken, `/api/projects${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
+  return apiJson(accessToken, `${API_ROUTES.PROJECTS}${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
 }
 
 export function listMedia(
@@ -287,21 +288,21 @@ export function listMedia(
   ws: Workspace,
   log?: RequestLogger,
 ): Promise<PagedResult<MediaDto>> {
-  return apiJson(accessToken, `/api/media${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
+  return apiJson(accessToken, `${API_ROUTES.MEDIA}${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
 }
 
 export function listSharedProjects(
   accessToken: string,
   log?: RequestLogger,
 ): Promise<PagedResult<ProjectDto>> {
-  return apiJson(accessToken, "/api/projects/shared?pageSize=100", undefined, log);
+  return apiJson(accessToken, `${API_ROUTES.PROJECTS}/shared?pageSize=100`, undefined, log);
 }
 
 export function listSharedMedia(
   accessToken: string,
   log?: RequestLogger,
 ): Promise<PagedResult<MediaDto>> {
-  return apiJson(accessToken, "/api/media/shared?pageSize=100", undefined, log);
+  return apiJson(accessToken, `${API_ROUTES.MEDIA}/shared?pageSize=100`, undefined, log);
 }
 
 export function listProjectTrash(
@@ -309,7 +310,7 @@ export function listProjectTrash(
   ws: Workspace,
   log?: RequestLogger,
 ): Promise<PagedResult<ProjectTrashItem>> {
-  return apiJson(accessToken, `/api/projects/trash${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
+  return apiJson(accessToken, `${API_ROUTES.PROJECTS}/trash${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
 }
 
 export function listMediaTrash(
@@ -317,7 +318,7 @@ export function listMediaTrash(
   ws: Workspace,
   log?: RequestLogger,
 ): Promise<PagedResult<MediaTrashItem>> {
-  return apiJson(accessToken, `/api/media/trash${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
+  return apiJson(accessToken, `${API_ROUTES.MEDIA}/trash${workspaceQuery(ws, { pageSize: 100 })}`, undefined, log);
 }
 
 export function createProject(
@@ -328,7 +329,7 @@ export function createProject(
 ): Promise<ProjectDto> {
   return apiJson(
     accessToken,
-    `/api/projects${workspaceQuery(ws)}`,
+    `${API_ROUTES.PROJECTS}${workspaceQuery(ws)}`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -355,7 +356,7 @@ export function createMedia(
 ): Promise<MediaDto> {
   return apiJson(
     accessToken,
-    `/api/media${workspaceQuery(ws)}`,
+    `${API_ROUTES.MEDIA}${workspaceQuery(ws)}`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -404,7 +405,7 @@ export function listStudioMembers(
   studioId: string,
   log?: RequestLogger,
 ): Promise<StudioMemberDto[]> {
-  return apiJson(accessToken, `/api/auth/studios/${studioId}/members`, undefined, log);
+  return apiJson(accessToken, `${API_ROUTES.STUDIOS_AUTH}/${studioId}/members`, undefined, log);
 }
 
 export function addStudioMember(
@@ -415,7 +416,7 @@ export function addStudioMember(
 ): Promise<StudioMemberDto> {
   return apiJson(
     accessToken,
-    `/api/auth/studios/${studioId}/members`,
+    `${API_ROUTES.STUDIOS_AUTH}/${studioId}/members`,
     {
       method: "POST",
       body: JSON.stringify({ email: input.email, role: input.role }),
@@ -433,7 +434,7 @@ export function updateStudioMember(
 ): Promise<StudioMemberDto> {
   return apiJson(
     accessToken,
-    `/api/auth/studios/${studioId}/members/${userId}`,
+    `${API_ROUTES.STUDIOS_AUTH}/${studioId}/members/${userId}`,
     {
       method: "PATCH",
       body: JSON.stringify({ role }),
@@ -450,7 +451,7 @@ export function removeStudioMember(
 ): Promise<void> {
   return apiVoid(
     accessToken,
-    `/api/auth/studios/${studioId}/members/${userId}`,
+    `${API_ROUTES.STUDIOS_AUTH}/${studioId}/members/${userId}`,
     {
       method: "DELETE",
     },
@@ -465,7 +466,7 @@ export function createStudio(
 ): Promise<StudioDto> {
   return apiJson(
     accessToken,
-    "/api/auth/studios",
+    `${API_ROUTES.STUDIOS_AUTH}`,
     {
       method: "POST",
       body: JSON.stringify({ name }),
