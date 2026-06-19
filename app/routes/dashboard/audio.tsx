@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import {
+  CARD_GRADIENTS,
+  MetricCard,
+  PageHeader,
+  ProgressRing,
+  SectionHeader,
+  SortDropdown,
+} from "~/components/dashboard/layout/DashboardPageLayout";
+import {
   EmptyState,
   Modal,
   primaryButtonClass,
@@ -232,123 +240,11 @@ const FORMAT_TONES: Record<string, string> = {
   FLAC: "bg-primary/10 text-primary",
 };
 
-const CARD_GRADIENTS = [
-  "from-primary/20 via-surface-container to-secondary/10",
-  "from-tertiary/25 via-surface-container to-primary/10",
-  "from-secondary/20 via-surface-container to-tertiary/10",
-  "from-primary/15 via-surface-container-high to-tertiary/15",
-  "from-secondary/15 via-surface-container to-primary/15",
-];
+
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  suffix,
-  tone = "primary",
-  children,
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  suffix?: string;
-  tone?: "primary" | "secondary" | "tertiary";
-  children?: React.ReactNode;
-}) {
-  const toneMap = {
-    primary: "bg-primary/10 text-primary",
-    secondary: "bg-secondary/10 text-secondary",
-    tertiary: "bg-tertiary/10 text-tertiary",
-  };
 
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div className="mb-4 flex items-center justify-between">
-        <div
-          className={`flex h-10 w-10 items-center justify-center rounded-lg ${toneMap[tone]}`}
-        >
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
-        </div>
-        {children && <div>{children}</div>}
-      </div>
-      <p className="mb-1 text-label-sm text-on-surface-variant">{label}</p>
-      <div className="flex items-baseline gap-2">
-        <span className="text-headline-md font-bold text-on-surface">
-          {value}
-        </span>
-        {suffix && (
-          <span className="text-label-sm text-on-surface-variant">
-            {suffix}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ProgressRing({
-  progress,
-  size = 36,
-  strokeWidth = 3,
-}: {
-  progress: number;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (progress / 100) * circumference;
-
-  return (
-    <div className="relative flex items-center justify-center">
-      <svg width={size} height={size}>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="transparent"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-surface-container-high"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="transparent"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="text-primary"
-          style={{
-            transform: "rotate(-90deg)",
-            transformOrigin: "50% 50%",
-            transition: "stroke-dashoffset 0.35s ease",
-          }}
-        />
-      </svg>
-      <span className="absolute text-[8px] font-bold text-on-surface">
-        {progress}%
-      </span>
-    </div>
-  );
-}
-
-function TrendBadge({ value }: { value: number }) {
-  return (
-    <span className="inline-flex items-center gap-1 text-label-sm font-bold text-secondary">
-      <span className="material-symbols-outlined text-[12px]">
-        trending_up
-      </span>
-      {value}%{" "}
-      <span className="font-normal text-on-surface-variant">vs last month</span>
-    </span>
-  );
-}
 
 function FormatBadge({ format }: { format: string }) {
   return (
@@ -511,45 +407,25 @@ export default function Audio() {
 
   return (
     <section className="space-y-10">
-      {/* ── Page Header + Toolbar ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-headline-lg font-bold text-on-surface">Audio</h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            Manage, preview and enhance your audio collection.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-4">
-          {/* Sort */}
-          <label className="flex flex-col gap-1">
-            <span className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-              Sort by
-            </span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as typeof sort)}
-              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-body-sm text-on-surface outline-none transition-colors hover:border-primary/40 focus:border-primary"
-            >
-              <option value="latest">Latest Added</option>
-              <option value="duration">Duration</option>
-              <option value="size">Size</option>
-            </select>
-          </label>
-
-          {/* Import CTA */}
-          <button
-            type="button"
-            onClick={() => setImportOpen(true)}
-            className={primaryButtonClass()}
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              upload
-            </span>
-            Import Audio
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Audio" subtitle="Manage, preview and enhance your audio collection.">
+        <SortDropdown
+          value={sort}
+          onChange={(v) => setSort(v as typeof sort)}
+          options={[
+            { label: "Latest Added", value: "latest" },
+            { label: "Duration", value: "duration" },
+            { label: "Size", value: "size" },
+          ]}
+        />
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          className={primaryButtonClass()}
+        >
+          <span className="material-symbols-outlined text-[18px]">upload</span>
+          Import Audio
+        </button>
+      </PageHeader>
 
       {/* ── Stats Grid ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -557,39 +433,31 @@ export default function Audio() {
           icon="music_note"
           label="Total Audio"
           value={MOCK_METRICS.totalAudio.toLocaleString()}
-          tone="primary"
-        >
-          <TrendBadge value={15} />
-        </MetricCard>
-
+          trend={15}
+        />
         <MetricCard
           icon="schedule"
           label="Total Duration"
           value={MOCK_METRICS.totalDuration}
           suffix="h"
           tone="tertiary"
-        >
-          <TrendBadge value={12} />
-        </MetricCard>
-
+          trend={12}
+        />
         <MetricCard
           icon="cloud"
           label="Storage Used"
           value={MOCK_METRICS.storageUsedGb}
           suffix="GB"
-          tone="primary"
         >
-          <ProgressRing progress={MOCK_METRICS.storagePercent} />
+          <ProgressRing progress={MOCK_METRICS.storagePercent} size={36} />
         </MetricCard>
-
         <MetricCard
           icon="auto_fix_high"
           label="Edits Applied"
           value={MOCK_METRICS.editsApplied}
           tone="secondary"
-        >
-          <TrendBadge value={18} />
-        </MetricCard>
+          trend={18}
+        />
       </div>
 
       {/* ── Quick Preview (Featured Player) ─────────────────────────────────── */}
@@ -742,14 +610,7 @@ export default function Audio() {
         ref={sectionAllRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            All Audio
-          </h2>
-          <span className="text-label-md text-on-surface-variant">
-            {MOCK_TRACKS.length} files
-          </span>
-        </div>
+        <SectionHeader title="All Audio" count={`${MOCK_TRACKS.length} files`} />
 
         <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
           <table className="w-full text-left text-body-sm">
@@ -902,30 +763,7 @@ export default function Audio() {
         ref={sectionMusicRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-              <span className="material-symbols-outlined text-[18px] text-primary">
-                music_note
-              </span>
-            </div>
-            <h2 className="text-headline-md font-bold text-on-surface">
-              Music
-            </h2>
-            <span className="rounded-full bg-primary/20 px-2 py-0.5 text-label-sm font-bold text-primary">
-              {musicTracks.length}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Music" count={musicTracks.length} actionOnClick={() => {}} />
         <AudioCardGrid
           tracks={musicTracks}
           emptyIcon="music_note"
@@ -940,30 +778,7 @@ export default function Audio() {
         ref={sectionSfxRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-tertiary/10">
-              <span className="material-symbols-outlined text-[18px] text-tertiary">
-                graphic_eq
-              </span>
-            </div>
-            <h2 className="text-headline-md font-bold text-on-surface">
-              Sound Effects
-            </h2>
-            <span className="rounded-full bg-tertiary/20 px-2 py-0.5 text-label-sm font-bold text-tertiary">
-              {sfxTracks.length}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Sound Effects" count={sfxTracks.length} actionOnClick={() => {}} />
         <AudioCardGrid
           tracks={sfxTracks}
           emptyIcon="graphic_eq"
@@ -978,30 +793,7 @@ export default function Audio() {
         ref={sectionVoiceoversRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary/10">
-              <span className="material-symbols-outlined text-[18px] text-secondary">
-                mic
-              </span>
-            </div>
-            <h2 className="text-headline-md font-bold text-on-surface">
-              Voiceovers
-            </h2>
-            <span className="rounded-full bg-secondary/20 px-2 py-0.5 text-label-sm font-bold text-secondary">
-              {voiceoverTracks.length}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Voiceovers" count={voiceoverTracks.length} actionOnClick={() => {}} />
         <AudioCardGrid
           tracks={voiceoverTracks}
           emptyIcon="mic"

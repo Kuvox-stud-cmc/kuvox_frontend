@@ -1,6 +1,17 @@
 import { useState } from "react";
 
 import {
+  CARD_GRADIENTS,
+  FilterButton,
+  GradientPlaceholder,
+  MetricCard,
+  PageHeader,
+  ProgressRing,
+  SectionHeader,
+  SortDropdown,
+  ViewToggle,
+} from "~/components/dashboard/layout/DashboardPageLayout";
+import {
   EmptyState,
   Modal,
   primaryButtonClass,
@@ -85,27 +96,7 @@ const MOCK_METRICS = {
   failed: 2,
 };
 
-const THUMBNAIL_GRADIENTS = [
-  "from-primary/20 via-surface-container to-secondary/10",
-  "from-tertiary/25 via-surface-container to-primary/10",
-  "from-secondary/20 via-surface-container to-tertiary/10",
-  "from-primary/15 via-surface-container-high to-tertiary/15",
-  "from-secondary/15 via-surface-container to-primary/15",
-];
 
-/* ── Sub-components ─────────────────────────────────────────────────────── */
-
-function VideoThumbnail({ index }: { index: number }) {
-  return (
-    <div
-      className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
-    >
-      <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
-        play_circle
-      </span>
-    </div>
-  );
-}
 
 function StatusBadge({ status }: { status: MockVideo["status"] }) {
   const config = {
@@ -141,107 +132,7 @@ function StatusBadge({ status }: { status: MockVideo["status"] }) {
   );
 }
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  detail,
-  tone = "primary",
-  children,
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  detail?: string;
-  tone?: "primary" | "secondary" | "tertiary" | "error";
-  children?: React.ReactNode;
-}) {
-  const toneMap = {
-    primary: "bg-primary/10 text-primary",
-    secondary: "bg-secondary/10 text-secondary",
-    tertiary: "bg-tertiary/10 text-tertiary",
-    error: "bg-error/10 text-error",
-  };
 
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div className="mb-4 flex items-center gap-3">
-        <div
-          className={`flex h-10 w-10 items-center justify-center rounded-lg ${toneMap[tone]}`}
-        >
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
-        </div>
-        <span className="text-label-md font-medium text-on-surface-variant">
-          {label}
-        </span>
-      </div>
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <span className="text-headline-md font-bold text-on-surface">
-            {value}
-          </span>
-          {detail && (
-            <p className="mt-1 text-label-sm text-on-surface-variant">
-              {detail}
-            </p>
-          )}
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/** SVG circular progress ring for the Rendering metric. */
-function ProgressRing({
-  progress,
-  size = 44,
-  strokeWidth = 3,
-}: {
-  progress: number;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (progress / 100) * circumference;
-
-  return (
-    <div className="relative flex items-center justify-center">
-      <svg width={size} height={size}>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="transparent"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-surface-container-high"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="transparent"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="text-tertiary"
-          style={{
-            transform: "rotate(-90deg)",
-            transformOrigin: "50% 50%",
-            transition: "stroke-dashoffset 0.35s ease",
-          }}
-        />
-      </svg>
-      <span className="absolute text-label-sm font-bold text-on-surface">
-        {progress}%
-      </span>
-    </div>
-  );
-}
 
 function VideoCard({
   video,
@@ -282,7 +173,7 @@ function VideoCard({
               </span>
             </div>
           ) : (
-            <VideoThumbnail index={index} />
+            <GradientPlaceholder index={index} icon="play_circle" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -416,7 +307,7 @@ function VideoCard({
   return (
     <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <div className="relative aspect-video overflow-hidden">
-        <VideoThumbnail index={index} />
+        <GradientPlaceholder index={index} icon="play_circle" />
         <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
 
         {/* Status badge */}
@@ -512,94 +403,26 @@ export default function Videos() {
 
   return (
     <section className="space-y-10">
-      {/* ── Page Header + Toolbar ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-headline-lg font-bold text-on-surface">
-            Videos
-          </h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            Manage and edit your video projects.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-4">
-          {/* View toggle */}
-          <div className="flex flex-col gap-1">
-            <span className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-              View
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                aria-label="Grid view"
-                onClick={() => setView("grid")}
-                className={`rounded-md p-1.5 transition-colors ${
-                  view === "grid"
-                    ? "bg-primary/20 text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-                }`}
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  grid_view
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-label="List view"
-                onClick={() => setView("list")}
-                className={`rounded-md p-1.5 transition-colors ${
-                  view === "list"
-                    ? "bg-primary/20 text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-                }`}
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  view_list
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* Sort */}
-          <label className="flex flex-col gap-1">
-            <span className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-              Sort by
-            </span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as typeof sort)}
-              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-body-sm text-on-surface outline-none transition-colors hover:border-primary/40 focus:border-primary"
-            >
-              <option value="latest">Latest Modified</option>
-              <option value="name">Name</option>
-            </select>
-          </label>
-
-          {/* Filter */}
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-body-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:text-on-surface"
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              filter_list
-            </span>
-            Filter
-          </button>
-
-          {/* Import CTA */}
-          <button
-            type="button"
-            onClick={() => setImportOpen(true)}
-            className={primaryButtonClass()}
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              upload
-            </span>
-            Import Video
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Videos" subtitle="Manage and edit your video projects.">
+        <ViewToggle mode={view} onChange={setView} />
+        <SortDropdown
+          value={sort}
+          onChange={(v) => setSort(v as typeof sort)}
+          options={[
+            { label: "Latest Modified", value: "latest" },
+            { label: "Name", value: "name" },
+          ]}
+        />
+        <FilterButton />
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          className={primaryButtonClass()}
+        >
+          <span className="material-symbols-outlined text-[18px]">upload</span>
+          Import Video
+        </button>
+      </PageHeader>
 
       {/* ── Hero Drop Zone ─────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-outline-variant bg-surface-container-low p-10 transition-colors hover:border-primary/30">
@@ -701,20 +524,7 @@ export default function Videos() {
 
       {/* ── Recent Projects ────────────────────────────────────────────────── */}
       <section>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            Recent Projects
-          </h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Recent Projects" actionOnClick={() => {}} />
 
         {videos.length === 0 ? (
           <EmptyState

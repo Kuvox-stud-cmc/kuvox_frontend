@@ -1,6 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 
+import {
+  CARD_GRADIENTS,
+  PageHeader,
+  SectionHeader,
+} from "~/components/dashboard/layout/DashboardPageLayout";
+
 export function meta() {
   return [{ title: "AI Tools · Kuvox" }];
 }
@@ -120,14 +126,7 @@ const MOCK_AI_TOOLS: MockAiTool[] = [
   },
 ];
 
-const CARD_GRADIENTS = [
-  "from-primary/25 via-surface-container to-secondary/10",
-  "from-tertiary/25 via-surface-container to-primary/10",
-  "from-secondary/20 via-surface-container to-tertiary/10",
-  "from-primary/15 via-surface-container-high to-tertiary/15",
-  "from-secondary/15 via-surface-container to-primary/15",
-  "from-tertiary/15 via-surface-container-high to-secondary/15",
-];
+
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
@@ -263,13 +262,7 @@ export default function AiTools() {
 
   return (
     <section className="space-y-10">
-      {/* ── Page Header ────────────────────────────────────────────────────── */}
-      <div>
-        <h1 className="text-headline-lg font-bold text-on-surface">AI Tools</h1>
-        <p className="mt-1 text-body-sm text-on-surface-variant">
-          Powerful AI tools to supercharge your creative workflow.
-        </p>
-      </div>
+      <PageHeader title="AI Tools" subtitle="Powerful AI tools to supercharge your creative workflow." />
 
       {/* ── Category Tab Bar ───────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -327,20 +320,7 @@ export default function AiTools() {
         ref={sectionVideoRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            Video Tools
-          </h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View all
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Video Tools" actionLabel="View all" actionOnClick={() => {}} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
           {videoTools.map((tool, i) => (
             <ToolCardVideoPhoto key={tool.id} tool={tool} index={i} />
@@ -354,20 +334,7 @@ export default function AiTools() {
         ref={sectionPhotoRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            Photo Tools
-          </h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View all
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Photo Tools" actionLabel="View all" actionOnClick={() => {}} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {photoTools.map((tool, i) => (
             <ToolCardVideoPhoto
@@ -386,20 +353,7 @@ export default function AiTools() {
         ref={sectionAudioRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            Audio Tools
-          </h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View all
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Audio Tools" actionLabel="View all" actionOnClick={() => {}} />
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {audioTools.map((tool) => (
             <ToolCardAudio key={tool.id} tool={tool} />

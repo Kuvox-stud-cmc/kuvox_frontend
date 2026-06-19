@@ -2,6 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, useNavigation, useSearchParams } from "react-router";
 
 import {
+  CARD_GRADIENTS,
+  GradientPlaceholder,
+  MetricCard,
+  PageHeader,
+  SectionHeader,
+  SortDropdown,
+  ViewToggle,
+} from "~/components/dashboard/layout/DashboardPageLayout";
+import {
   EmptyState,
   ErrorBanner,
   Modal,
@@ -87,13 +96,6 @@ const PHOTO_ALBUMS = [
   { name: "Nature", count: 342, icon: "eco" },
 ];
 
-const PHOTO_GRADIENTS = [
-  "from-primary/25 via-surface-container-high to-secondary/10",
-  "from-tertiary/25 via-surface-container-high to-primary/10",
-  "from-secondary/20 via-surface-container-high to-tertiary/10",
-  "from-primary/15 via-surface-container-low to-tertiary/20",
-];
-
 function formatSize(bytes: number): string {
   if (bytes <= 0) return "Pending";
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -110,55 +112,6 @@ function formatDate(value: string): string {
 function photoLabel(photo: MediaDto): string {
   const dimensions = photo.width && photo.height ? `${photo.width} x ${photo.height}` : null;
   return [photo.status, dimensions, formatSize(photo.sizeBytes)].filter(Boolean).join(" · ");
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-  detail,
-  tone = "primary",
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  detail?: string;
-  tone?: "primary" | "secondary" | "tertiary";
-}) {
-  const toneClass = {
-    primary: "bg-primary/10 text-primary",
-    secondary: "bg-secondary/10 text-secondary",
-    tertiary: "bg-tertiary/10 text-tertiary",
-  }[tone];
-
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div className="mb-4 flex items-center gap-3">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${toneClass}`}>
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
-        </div>
-        <span className="text-label-md font-medium text-on-surface-variant">{label}</span>
-      </div>
-      <div className="flex items-end justify-between gap-3">
-        <span className="text-headline-md font-bold text-on-surface">{value}</span>
-        {detail && <span className="text-right text-label-sm text-on-surface-variant">{detail}</span>}
-      </div>
-    </div>
-  );
-}
-
-function PhotoPlaceholder({ index }: { index: number }) {
-  return (
-    <div
-      className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${
-        PHOTO_GRADIENTS[index % PHOTO_GRADIENTS.length]
-      }`}
-    >
-      <span className="material-symbols-outlined text-[40px] text-on-surface-variant/25">
-        image
-      </span>
-    </div>
-  );
 }
 
 function DeletePhotoButton({ photo, compact = false }: { photo: MediaDto; compact?: boolean }) {
@@ -194,7 +147,7 @@ function PhotoCard({
     return (
       <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
         <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
-          <PhotoPlaceholder index={index} />
+          <GradientPlaceholder index={index} icon="image" iconSize="text-[40px]" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-body-md font-bold text-on-surface" title={photo.filename}>
@@ -213,7 +166,7 @@ function PhotoCard({
   return (
     <div className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
       <div className="relative aspect-[4/3] overflow-hidden">
-        <PhotoPlaceholder index={index} />
+        <GradientPlaceholder index={index} icon="image" iconSize="text-[40px]" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
         <div className="absolute left-3 top-3">
           <span className="rounded-md bg-surface-container-lowest/70 px-2 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
@@ -246,7 +199,7 @@ function AlbumCard({
       <div className="aspect-square overflow-hidden rounded-xl border border-outline-variant transition-colors group-hover:border-primary/40">
         <div
           className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${
-            PHOTO_GRADIENTS[index % PHOTO_GRADIENTS.length]
+            CARD_GRADIENTS[index % CARD_GRADIENTS.length]
           }`}
         >
           <span className="material-symbols-outlined text-[34px] text-on-surface-variant/35">
@@ -304,83 +257,37 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
 
   return (
     <section className="space-y-10">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-headline-lg font-bold text-on-surface">Photos</h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            Your photo library. Organize, edit, and enhance your visual assets.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col gap-1">
-            <span className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-              View
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                aria-label="Grid view"
-                onClick={() => setLayoutMode("grid")}
-                className={`rounded-md p-1.5 transition-colors ${
-                  layoutMode === "grid"
-                    ? "bg-primary/20 text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-                }`}
-              >
-                <span className="material-symbols-outlined text-[20px]">grid_view</span>
-              </button>
-              <button
-                type="button"
-                aria-label="List view"
-                onClick={() => setLayoutMode("list")}
-                className={`rounded-md p-1.5 transition-colors ${
-                  layoutMode === "list"
-                    ? "bg-primary/20 text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-                }`}
-              >
-                <span className="material-symbols-outlined text-[20px]">view_list</span>
-              </button>
-            </div>
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-              Sort by
-            </span>
-            <select
-              value={sort}
-              onChange={(event) => setSort(event.target.value as typeof sort)}
-              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-body-sm text-on-surface outline-none transition-colors hover:border-primary/40 focus:border-primary"
-            >
-              <option value="latest">Latest Added</option>
-              <option value="name">Name</option>
-              <option value="size">File Size</option>
-            </select>
-          </label>
-
-          <button type="button" onClick={() => setImportOpen(true)} className={primaryButtonClass()}>
-            <span className="material-symbols-outlined text-[18px]">upload</span>
-            Import photos
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Photos" subtitle="Your photo library. Organize, edit, and enhance your visual assets.">
+        <ViewToggle mode={layoutMode} onChange={setLayoutMode} />
+        <SortDropdown
+          value={sort}
+          onChange={(v) => setSort(v as typeof sort)}
+          options={[
+            { label: "Latest Added", value: "latest" },
+            { label: "Name", value: "name" },
+            { label: "File Size", value: "size" },
+          ]}
+        />
+        <button type="button" onClick={() => setImportOpen(true)} className={primaryButtonClass()}>
+          <span className="material-symbols-outlined text-[18px]">upload</span>
+          Import photos
+        </button>
+      </PageHeader>
 
       {loaderData.error && <ErrorBanner message={loaderData.error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard icon="image" label="Total Photos" value={photos.length} detail="+12% this month" />
-        <StatCard icon="favorite" label="Favorites" value="0" detail="Coming soon" tone="tertiary" />
-        <StatCard icon="folder" label="Albums" value={PHOTO_ALBUMS.length} tone="secondary" />
-        <StatCard
+        <MetricCard icon="image" label="Total Photos" value={photos.length} detail="+12% this month" />
+        <MetricCard icon="favorite" label="Favorites" value="0" detail="Coming soon" tone="tertiary" />
+        <MetricCard icon="folder" label="Albums" value={PHOTO_ALBUMS.length} tone="secondary" />
+        <MetricCard
           icon="cloud"
           label="Storage Used"
           value={`${storageGb.toFixed(storageGb >= 10 ? 0 : 1)} GB`}
           detail="Personal library"
         />
-        <StatCard
+        <MetricCard
           icon="auto_fix_high"
           label="Ready To Edit"
           value={photosWithDimensions}
@@ -390,16 +297,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       </div>
 
       <section>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">Recent Photos</h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </button>
-        </div>
+        <SectionHeader title="Recent Photos" actionOnClick={() => {}} />
 
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -438,16 +336,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       </section>
 
       <section ref={albumsRef} style={{ scrollMarginTop: "6rem" }}>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">Albums</h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </button>
-        </div>
+        <SectionHeader title="Albums" actionOnClick={() => {}} />
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {PHOTO_ALBUMS.map((album, index) => (
             <AlbumCard key={album.name} album={album} index={index} />
@@ -463,9 +352,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       </section>
 
       <section ref={favoritesRef} style={{ scrollMarginTop: "6rem" }}>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">Favorites</h2>
-        </div>
+        <SectionHeader title="Favorites" />
         <EmptyState
           icon="favorite_border"
           title="No favorite photos yet"

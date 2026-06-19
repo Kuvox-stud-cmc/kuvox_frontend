@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router";
 
+import {
+  MetricCard,
+  PageHeader,
+  SectionHeader,
+} from "~/components/dashboard/layout/DashboardPageLayout";
 import { Modal, primaryButtonClass } from "~/components/dashboard/section";
 
 export function meta() {
@@ -86,35 +91,7 @@ const ROLE_TONES: Record<MemberRole, string> = {
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  tone = "primary",
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  tone?: "primary" | "secondary" | "tertiary";
-}) {
-  const toneMap = {
-    primary: "bg-primary/10 text-primary",
-    secondary: "bg-secondary/10 text-secondary",
-    tertiary: "bg-tertiary/10 text-tertiary",
-  };
 
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div
-        className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg ${toneMap[tone]}`}
-      >
-        <span className="material-symbols-outlined text-[20px]">{icon}</span>
-      </div>
-      <p className="mb-1 text-label-sm text-on-surface-variant">{label}</p>
-      <span className="text-headline-md font-bold text-on-surface">{value}</span>
-    </div>
-  );
-}
 
 function MemberRow({ member }: { member: TeamMember }) {
   const statusDot =
@@ -173,18 +150,12 @@ export default function Team() {
 
   return (
     <section className="space-y-10">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-headline-lg font-bold text-on-surface">Team</h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            Manage members, roles, and collaboration for your personal workspace.
-          </p>
-        </div>
+      <PageHeader title="Team" subtitle="Manage members, roles, and collaboration for your personal workspace.">
         <button type="button" onClick={() => setInviteOpen(true)} className={primaryButtonClass()}>
           <span className="material-symbols-outlined text-[18px]">person_add</span>
           Invite member
         </button>
-      </div>
+      </PageHeader>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon="group" label="Total Members" value={MOCK_MEMBERS.length} />
@@ -234,12 +205,7 @@ export default function Team() {
       </div>
 
       <section>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">Members</h2>
-          <span className="text-label-md text-on-surface-variant">
-            {MOCK_MEMBERS.length} people
-          </span>
-        </div>
+        <SectionHeader title="Members" count={`${MOCK_MEMBERS.length} people`} />
         <div className="space-y-3">
           {MOCK_MEMBERS.map((member) => (
             <MemberRow key={member.id} member={member} />
