@@ -6,9 +6,11 @@ interface HeaderBarProps {
     displayName: string;
     plan: string;
   };
+  /** When provided, renders a hamburger menu button (mobile). */
+  onMenuToggle?: () => void;
 }
 
-export function HeaderBar({ user }: HeaderBarProps) {
+export function HeaderBar({ user, onMenuToggle }: HeaderBarProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -24,29 +26,46 @@ export function HeaderBar({ user }: HeaderBarProps) {
   }, [navigate]);
 
   return (
-    <header className="flex h-16 flex-shrink-0 items-center justify-between border-b border-outline-variant/50 px-10">
-      {/* ── Search ──────────────────────────────────────────────────────── */}
-      <Link
-        to="/search"
-        className="relative block w-96"
-        aria-label="Search projects, media, and templates"
-      >
-        <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
-          search
-        </span>
-        <span
-          role="presentation"
-          className="block w-full cursor-pointer rounded-lg border border-outline-variant bg-surface-container-low py-2 pl-10 pr-16 text-body-sm text-on-surface-variant/60 transition-colors hover:border-primary/40"
+    <header className="flex h-14 sm:h-16 flex-shrink-0 items-center justify-between border-b border-outline-variant/50 px-4 sm:px-6 md:px-10">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        {/* Hamburger (mobile only) */}
+        {onMenuToggle && (
+          <button
+            type="button"
+            onClick={onMenuToggle}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface md:hidden"
+            aria-label="Open navigation menu"
+          >
+            <span className="material-symbols-outlined text-[22px]">menu</span>
+          </button>
+        )}
+
+        {/* ── Search ──────────────────────────────────────────────────────── */}
+        <Link
+          to="/search"
+          className="relative block w-full max-w-96 min-w-0"
+          aria-label="Search projects, media, and templates"
         >
-          Search projects, media, templates...
-        </span>
-        <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-outline-variant px-1.5 py-0.5 text-label-sm text-on-surface-variant">
-          ⌘K
-        </kbd>
-      </Link>
+          <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
+            search
+          </span>
+          <span
+            role="presentation"
+            className="block w-full cursor-pointer truncate rounded-lg border border-outline-variant bg-surface-container-low py-2 pl-10 pr-4 sm:pr-16 text-body-sm text-on-surface-variant/60 transition-colors hover:border-primary/40"
+          >
+            <span className="hidden sm:inline">
+              Search projects, media, templates...
+            </span>
+            <span className="sm:hidden">Search...</span>
+          </span>
+          <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline-block rounded border border-outline-variant px-1.5 py-0.5 text-label-sm text-on-surface-variant">
+            ⌘K
+          </kbd>
+        </Link>
+      </div>
 
       {/* ── Action icons + profile ──────────────────────────────────────── */}
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-3 sm:gap-5 ml-3">
         {/* Notifications */}
         <Link
           to="/notifications"
@@ -59,19 +78,19 @@ export function HeaderBar({ user }: HeaderBarProps) {
           </span>
         </Link>
 
-        {/* Help */}
+        {/* Help — hidden on small mobile */}
         <Link
           to="/help"
-          className="text-on-surface-variant transition-colors hover:text-on-surface"
+          className="hidden sm:block text-on-surface-variant transition-colors hover:text-on-surface"
           aria-label="Help"
         >
           <span className="material-symbols-outlined text-[22px]">help</span>
         </Link>
 
-        {/* Settings */}
+        {/* Settings — hidden on small mobile */}
         <Link
           to="/settings"
-          className="text-on-surface-variant transition-colors hover:text-on-surface"
+          className="hidden sm:block text-on-surface-variant transition-colors hover:text-on-surface"
           aria-label="Settings"
         >
           <span className="material-symbols-outlined text-[22px]">settings</span>
