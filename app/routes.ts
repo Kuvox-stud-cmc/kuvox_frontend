@@ -6,7 +6,7 @@ import {
   route,
 } from "@react-router/dev/routes";
 
-import { routesFolder } from './routes-name';
+import { routesFolder } from './const/routes-name';
 
 export default [
   // ── Public marketing pages (SSR) under a shared header/footer ──────────────

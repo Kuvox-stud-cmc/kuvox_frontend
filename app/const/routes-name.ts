@@ -2,7 +2,7 @@ export const routesFolder = {
     AUTH: "routes/auth",
     ONBOARDING: "routes/onboarding",
     DASHBOARD: "routes/dashboard",
-    TEAMS: "routes/dashboard-teams",
+    TEAMS: "routes/teams",
     PRICING: "routes/pricing",
     ENTERPRISE: "routes/enterprise",
     EDITOR: "routes/editor",
