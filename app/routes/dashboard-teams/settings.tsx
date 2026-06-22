@@ -24,7 +24,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   let studios: import("~/lib/api").StudioDto[] = [];
-
   try {
     studios = await listMyStudios(accessToken, reqLog);
   } catch (error) {
