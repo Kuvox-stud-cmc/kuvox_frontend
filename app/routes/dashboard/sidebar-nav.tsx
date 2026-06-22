@@ -109,7 +109,44 @@ function isParentActive(item: NavItemConfig, pathname: string, search: string): 
 const baseItemClass =
   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-body-sm transition-colors";
 
-function SimpleNavItem({ item }: { item: NavItemConfig }) {
+const collapsedItemClass =
+  "flex h-10 w-10 mx-auto items-center justify-center rounded-xl transition-colors";
+
+function SimpleNavItem({
+  item,
+  collapsed,
+}: {
+  item: NavItemConfig;
+  collapsed: boolean;
+}) {
+  if (collapsed) {
+    return (
+      <NavLink
+        to={item.to}
+        end={item.end}
+        title={item.label}
+        className={({ isActive }) =>
+          `${collapsedItemClass} ${
+            isActive
+              ? "bg-surface-container-high text-on-surface"
+              : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+          }`
+        }
+      >
+        <span className="relative">
+          <span className="material-symbols-outlined text-[20px]">
+            {item.icon}
+          </span>
+          {item.badge != null && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold text-on-primary">
+              {item.badge}
+            </span>
+          )}
+        </span>
+      </NavLink>
+    );
+  }
+
   return (
     <NavLink
       to={item.to}
@@ -132,7 +169,13 @@ function SimpleNavItem({ item }: { item: NavItemConfig }) {
   );
 }
 
-function ExpandableNavItem({ item }: { item: NavItemConfig }) {
+function ExpandableNavItem({
+  item,
+  collapsed,
+}: {
+  item: NavItemConfig;
+  collapsed: boolean;
+}) {
   const location = useLocation();
   const search = location.search;
   const isActive = isParentActive(item, location.pathname, search);
@@ -141,6 +184,25 @@ function ExpandableNavItem({ item }: { item: NavItemConfig }) {
   useEffect(() => {
     if (isActive) setExpanded(true);
   }, [isActive]);
+
+  // When collapsed, render as a simple icon link (no children visible)
+  if (collapsed) {
+    return (
+      <NavLink
+        to={item.to}
+        title={item.label}
+        className={`${collapsedItemClass} ${
+          isActive
+            ? "bg-surface-container-high text-on-surface"
+            : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+        }`}
+      >
+        <span className="material-symbols-outlined text-[20px]">
+          {item.icon}
+        </span>
+      </NavLink>
+    );
+  }
 
   return (
     <div>
@@ -210,28 +272,45 @@ function ExpandableNavItem({ item }: { item: NavItemConfig }) {
 
 /* ── Exported sidebar ───────────────────────────────────────────────────── */
 
-export function SidebarNav() {
+export function SidebarNav({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <>
       {/* Main navigation */}
       <nav className="flex flex-col gap-0.5">
         {MAIN_NAV.map((item) =>
           item.children ? (
-            <ExpandableNavItem key={item.to} item={item} />
+            <ExpandableNavItem
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+            />
           ) : (
-            <SimpleNavItem key={item.to} item={item} />
+            <SimpleNavItem
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+            />
           ),
         )}
       </nav>
 
       {/* Workspace section */}
       <div className="mt-8">
-        <h3 className="mb-3 px-3 text-label-sm font-semibold uppercase tracking-widest text-on-surface-variant">
-          Workspace
-        </h3>
+        {!collapsed && (
+          <h3 className="mb-3 px-3 text-label-sm font-semibold uppercase tracking-widest text-on-surface-variant">
+            Workspace
+          </h3>
+        )}
+        {collapsed && (
+          <div className="mx-auto mb-3 h-px w-6 bg-outline-variant/50" />
+        )}
         <nav className="flex flex-col gap-0.5">
           {WORKSPACE_NAV.map((item) => (
-            <SimpleNavItem key={item.to} item={item} />
+            <SimpleNavItem
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+            />
           ))}
         </nav>
       </div>

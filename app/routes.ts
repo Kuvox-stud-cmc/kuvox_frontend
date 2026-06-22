@@ -93,6 +93,7 @@ export default [
       route("brand-kits", `${routesFolder.DASHBOARD}/brand-kits.tsx`),
       route("recycle-bin", `${routesFolder.DASHBOARD}/recycle-bin.tsx`),
     ]),
+    route("search", "routes/search.tsx"),
   ]),
 
   // ── Team (Studio) workspace ─────────────────────────────────────────────────
@@ -122,9 +123,8 @@ export default [
     ]),
   ]),
 
-  // ── Standalone authenticated pages ──────────────────────────────────────────
+  // ── Standalone authenticated pages ──────────────────────────────────────
   route("notifications", "routes/notifications.tsx"),
-  route("search", "routes/search.tsx"),
 
   // ── User profile ────────────────────────────────────────────────────────────
   ...prefix("u/:username", [
