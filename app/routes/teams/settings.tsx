@@ -23,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return { name: "", role: UserStudioRole.User, error: "Your session expired. Please sign in again." };
   }
 
-  let studios = [];
+  let studios: import("~/lib/api").StudioDto[] = [];
   try {
     studios = await listMyStudios(accessToken, reqLog);
   } catch (error) {
