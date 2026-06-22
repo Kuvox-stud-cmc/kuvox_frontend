@@ -8,6 +8,7 @@ import {
   restore,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/trash";
@@ -19,7 +20,9 @@ export function meta(_: Route.MetaArgs) {
 const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
 
@@ -29,24 +32,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const ws = studioWs(params.studioId);
   const [projectsResult, mediaResult] = await Promise.allSettled([
-    listProjectTrash(accessToken, ws),
-    listMediaTrash(accessToken, ws),
+    listProjectTrash(accessToken, ws, reqLog),
+    listMediaTrash(accessToken, ws, reqLog),
   ]);
 
   const entries = toTrashEntries(
     projectsResult.status === "fulfilled" ? projectsResult.value.items : [],
     mediaResult.status === "fulfilled" ? mediaResult.value.items : [],
   );
-  const error =
-    projectsResult.status === "rejected" || mediaResult.status === "rejected"
-      ? "Some trashed items couldn't be loaded."
-      : null;
+  
+  let error = null;
+  if (projectsResult.status === "rejected" || mediaResult.status === "rejected") {
+    reqLog.error({ studioId: params.studioId }, "failed to load some team trash items");
+    error = "Some trashed items couldn't be loaded.";
+  }
 
   return { entries, error };
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   if (!accessToken) {
@@ -64,16 +71,17 @@ export async function action({ request }: Route.ActionArgs) {
 
   try {
     if (intent === "restore" && id) {
-      await restore(accessToken, resource, id);
+      await restore(accessToken, resource, id, reqLog);
       return { ok: true };
     }
     if (intent === "permanent" && id) {
-      await permanentDelete(accessToken, resource, id);
+      await permanentDelete(accessToken, resource, id, reqLog);
       return { ok: true };
     }
     return { error: "Unknown action." };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    reqLog.error({ err: error, intent, resource, id }, "team trash action failed");
     return { error: message };
   }
 }

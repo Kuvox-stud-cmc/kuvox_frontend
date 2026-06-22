@@ -17,6 +17,7 @@ import {
   listStudioMembers,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/home";
@@ -32,7 +33,9 @@ function count(result: PromiseSettledResult<{ totalCount: number }>): number {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   const studioId = params.studioId;
@@ -48,16 +51,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const ws = studioWs(studioId);
   const [projects, media, members, projectTrash, mediaTrash] = await Promise.allSettled([
-    listProjects(accessToken, ws),
-    listMedia(accessToken, ws),
-    listStudioMembers(accessToken, studioId),
-    listProjectTrash(accessToken, ws),
-    listMediaTrash(accessToken, ws),
+    listProjects(accessToken, ws, reqLog),
+    listMedia(accessToken, ws, reqLog),
+    listStudioMembers(accessToken, studioId, reqLog),
+    listProjectTrash(accessToken, ws, reqLog),
+    listMediaTrash(accessToken, ws, reqLog),
   ]);
 
   const anyFailed = [projects, media, projectTrash, mediaTrash].some(
     (result) => result.status === "rejected",
   );
+  if (anyFailed) reqLog.warn({ studioId }, "some team data failed to load");
 
   return {
     studioId,

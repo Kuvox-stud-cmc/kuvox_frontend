@@ -23,6 +23,7 @@ import {
   updateStudioMember,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/members";
@@ -32,7 +33,9 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const user = await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   const studioId = params.studioId;
@@ -46,14 +49,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     };
   }
 
-  const studios = await listMyStudios(accessToken);
+  const studios = await listMyStudios(accessToken, reqLog);
   const role = studios.find((s) => s.id === studioId)?.role ?? UserStudioRole.User;
 
   try {
-    const members = await listStudioMembers(accessToken, studioId);
+    const members = await listStudioMembers(accessToken, studioId, reqLog);
     return { members, isAdmin: isStudioAdmin(role), currentUserId: user.id, error: null as string | null };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load members.";
+    reqLog.error({ err: error, studioId }, "failed to load studio members");
     return {
       members: [] as StudioMemberDto[],
       isAdmin: isStudioAdmin(role),
@@ -64,7 +68,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   if (!accessToken) {
@@ -82,7 +88,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (!email) {
         return { error: "Enter an email to invite." };
       }
-      await addStudioMember(accessToken, studioId, { email, role });
+      await addStudioMember(accessToken, studioId, { email, role }, reqLog);
       return { ok: true, intent };
     }
 
@@ -90,7 +96,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       const userId = String(formData.get("userId") ?? "");
       const role = Number(formData.get("role") ?? UserStudioRole.User);
       if (userId) {
-        await updateStudioMember(accessToken, studioId, userId, role);
+        await updateStudioMember(accessToken, studioId, userId, role, reqLog);
       }
       return { ok: true, intent };
     }
@@ -98,7 +104,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (intent === "remove") {
       const userId = String(formData.get("userId") ?? "");
       if (userId) {
-        await removeStudioMember(accessToken, studioId, userId);
+        await removeStudioMember(accessToken, studioId, userId, reqLog);
       }
       return { ok: true, intent };
     }
@@ -106,6 +112,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Unknown action." };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    reqLog.error({ err: error, intent, studioId }, "team member action failed");
     return { error: message };
   }
 }

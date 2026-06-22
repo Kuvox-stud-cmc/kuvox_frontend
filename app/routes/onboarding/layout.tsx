@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from "react-router";
 
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/layout";
 
@@ -13,7 +14,8 @@ const STEPS = [
 ] as const;
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const user = await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
   return { user };
 }
 

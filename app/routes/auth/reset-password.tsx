@@ -1,6 +1,7 @@
 import { Form, Link, redirect, useNavigation, useSearchParams } from "react-router";
 
 import { ApiError, resetPasswordRequest } from "~/lib/api.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/reset-password";
 
@@ -26,13 +27,18 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Passwords do not match." };
   }
 
+  const log = createRequestLogger(request);
+
   try {
-    await resetPasswordRequest(token, newPassword);
+    await resetPasswordRequest(token, newPassword, log);
+    log.info("reset-password succeeded");
     return redirect("/login?reset=success");
   } catch (error) {
     if (error instanceof ApiError) {
+      log.warn({ err: error }, "reset-password failed");
       return { error: error.message };
     }
+    log.error({ err: error }, "reset-password failed: unexpected error");
     return { error: "Something went wrong. Please try again." };
   }
 }

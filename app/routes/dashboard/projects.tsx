@@ -2,6 +2,7 @@ import { ProjectsView } from "~/components/dashboard/workspace/projects-view";
 import { PERSONAL, ProjectKind, type ProjectDto } from "~/lib/api";
 import { ApiError, createProject, listProjects, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/projects";
@@ -11,7 +12,9 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
 
@@ -20,16 +23,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   try {
-    const page = await listProjects(accessToken, PERSONAL);
+    const page = await listProjects(accessToken, PERSONAL, reqLog);
     return { projects: page.items, error: null as string | null };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load your projects.";
+    reqLog.error({ err: error }, "failed to load projects");
     return { projects: [] as ProjectDto[], error: message };
   }
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   if (!accessToken) {
@@ -47,14 +53,14 @@ export async function action({ request }: Route.ActionArgs) {
       if (!name) {
         return { error: "Give your project a name." };
       }
-      await createProject(accessToken, PERSONAL, { kind, name, description });
+      await createProject(accessToken, PERSONAL, { kind, name, description }, reqLog);
       return { ok: true, intent };
     }
 
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
-        await softDelete(accessToken, "projects", id);
+        await softDelete(accessToken, "projects", id, reqLog);
       }
       return { ok: true, intent };
     }
@@ -62,6 +68,7 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Unknown action." };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    reqLog.error({ err: error, intent }, "project action failed");
     return { error: message };
   }
 }
