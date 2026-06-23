@@ -1,5 +1,11 @@
 import { useState } from "react";
 
+import {
+  CARD_GRADIENTS,
+  MetricCard,
+  PageHeader,
+  SectionHeader,
+} from "~/components/dashboard/layout/DashboardPageLayout";
 import { Modal, primaryButtonClass } from "~/components/dashboard/section";
 
 export function meta() {
@@ -46,43 +52,11 @@ const MOCK_KITS: BrandKit[] = [
   },
 ];
 
-const CARD_GRADIENTS = [
-  "from-primary/20 via-surface-container to-secondary/10",
-  "from-tertiary/25 via-surface-container to-primary/10",
-  "from-secondary/20 via-surface-container to-tertiary/10",
-];
+
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  tone = "primary",
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  tone?: "primary" | "secondary" | "tertiary";
-}) {
-  const toneMap = {
-    primary: "bg-primary/10 text-primary",
-    secondary: "bg-secondary/10 text-secondary",
-    tertiary: "bg-tertiary/10 text-tertiary",
-  };
 
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div
-        className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg ${toneMap[tone]}`}
-      >
-        <span className="material-symbols-outlined text-[20px]">{icon}</span>
-      </div>
-      <p className="mb-1 text-label-sm text-on-surface-variant">{label}</p>
-      <span className="text-headline-md font-bold text-on-surface">{value}</span>
-    </div>
-  );
-}
 
 function ColorSwatches({ colors }: { colors: string[] }) {
   return (
@@ -153,18 +127,12 @@ export default function BrandKits() {
 
   return (
     <section className="space-y-10">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-headline-lg font-bold text-on-surface">Brand Kits</h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            Keep colors, fonts, and logos consistent across every project.
-          </p>
-        </div>
+      <PageHeader title="Brand Kits" subtitle="Keep colors, fonts, and logos consistent across every project.">
         <button type="button" onClick={() => setCreateOpen(true)} className={primaryButtonClass()}>
           <span className="material-symbols-outlined text-[18px]">add</span>
           Create brand kit
         </button>
-      </div>
+      </PageHeader>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon="palette" label="Total Kits" value={MOCK_KITS.length} />

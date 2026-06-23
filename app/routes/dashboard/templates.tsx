@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
+import {
+  CARD_GRADIENTS,
+  MetricCard,
+  PageHeader,
+  SectionHeader,
+  SortDropdown,
+} from "~/components/dashboard/layout/DashboardPageLayout";
 import { primaryButtonClass } from "~/components/dashboard/section";
 
 export function meta() {
@@ -187,62 +194,11 @@ const MOCK_METRICS = {
   downloads: "2.4K",
 };
 
-const CARD_GRADIENTS = [
-  "from-primary/25 via-surface-container to-secondary/10",
-  "from-tertiary/25 via-surface-container to-primary/10",
-  "from-secondary/20 via-surface-container to-tertiary/10",
-  "from-primary/15 via-surface-container-high to-tertiary/15",
-  "from-secondary/15 via-surface-container to-primary/15",
-  "from-tertiary/15 via-surface-container-high to-secondary/15",
-];
+
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  tone = "primary",
-  trend,
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  tone?: "primary" | "secondary" | "tertiary";
-  trend?: number;
-}) {
-  const toneMap = {
-    primary: "bg-primary/10 text-primary",
-    secondary: "bg-secondary/10 text-secondary",
-    tertiary: "bg-tertiary/10 text-tertiary",
-  };
 
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg">
-        <div
-          className={`flex h-10 w-10 items-center justify-center rounded-lg ${toneMap[tone]}`}
-        >
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
-        </div>
-      </div>
-      <p className="mb-1 text-label-sm text-on-surface-variant">{label}</p>
-      <div className="flex items-end justify-between gap-2">
-        <span className="text-headline-md font-bold text-on-surface">
-          {value}
-        </span>
-        {trend != null && (
-          <span className="inline-flex items-center gap-1 text-label-sm font-bold text-secondary">
-            <span className="material-symbols-outlined text-[12px]">
-              trending_up
-            </span>
-            {trend}%
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function TemplateCard({
   template,
@@ -410,32 +366,21 @@ export default function Templates() {
   return (
     <section className="space-y-10">
       {/* ── Page Header ────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-headline-lg font-bold text-on-surface">
-            Templates
-          </h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            Ready-to-use templates for faster and more professional edits.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-              Sort by
-            </span>
-            <select className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-body-sm text-on-surface outline-none transition-colors hover:border-primary/40 focus:border-primary">
-              <option>Latest Added</option>
-              <option>Most Popular</option>
-              <option>Name</option>
-            </select>
-          </label>
-          <button type="button" className={primaryButtonClass()}>
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            Create Template
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Templates" subtitle="Ready-to-use templates for faster and more professional edits.">
+        <SortDropdown
+          value="latest"
+          onChange={() => {}}
+          options={[
+            { label: "Latest Added", value: "latest" },
+            { label: "Most Popular", value: "popular" },
+            { label: "Name", value: "name" },
+          ]}
+        />
+        <button type="button" className={primaryButtonClass()}>
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          Create Template
+        </button>
+      </PageHeader>
 
       {/* ── Stats Grid ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -474,20 +419,7 @@ export default function Templates() {
 
       {/* ── Category Filter Pills ──────────────────────────────────────────── */}
       <div>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            Browse by Category
-          </h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Browse by Category" actionOnClick={() => {}} />
         <div className="flex gap-3 overflow-x-auto pb-2">
           {CATEGORIES.map((cat) => (
             <button
@@ -511,20 +443,7 @@ export default function Templates() {
 
       {/* ── Featured Templates ─────────────────────────────────────────────── */}
       <section>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            Featured Templates
-          </h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Featured Templates" actionOnClick={() => {}} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {featuredTemplates.map((tmpl, i) => (
             <TemplateCard key={tmpl.id} template={tmpl} index={i} />
@@ -534,20 +453,7 @@ export default function Templates() {
 
       {/* ── Popular Templates ──────────────────────────────────────────────── */}
       <section>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            Popular Templates
-          </h2>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">
-              arrow_forward
-            </span>
-          </button>
-        </div>
+        <SectionHeader title="Popular Templates" actionOnClick={() => {}} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {popularTemplates.map((tmpl, i) => (
             <TemplateCard

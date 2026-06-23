@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
+import {
+  MetricCard,
+  PageHeader,
+  SectionHeader,
+} from "~/components/dashboard/layout/DashboardPageLayout";
 import { primaryButtonClass } from "~/components/dashboard/section";
 
 export function meta() {
@@ -106,36 +111,7 @@ const FILTER_OPTIONS = [
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  tone = "primary",
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  tone?: "primary" | "secondary" | "tertiary" | "error";
-}) {
-  const toneMap = {
-    primary: "bg-primary/10 text-primary",
-    secondary: "bg-secondary/10 text-secondary",
-    tertiary: "bg-tertiary/10 text-tertiary",
-    error: "bg-error/10 text-error",
-  };
 
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div
-        className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg ${toneMap[tone]}`}
-      >
-        <span className="material-symbols-outlined text-[20px]">{icon}</span>
-      </div>
-      <p className="mb-1 text-label-sm text-on-surface-variant">{label}</p>
-      <span className="text-headline-md font-bold text-on-surface">{value}</span>
-    </div>
-  );
-}
 
 function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
   const config = STATUS_CONFIG[status];
@@ -195,18 +171,12 @@ export default function Reviews() {
 
   return (
     <section className="space-y-10">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-headline-lg font-bold text-on-surface">Reviews</h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            Track and manage project review requests from your team.
-          </p>
-        </div>
+      <PageHeader title="Reviews" subtitle="Track and manage project review requests from your team.">
         <Link to="/dashboard/projects" className={primaryButtonClass()}>
           <span className="material-symbols-outlined text-[18px]">send</span>
           Submit for review
         </Link>
-      </div>
+      </PageHeader>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon="rate_review" label="Pending" value={pendingCount} tone="tertiary" />
@@ -243,12 +213,10 @@ export default function Reviews() {
       </div>
 
       <section>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-headline-md font-bold text-on-surface">
-            {filter === "all" ? "All Reviews" : FILTER_OPTIONS.find((o) => o.value === filter)?.label}
-          </h2>
-          <span className="text-label-md text-on-surface-variant">{filtered.length} items</span>
-        </div>
+        <SectionHeader
+          title={filter === "all" ? "All Reviews" : FILTER_OPTIONS.find((o) => o.value === filter)?.label || ""}
+          count={`${filtered.length} items`}
+        />
 
         {filtered.length === 0 ? (
           <div className="rounded-xl border border-dashed border-outline-variant bg-surface-container-low px-6 py-16 text-center">
