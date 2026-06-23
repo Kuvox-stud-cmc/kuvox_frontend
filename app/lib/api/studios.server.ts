@@ -2,7 +2,7 @@ import { API_ROUTES } from "~/const/api-routes";
 import type { StudioDto, StudioMemberDto } from "../api";
 import { BaseApiModule } from "./base.server";
 import type { RequestLogger } from "../logger.server";
-import { apiClient } from "./api-client.server";
+import { apiClient, bearerAuth } from "./api-client.server";
 
 export class StudiosApi extends BaseApiModule {
   listMyStudios(token: string, log?: RequestLogger): Promise<StudioDto[]> {
@@ -14,7 +14,7 @@ export class StudiosApi extends BaseApiModule {
   }
 
   addStudioMember(token: string, studioId: string, input: { email: string; role: number }, log?: RequestLogger): Promise<StudioMemberDto> {
-    return this.client.post<StudioMemberDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/members`, { email: input.email, role: input.role }, { auth: require("./api-client.server").bearerAuth(token), log });
+    return this.client.post<StudioMemberDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/members`, { email: input.email, role: input.role }, { auth: bearerAuth(token), log });
   }
 
   updateStudioMember(token: string, studioId: string, userId: string, role: number, log?: RequestLogger): Promise<StudioMemberDto> {
@@ -26,7 +26,7 @@ export class StudiosApi extends BaseApiModule {
   }
 
   createStudio(token: string, name: string, log?: RequestLogger): Promise<StudioDto> {
-    return this.client.post<StudioDto>(`${API_ROUTES.STUDIOS_AUTH}`, { name }, { auth: require("./api-client.server").bearerAuth(token), log });
+    return this.client.post<StudioDto>(`${API_ROUTES.STUDIOS_AUTH}`, { name }, { auth: bearerAuth(token), log });
   }
 
   getStudioClaims(accessToken: string): Array<{ studioId: string; role: string }> {
