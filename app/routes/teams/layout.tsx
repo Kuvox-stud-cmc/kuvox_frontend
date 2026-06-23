@@ -88,7 +88,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
         </nav>
 
         <div className="mt-auto border-t border-outline-variant pt-4">
-          <WorkspaceSwitcher studios={studioList} active={{ kind: "studio", studioId: studio.id }} direction="down" />
+          <WorkspaceSwitcher studios={studioList} active={{ kind: "studio", studioId: studio.id }}/>
 
           <div className="mt-3 px-3 text-body-sm font-medium text-on-surface">
             {user.displayName}
