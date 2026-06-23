@@ -162,31 +162,43 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
     <>
       {/* Scrollable nav content */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-5">
-        {/* Logo + collapse toggle */}
+        {/* Logo + collapse/expand toggle */}
         <div
-          className={`mb-5 flex items-center ${collapsed ? "justify-center" : "justify-between"}`}
+          className={`mb-5 flex flex-col items-center ${collapsed ? "gap-2" : ""}`}
         >
-          <Link to="/" className="flex shrink-0">
-            {collapsed ? (
-              <img
-                src="/logo.svg"
-                alt="Kuvox"
-                className="h-7 w-7 object-contain"
-              />
-            ) : (
-              <img src="/logo.svg" alt="Kuvox" className="h-7" />
+          <div className={`flex w-full items-center ${collapsed ? "justify-center" : "justify-between"}`}>
+            <Link to="/" className="flex shrink-0">
+              {collapsed ? (
+                <img
+                  src="/logo.svg"
+                  alt="Kuvox"
+                  className="h-7 w-7 object-contain"
+                />
+              ) : (
+                <img src="/logo.svg" alt="Kuvox" className="h-7" />
+              )}
+            </Link>
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={isMobile ? toggleMobile : toggleCollapsed}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+                aria-label={isMobile ? "Close menu" : "Collapse sidebar"}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {isMobile ? "close" : "left_panel_close"}
+                </span>
+              </button>
             )}
-          </Link>
-          {!collapsed && (
+          </div>
+          {collapsed && !isMobile && (
             <button
               type="button"
-              onClick={isMobile ? toggleMobile : toggleCollapsed}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
-              aria-label={isMobile ? "Close menu" : "Collapse sidebar"}
+              onClick={toggleCollapsed}
+              className="flex h-10 w-10 mx-auto items-center justify-center rounded-xl text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+              aria-label="Expand sidebar"
             >
-              <span className="material-symbols-outlined text-[18px]">
-                {isMobile ? "close" : "left_panel_close"}
-              </span>
+              <span className="material-symbols-outlined text-[20px]">left_panel_open</span>
             </button>
           )}
         </div>

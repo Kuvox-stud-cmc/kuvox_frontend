@@ -52,7 +52,7 @@ export function WorkspaceSwitcher({
           />
           <div
             role="menu"
-            className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-outline-variant bg-surface-container-high shadow-lg"
+            className="absolute top-full left-0 z-20 mt-2 w-full overflow-hidden rounded-lg border border-outline-variant bg-surface-container-high shadow-lg max-h-[300px] overflow-y-auto"
           >
             <Link
               to="/dashboard"
