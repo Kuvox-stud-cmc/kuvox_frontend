@@ -15,3 +15,8 @@ export const SESSION_SECRET =
 export const IS_PRODUCTION =
   (typeof process !== "undefined" && process.env.NODE_ENV === "production") ||
   import.meta.env.PROD;
+
+/** Pino log level for the BFF server logger. Defaults to `debug` in dev, `info` in prod. */
+export const LOG_LEVEL =
+  (typeof process !== "undefined" && process.env.LOG_LEVEL) ||
+  (IS_PRODUCTION ? "info" : "debug");

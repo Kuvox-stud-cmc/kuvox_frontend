@@ -1,15 +1,17 @@
 import { Link } from "react-router";
 
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/welcome";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Welcome · Kuvox" }];
+  return [{ title: "Welcome to Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const user = await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
   return { user };
 }
 

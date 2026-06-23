@@ -2,6 +2,7 @@ import { Form, Link, redirect, useNavigation } from "react-router";
 
 import { ApiError, registerRequest } from "~/lib/api.server";
 import { redirectIfAuthenticated } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/signup";
 
@@ -28,16 +29,21 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Password must be at least 8 characters." };
   }
 
+  const log = createRequestLogger(request);
+
   try {
-    await registerRequest(email, password, displayName);
+    await registerRequest(email, password, displayName, log);
+    log.info("signup succeeded");
 
     // Hard gate: no auto-login. Send the user to the verification-pending page;
     // they must verify their email before they can sign in.
     return redirect(`/verify-pending?email=${encodeURIComponent(email)}`);
   } catch (error) {
     if (error instanceof ApiError && error.status === 409) {
+      log.warn("signup failed: account already exists");
       return { error: "An account with this email already exists." };
     }
+    log.error({ err: error }, "signup failed: unexpected error");
     return { error: "Something went wrong. Please try again." };
   }
 }

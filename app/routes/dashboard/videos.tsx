@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import {
   CARD_GRADIENTS,
@@ -87,6 +88,50 @@ const MOCK_VIDEOS: MockVideo[] = [
   },
 ];
 
+interface ArchivedVideo {
+  id: string;
+  title: string;
+  archivedDate: string;
+  duration: string;
+  resolution: string;
+  reason: string;
+}
+
+const MOCK_ARCHIVED: ArchivedVideo[] = [
+  {
+    id: "av1",
+    title: "Old Brand Promo 2023",
+    archivedDate: "2 weeks ago",
+    duration: "02:30",
+    resolution: "1080p",
+    reason: "Outdated branding",
+  },
+  {
+    id: "av2",
+    title: "Product Launch v1",
+    archivedDate: "1 month ago",
+    duration: "05:12",
+    resolution: "4K",
+    reason: "Superseded by v2",
+  },
+  {
+    id: "av3",
+    title: "Training Session Raw",
+    archivedDate: "3 months ago",
+    duration: "45:20",
+    resolution: "1080p",
+    reason: "Completed project",
+  },
+  {
+    id: "av4",
+    title: "Event Recap Draft",
+    archivedDate: "2 months ago",
+    duration: "08:45",
+    resolution: "4K",
+    reason: "Final version exported",
+  },
+];
+
 const MOCK_METRICS = {
   totalProjects: 24,
   inProgress: 6,
@@ -147,11 +192,10 @@ function VideoCard({
   if (listView) {
     return (
       <div
-        className={`group flex items-center gap-4 rounded-xl border bg-surface-container-low p-3 transition-colors ${
-          video.status === "failed"
+        className={`group flex items-center gap-4 rounded-xl border bg-surface-container-low p-3 transition-colors ${video.status === "failed"
             ? "border-error/30 hover:border-error/50"
             : "border-outline-variant hover:border-primary/40"
-        }`}
+          }`}
       >
         <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
           {video.status === "failed" ? (
@@ -389,12 +433,144 @@ function CreateNewCard({ onClick }: { onClick: () => void }) {
   );
 }
 
+function ArchivedVideoCard({
+  video,
+  index,
+  listView,
+}: {
+  video: ArchivedVideo;
+  index: number;
+  listView: boolean;
+}) {
+  if (listView) {
+    return (
+      <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
+        <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
+          <div
+            className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]} opacity-50`}
+          >
+            <span className="material-symbols-outlined text-[24px] text-on-surface-variant/30">
+              archive
+            </span>
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-body-sm font-bold text-on-surface/70" title={video.title}>
+            {video.title}
+          </h3>
+          <p className="mt-1 text-label-md text-on-surface-variant">
+            Archived {video.archivedDate}
+          </p>
+        </div>
+        <span className="hidden rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant sm:inline-flex">
+          {video.reason}
+        </span>
+        <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
+          <span>{video.duration}</span>
+          <span className="h-1 w-1 rounded-full bg-outline-variant" />
+          <span>{video.resolution}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-secondary/10 hover:text-secondary"
+            title="Restore"
+          >
+            <span className="material-symbols-outlined text-[18px]">unarchive</span>
+          </button>
+          <button
+            type="button"
+            className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+            title="Delete permanently"
+          >
+            <span className="material-symbols-outlined text-[18px]">delete_forever</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
+      <div className="relative aspect-video overflow-hidden">
+        <div
+          className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]} opacity-40`}
+        >
+          <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
+            archive
+          </span>
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
+        <div className="absolute left-3 top-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high/80 px-2 py-0.5 text-label-sm font-bold text-on-surface-variant backdrop-blur-md">
+            <span className="material-symbols-outlined text-[12px]">archive</span>
+            Archived
+          </span>
+        </div>
+        {video.duration !== "—" && (
+          <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
+            <span className="material-symbols-outlined text-[12px]">play_arrow</span>
+            {video.duration}
+          </span>
+        )}
+      </div>
+      <div className="p-4">
+        <div className="mb-2 flex items-start justify-between">
+          <h3 className="truncate text-body-sm font-bold text-on-surface/70">{video.title}</h3>
+          <button
+            type="button"
+            className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[18px]">more_horiz</span>
+          </button>
+        </div>
+        <p className="mb-2 text-label-md text-on-surface-variant">
+          Archived {video.archivedDate}
+        </p>
+        <p className="mb-3 text-label-sm text-on-surface-variant/60">{video.reason}</p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px]">videocam</span>
+              {video.resolution}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="rounded-lg px-2.5 py-1 text-label-sm font-medium text-secondary transition-colors hover:bg-secondary/10"
+            >
+              Restore
+            </button>
+            <button
+              type="button"
+              className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:text-error"
+            >
+              <span className="material-symbols-outlined text-[16px]">delete_forever</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 /* ── Main component ─────────────────────────────────────────────────────── */
 
 export default function Videos() {
+  const [searchParams] = useSearchParams();
+  const pageView = searchParams.get("view");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<"latest" | "name">("latest");
   const [importOpen, setImportOpen] = useState(false);
+
+  const archivedRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (pageView === "archived" && archivedRef.current) {
+      archivedRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [pageView]);
 
   const videos = [...MOCK_VIDEOS].sort((a, b) => {
     if (sort === "name") return a.title.localeCompare(b.title);
@@ -566,6 +742,52 @@ export default function Videos() {
               />
             ))}
             <CreateNewCard onClick={() => setImportOpen(true)} />
+          </div>
+        )}
+      </section>
+
+      {/* ── Archived Videos ────────────────────────────────────────────────── */}
+      <section ref={archivedRef} style={{ scrollMarginTop: "6rem" }}>
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container-high">
+              <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
+                archive
+              </span>
+            </div>
+            <div>
+              <h2 className="text-headline-md font-bold text-on-surface">Archived</h2>
+              <p className="text-label-sm text-on-surface-variant">
+                {MOCK_ARCHIVED.length} archived project{MOCK_ARCHIVED.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
+          >
+            View All
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </button>
+        </div>
+
+        {MOCK_ARCHIVED.length === 0 ? (
+          <EmptyState
+            icon="archive"
+            title="No archived videos"
+            hint="Archive videos you no longer need to keep your workspace clean."
+          />
+        ) : view === "list" ? (
+          <div className="space-y-3">
+            {MOCK_ARCHIVED.map((video, i) => (
+              <ArchivedVideoCard key={video.id} video={video} index={i} listView />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {MOCK_ARCHIVED.map((video, i) => (
+              <ArchivedVideoCard key={video.id} video={video} index={i} listView={false} />
+            ))}
           </div>
         )}
       </section>

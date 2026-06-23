@@ -2,6 +2,7 @@ import { ErrorBanner, SectionHeader } from "~/components/dashboard/section";
 import { isStudioAdmin, studioRoleLabel, UserStudioRole } from "~/lib/api";
 import { listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/settings";
@@ -11,7 +12,9 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   const studioId = params.studioId;
@@ -20,7 +23,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return { name: "", role: UserStudioRole.User, error: "Your session expired. Please sign in again." };
   }
 
-  const studios = await listMyStudios(accessToken);
+  let studios: import("~/lib/api").StudioDto[] = [];
+
+  try {
+    studios = await listMyStudios(accessToken, reqLog);
+  } catch (error) {
+    reqLog.error({ err: error }, "failed to load studios in settings");
+  }
   const studio = studios.find((s) => s.id === studioId);
   return {
     name: studio?.name ?? "",

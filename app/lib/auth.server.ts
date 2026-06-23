@@ -1,6 +1,7 @@
 import { redirect } from "react-router";
 
 import { refreshRequest } from "./api.server";
+import { logger, type RequestLogger } from "./logger.server";
 import {
   commitSession,
   destroySession,
@@ -11,9 +12,18 @@ import {
 /** Returns the signed-in user, or `null` for anonymous requests. Never redirects. */
 export async function getOptionalUser(
   request: Request,
+  log?: RequestLogger,
 ): Promise<SessionUser | null> {
   const session = await getSession(request);
-  return session.get("user") ?? null;
+  const user = session.get("user") ?? null;
+  if (log) {
+    if (user) {
+      log.debug({ userId: user.id }, "getOptionalUser: user found");
+    } else {
+      log.debug("getOptionalUser: no user found");
+    }
+  }
+  return user;
 }
 
 /**
@@ -21,7 +31,10 @@ export async function getOptionalUser(
  * transparently rotating an expired access token via the refresh token. Redirects to
  * `/login` (preserving the intended path) when there is no usable session.
  */
-export async function requireUser(request: Request): Promise<SessionUser> {
+export async function requireUser(
+  request: Request,
+  log: RequestLogger = logger,
+): Promise<SessionUser> {
   const session = await getSession(request);
   const user = session.get("user");
   const accessToken = session.get("accessToken");
@@ -34,11 +47,13 @@ export async function requireUser(request: Request): Promise<SessionUser> {
   };
 
   if (!user || !accessToken) {
+    log.debug("auth guard: no session, redirecting to login");
     throw loginRedirect();
   }
 
   // Still valid (with a small clock-skew buffer)?
   if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5_000) {
+    log.debug({ userId: user.id }, "auth guard: session valid");
     return user;
   }
 
@@ -46,10 +61,11 @@ export async function requireUser(request: Request): Promise<SessionUser> {
   // refreshed cookie in place.
   if (refreshToken) {
     try {
-      const tokens = await refreshRequest(refreshToken);
+      const tokens = await refreshRequest(refreshToken, log);
       session.set("accessToken", tokens.accessToken);
       session.set("refreshToken", tokens.refreshToken);
       session.set("expiresAt", tokens.expiresAt);
+      log.info({ userId: user.id }, "auth guard: rotated access token");
       throw redirect(request.url, {
         headers: { "Set-Cookie": await commitSession(session) },
       });
@@ -57,6 +73,7 @@ export async function requireUser(request: Request): Promise<SessionUser> {
       if (error instanceof Response) {
         throw error; // the redirect above
       }
+      log.warn({ userId: user.id }, "auth guard: token refresh failed, logging out");
       // fall through to a clean logout on refresh failure
     }
   }
@@ -70,9 +87,11 @@ export async function requireUser(request: Request): Promise<SessionUser> {
 export async function redirectIfAuthenticated(
   request: Request,
   to = "/dashboard",
+  log?: RequestLogger,
 ): Promise<void> {
-  const user = await getOptionalUser(request);
+  const user = await getOptionalUser(request, log);
   if (user) {
+    if (log) log.debug({ userId: user.id }, `redirectIfAuthenticated: redirecting to ${to}`);
     throw redirect(to);
   }
 }

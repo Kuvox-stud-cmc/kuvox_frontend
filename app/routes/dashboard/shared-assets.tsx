@@ -26,6 +26,7 @@ import {
 } from "~/lib/api";
 import { listSharedMedia, listSharedProjects } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/shared-assets";
@@ -39,7 +40,9 @@ export function meta(_: Route.MetaArgs) {
 /* ── Loader ─────────────────────────────────────────────────────────────── */
 
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
 
@@ -52,8 +55,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const [projectsResult, mediaResult] = await Promise.allSettled([
-    listSharedProjects(accessToken),
-    listSharedMedia(accessToken),
+    listSharedProjects(accessToken, reqLog),
+    listSharedMedia(accessToken, reqLog),
   ]);
 
   const projects = projectsResult.status === "fulfilled" ? projectsResult.value.items : [];
@@ -62,6 +65,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectsResult.status === "rejected" || mediaResult.status === "rejected"
       ? "Some shared items couldn't be loaded."
       : null;
+  if (error) reqLog.warn("some shared items failed to load");
 
   return { projects, media, error };
 }

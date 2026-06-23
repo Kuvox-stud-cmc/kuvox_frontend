@@ -6,6 +6,7 @@ import {
   loginRequest,
 } from "~/lib/api.server";
 import { redirectIfAuthenticated } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
 import { commitSession, getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/login";
@@ -30,9 +31,12 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Email and password are required." };
   }
 
+  const log = createRequestLogger(request);
+
   try {
-    const tokens = await loginRequest(email, password);
-    const user = await fetchMe(tokens.accessToken);
+    const tokens = await loginRequest(email, password, log);
+    const user = await fetchMe(tokens.accessToken, log);
+    log.info({ userId: user.id }, "login succeeded");
 
     const session = await getSession(request);
     session.set("accessToken", tokens.accessToken);
@@ -45,6 +49,7 @@ export async function action({ request }: Route.ActionArgs) {
     });
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
+      log.warn("login failed: invalid credentials");
       return { error: "Invalid email or password.", unverified: false, email };
     }
     if (error instanceof ApiError && error.status === 403) {

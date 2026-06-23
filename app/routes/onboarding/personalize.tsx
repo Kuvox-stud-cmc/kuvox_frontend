@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Form, Link, redirect, useNavigation } from "react-router";
 
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/personalize";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Personalize · Kuvox" }];
+  return [{ title: "Personalize your experience · Kuvox" }];
 }
 
 const ROLES = [
@@ -45,7 +46,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  await requireUser(request);
+  const log = createRequestLogger(request);
+  await requireUser(request, log);
   const formData = await request.formData();
   const role = String(formData.get("role") ?? "").trim();
 

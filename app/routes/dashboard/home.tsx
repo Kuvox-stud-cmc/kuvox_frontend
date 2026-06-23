@@ -11,6 +11,7 @@ import {
   listSharedProjects,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/home";
@@ -24,7 +25,9 @@ function count<T>(result: PromiseSettledResult<{ totalCount: number }>): number 
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const user = await requireUser(request);
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
 
@@ -38,18 +41,21 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [projects, media, sharedProjects, sharedMedia, projectTrash, mediaTrash] =
     await Promise.allSettled([
-      listProjects(accessToken, PERSONAL),
-      listMedia(accessToken, PERSONAL),
-      listSharedProjects(accessToken),
-      listSharedMedia(accessToken),
-      listProjectTrash(accessToken, PERSONAL),
-      listMediaTrash(accessToken, PERSONAL),
+      listProjects(accessToken, PERSONAL, reqLog),
+      listMedia(accessToken, PERSONAL, reqLog),
+      listSharedProjects(accessToken, reqLog),
+      listSharedMedia(accessToken, reqLog),
+      listProjectTrash(accessToken, PERSONAL, reqLog),
+      listMediaTrash(accessToken, PERSONAL, reqLog),
     ]);
 
   const recent = projects.status === "fulfilled" ? projects.value.items.slice(0, 6) : [];
   const anyFailed = [projects, media, sharedProjects, sharedMedia, projectTrash, mediaTrash].some(
     (result) => result.status === "rejected",
   );
+  if (anyFailed) {
+    reqLog.warn("some dashboard data failed to load");
+  }
 
   return {
     user,
