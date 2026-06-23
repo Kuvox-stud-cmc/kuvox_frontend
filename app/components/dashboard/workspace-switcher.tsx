@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useFetcher } from "react-router";
 
+import { Modal, primaryButtonClass } from "~/components/dashboard/section";
 import type { ActiveWorkspace, StudioDto } from "~/lib/api";
 
 /**
@@ -10,11 +11,22 @@ import type { ActiveWorkspace, StudioDto } from "~/lib/api";
 export function WorkspaceSwitcher({
   studios,
   active,
+  direction = "up",
 }: {
   studios: StudioDto[];
   active: ActiveWorkspace;
+  direction?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const fetcher = useFetcher<any>();
+  
+  // Close the create modal when the fetcher finishes successfully
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data && !fetcher.data.error) {
+      setCreateOpen(false);
+    }
+  }, [fetcher.state, fetcher.data]);
 
   const activeStudio =
     active.kind === "studio" ? studios.find((s) => s.id === active.studioId) : undefined;
@@ -52,7 +64,9 @@ export function WorkspaceSwitcher({
           />
           <div
             role="menu"
-            className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-outline-variant bg-surface-container-high shadow-lg"
+            className={`absolute left-0 z-20 w-full overflow-hidden rounded-lg border border-outline-variant bg-surface-container-high shadow-lg ${
+              direction === "up" ? "bottom-full mb-2" : "top-full mt-2"
+            }`}
           >
             <Link
               to="/dashboard"
@@ -89,9 +103,60 @@ export function WorkspaceSwitcher({
                 </Link>
               );
             })}
+            
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setCreateOpen(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-body-sm text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[20px]">add</span>
+              New team
+            </button>
           </div>
         </>
       )}
+
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New team">
+        <fetcher.Form action="/create-studio" method="post" className="space-y-4">
+          {fetcher.data?.error && (
+            <div className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
+              {fetcher.data.error}
+            </div>
+          )}
+          <div>
+            <label htmlFor="team-name" className="block text-label-md text-on-surface-variant">
+              Team Name
+            </label>
+            <input
+              id="team-name"
+              name="name"
+              type="text"
+              required
+              placeholder="My awesome team"
+              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={fetcher.state === "submitting"}
+              className={primaryButtonClass()}
+            >
+              {fetcher.state === "submitting" ? "Creating…" : "Create"}
+            </button>
+          </div>
+        </fetcher.Form>
+      </Modal>
     </div>
   );
 }
