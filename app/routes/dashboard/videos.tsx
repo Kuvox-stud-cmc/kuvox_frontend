@@ -447,7 +447,7 @@ function ArchivedVideoCard({
       <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
         <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
           <div
-            className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]} opacity-50`}
+            className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[index % CARD_GRADIENTS.length]} opacity-50`}
           >
             <span className="material-symbols-outlined text-[24px] text-on-surface-variant/30">
               archive
@@ -494,7 +494,7 @@ function ArchivedVideoCard({
     <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <div className="relative aspect-video overflow-hidden">
         <div
-          className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]} opacity-40`}
+          className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[index % CARD_GRADIENTS.length]} opacity-40`}
         >
           <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
             archive
