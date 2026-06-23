@@ -66,6 +66,7 @@ export default [
   ]),
   // Action-only route (no UI) — destroys the session cookie.
   route("logout", `${routesFolder.AUTH}/logout.tsx`),
+  route("create-studio", `${routesFolder.AUTH}/create-studio.tsx`),
 
   // ── Onboarding ──────────────────────────────────────────────────────────────
   layout(`${routesFolder.ONBOARDING}/layout.tsx`, [
