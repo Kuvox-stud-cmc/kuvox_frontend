@@ -196,6 +196,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
           <WorkspaceSwitcher
             studios={studios}
             active={{ kind: "personal" }}
+            direction="down"
           />
         )}
 
