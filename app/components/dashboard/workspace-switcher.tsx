@@ -10,9 +10,11 @@ import type { ActiveWorkspace, StudioDto } from "~/lib/api";
 export function WorkspaceSwitcher({
   studios,
   active,
+  direction = "up",
 }: {
   studios: StudioDto[];
   active: ActiveWorkspace;
+  direction?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
 
@@ -52,7 +54,9 @@ export function WorkspaceSwitcher({
           />
           <div
             role="menu"
-            className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-outline-variant bg-surface-container-high shadow-lg"
+            className={`absolute left-0 z-20 w-full overflow-hidden rounded-lg border border-outline-variant bg-surface-container-high shadow-lg ${
+              direction === "up" ? "bottom-full mb-2" : "top-full mt-2"
+            }`}
           >
             <Link
               to="/dashboard"
