@@ -117,7 +117,7 @@ const buildMainNav = (studioId: string): NavItemConfig[] => [
     ],
   },
   { to: `/teams/${studioId}/settings`, label: "Settings", icon: "settings" },
-  { to: `/teams/${studioId}/trash`, label: "Recycle Bin", icon: "delete" },
+  { to: `/teams/${studioId}/recycle-bin`, label: "Recycle Bin", icon: "delete" },
 ];
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
