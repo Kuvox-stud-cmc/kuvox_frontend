@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useLoaderData, useSearchParams } from "react-router";
 
 import {
   CARD_GRADIENTS,
@@ -12,125 +12,48 @@ import {
   SortDropdown,
   ViewToggle,
 } from "~/components/dashboard/layout/DashboardPageLayout";
-import {
-  EmptyState,
-  Modal,
-  primaryButtonClass,
-} from "~/components/dashboard/section";
+import { EmptyState, Modal, primaryButtonClass } from "~/components/dashboard/section";
+
+import { listMedia, listMediaTrash } from "~/lib/api.server";
+import { getSession } from "~/lib/session.server";
+import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { PERSONAL, type MediaDto, type MediaTrashItem } from "~/lib/api";
+import type { Route } from "./+types/videos";
 
 export function meta() {
   return [{ title: "Videos · Kuvox" }];
 }
 
+export async function loader({ request }: Route.LoaderArgs) {
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken")!;
+
+  const url = new URL(request.url);
+  const studioId = url.searchParams.get("studioId");
+  const workspace = studioId ? { kind: "studio" as const, studioId } : PERSONAL;
+
+  const [videosRes, trashRes] = await Promise.all([
+    listMedia(accessToken, workspace, reqLog),
+    listMediaTrash(accessToken, workspace, reqLog),
+  ]);
+
+  return { videos: videosRes.items, archived: trashRes.items };
+}
+
+function formatDuration(sec: number | null): string {
+  if (!sec) return "—";
+  const min = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
 /* ── Mock data (to be replaced by real API integration) ─────────────────── */
 
-interface MockVideo {
-  id: string;
-  title: string;
-  editedAgo: string;
-  status: "ready" | "uploading" | "processing" | "failed";
-  duration: string;
-  resolution: string;
-  fps: string;
-  uploadProgress?: number;
-  uploadSize?: string;
-  errorMessage?: string;
-}
-
-const MOCK_VIDEOS: MockVideo[] = [
-  {
-    id: "v1",
-    title: "Cinematic B-Roll Vol 1",
-    editedAgo: "2 hours ago",
-    status: "ready",
-    duration: "04:20",
-    resolution: "4K",
-    fps: "24fps",
-  },
-  {
-    id: "v2",
-    title: "Client Interview Raw",
-    editedAgo: "Uploading 2.4 GB of 4 GB",
-    status: "uploading",
-    duration: "—",
-    resolution: "1080p",
-    fps: "30fps",
-    uploadProgress: 45,
-    uploadSize: "2.4 GB of 4 GB",
-  },
-  {
-    id: "v3",
-    title: "Drone Footage - City Night",
-    editedAgo: "Yesterday",
-    status: "processing",
-    duration: "12:05",
-    resolution: "4K",
-    fps: "60fps",
-  },
-  {
-    id: "v4",
-    title: "Corrupted_File_01.mp4",
-    editedAgo: "Import failed",
-    status: "failed",
-    duration: "—",
-    resolution: "—",
-    fps: "—",
-    errorMessage: "Import failed. Retry?",
-  },
-  {
-    id: "v5",
-    title: "Music Video Teaser",
-    editedAgo: "3 days ago",
-    status: "ready",
-    duration: "01:15",
-    resolution: "4K",
-    fps: "24fps",
-  },
-];
-
-interface ArchivedVideo {
-  id: string;
-  title: string;
-  archivedDate: string;
-  duration: string;
-  resolution: string;
-  reason: string;
-}
-
-const MOCK_ARCHIVED: ArchivedVideo[] = [
-  {
-    id: "av1",
-    title: "Old Brand Promo 2023",
-    archivedDate: "2 weeks ago",
-    duration: "02:30",
-    resolution: "1080p",
-    reason: "Outdated branding",
-  },
-  {
-    id: "av2",
-    title: "Product Launch v1",
-    archivedDate: "1 month ago",
-    duration: "05:12",
-    resolution: "4K",
-    reason: "Superseded by v2",
-  },
-  {
-    id: "av3",
-    title: "Training Session Raw",
-    archivedDate: "3 months ago",
-    duration: "45:20",
-    resolution: "1080p",
-    reason: "Completed project",
-  },
-  {
-    id: "av4",
-    title: "Event Recap Draft",
-    archivedDate: "2 months ago",
-    duration: "08:45",
-    resolution: "4K",
-    reason: "Final version exported",
-  },
-];
+// Mock data replaced with loader data.
 
 const MOCK_METRICS = {
   totalProjects: 24,
@@ -143,29 +66,34 @@ const MOCK_METRICS = {
 
 
 
-function StatusBadge({ status }: { status: MockVideo["status"] }) {
+function StatusBadge({ status }: { status: string }) {
+  const normStatus = status.toLowerCase();
   const config = {
     ready: {
       label: "Ready",
       dotCls: "bg-secondary",
       cls: "bg-secondary/20 text-secondary",
     },
+    uploaded: {
+      label: "Uploaded",
+      dotCls: "bg-primary",
+      cls: "bg-primary/20 text-primary",
+    },
     processing: {
       label: "Processing",
       dotCls: "bg-tertiary animate-pulse",
       cls: "bg-tertiary/20 text-tertiary",
-    },
-    uploading: {
-      label: "Uploading",
-      dotCls: "bg-primary",
-      cls: "bg-primary/20 text-primary",
     },
     failed: {
       label: "Failed",
       dotCls: "bg-error",
       cls: "bg-error/20 text-error",
     },
-  }[status];
+  }[normStatus] || {
+    label: status,
+    dotCls: "bg-outline",
+    cls: "bg-surface-container-high text-on-surface-variant",
+  };
 
   return (
     <span
@@ -184,36 +112,40 @@ function VideoCard({
   index,
   listView,
 }: {
-  video: MockVideo;
+  video: MediaDto;
   index: number;
   listView: boolean;
 }) {
+  const status = video.status.toLowerCase();
+  const res = video.width && video.height ? `${video.width}x${video.height}` : "—";
+  const fpsStr = "—";
+
   /* ── List view ────────────────────────────────────────────────────────── */
   if (listView) {
     return (
       <div
-        className={`group flex items-center gap-4 rounded-xl border bg-surface-container-low p-3 transition-colors ${video.status === "failed"
+        className={`group flex items-center gap-4 rounded-xl border bg-surface-container-low p-3 transition-colors ${status === "failed"
             ? "border-error/30 hover:border-error/50"
             : "border-outline-variant hover:border-primary/40"
           }`}
       >
         <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
-          {video.status === "failed" ? (
+          {status === "failed" ? (
             <div className="flex h-full w-full items-center justify-center bg-error/5">
               <span className="material-symbols-outlined text-[24px] text-error">
                 error
               </span>
             </div>
-          ) : video.status === "uploading" ? (
+          ) : status === "uploading" || status === "uploaded" ? (
             <div className="flex h-full w-full flex-col items-center justify-center bg-surface-container p-2">
               <div className="mb-1 h-1 w-full overflow-hidden rounded-full bg-surface-container-high">
                 <div
                   className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${video.uploadProgress ?? 0}%` }}
+                  style={{ width: `100%` }}
                 />
               </div>
               <span className="text-label-sm text-primary">
-                {video.uploadProgress}%
+                100%
               </span>
             </div>
           ) : (
@@ -222,25 +154,23 @@ function VideoCard({
         </div>
         <div className="min-w-0 flex-1">
           <h3
-            className={`truncate text-body-sm font-bold ${video.status === "failed" ? "text-error" : "text-on-surface"}`}
-            title={video.title}
+            className={`truncate text-body-sm font-bold ${status === "failed" ? "text-error" : "text-on-surface"}`}
+            title={video.filename}
           >
-            {video.title}
+            {video.filename}
           </h3>
           <p
-            className={`mt-1 text-label-md ${video.status === "failed" ? "text-error/70" : "text-on-surface-variant"}`}
+            className={`mt-1 text-label-md ${status === "failed" ? "text-error/70" : "text-on-surface-variant"}`}
           >
-            {video.status === "failed"
-              ? video.errorMessage
-              : video.editedAgo}
+            {new Date(video.createdAt).toLocaleDateString()}
           </p>
         </div>
         <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
-          {video.duration !== "—" && <span>{video.duration}</span>}
-          {video.resolution !== "—" && (
+          {video.durationSeconds != null && <span>{formatDuration(video.durationSeconds)}</span>}
+          {res !== "—" && (
             <>
               <span className="h-1 w-1 rounded-full bg-outline-variant" />
-              <span>{video.resolution}</span>
+              <span>{res}</span>
             </>
           )}
         </div>
@@ -258,7 +188,7 @@ function VideoCard({
   }
 
   /* ── Grid view: Failed card ───────────────────────────────────────────── */
-  if (video.status === "failed") {
+  if (status === "failed") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-error/40">
         <div className="relative flex aspect-video items-center justify-center bg-error/5">
@@ -275,10 +205,10 @@ function VideoCard({
         </div>
         <div className="p-4">
           <h3 className="truncate text-body-sm font-bold text-error">
-            {video.title}
+            {video.filename}
           </h3>
           <p className="mt-1 text-label-md text-error/70">
-            {video.errorMessage}
+            Import failed.
           </p>
           <div className="mt-3 flex items-center justify-end">
             <button
@@ -296,7 +226,7 @@ function VideoCard({
   }
 
   /* ── Grid view: Uploading card ────────────────────────────────────────── */
-  if (video.status === "uploading") {
+  if (status === "uploading" || status === "uploaded") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
         <div className="relative flex aspect-video items-center justify-center bg-surface-container">
@@ -306,13 +236,13 @@ function VideoCard({
                 Uploading
               </span>
               <span className="text-label-sm text-primary">
-                {video.uploadProgress}% • 2 mins left
+                100%
               </span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high">
               <div
                 className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${video.uploadProgress}%` }}
+                style={{ width: `100%` }}
               />
             </div>
           </div>
@@ -323,7 +253,7 @@ function VideoCard({
         <div className="p-4">
           <div className="mb-2 flex items-start justify-between">
             <h3 className="truncate text-body-sm font-bold text-on-surface">
-              {video.title}
+              {video.filename}
             </h3>
             <button
               type="button"
@@ -335,12 +265,12 @@ function VideoCard({
             </button>
           </div>
           <p className="mb-3 text-label-md text-on-surface-variant">
-            Uploading {video.uploadSize}
+            {(video.sizeBytes / 1024 / 1024).toFixed(1)} MB
           </p>
           <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-            <span>{video.resolution}</span>
+            <span>{res}</span>
             <span className="h-1 w-1 rounded-full bg-outline-variant" />
-            <span>{video.fps}</span>
+            <span>{fpsStr}</span>
           </div>
         </div>
       </article>
@@ -360,7 +290,7 @@ function VideoCard({
         </div>
 
         {/* Processing overlay */}
-        {video.status === "processing" && (
+        {status === "processing" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface/40">
             <span className="text-label-md font-bold text-on-surface">
               Ready to edit
@@ -369,12 +299,12 @@ function VideoCard({
         )}
 
         {/* Duration badge */}
-        {video.duration !== "—" && (
+        {video.durationSeconds != null && (
           <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
             <span className="material-symbols-outlined text-[12px]">
               play_arrow
             </span>
-            {video.duration}
+            {formatDuration(video.durationSeconds)}
           </span>
         )}
       </div>
@@ -382,7 +312,7 @@ function VideoCard({
       <div className="p-4">
         <div className="mb-2 flex items-start justify-between">
           <h3 className="truncate text-body-sm font-bold text-on-surface">
-            {video.title}
+            {video.filename}
           </h3>
           <button
             type="button"
@@ -394,17 +324,17 @@ function VideoCard({
           </button>
         </div>
         <p className="mb-3 text-label-md text-on-surface-variant">
-          {video.editedAgo}
+          {new Date(video.createdAt).toLocaleDateString()}
         </p>
         <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
           <span className="flex items-center gap-1">
             <span className="material-symbols-outlined text-[14px]">
               videocam
             </span>
-            {video.resolution}
+            {res}
           </span>
           <span className="h-1 w-1 rounded-full bg-outline-variant" />
-          <span>{video.fps}</span>
+          <span>{fpsStr}</span>
         </div>
       </div>
     </article>
@@ -438,7 +368,7 @@ function ArchivedVideoCard({
   index,
   listView,
 }: {
-  video: ArchivedVideo;
+  video: MediaTrashItem;
   index: number;
   listView: boolean;
 }) {
@@ -455,20 +385,18 @@ function ArchivedVideoCard({
           </div>
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-body-sm font-bold text-on-surface/70" title={video.title}>
-            {video.title}
+          <h3 className="truncate text-body-sm font-bold text-on-surface/70" title={video.filename}>
+            {video.filename}
           </h3>
           <p className="mt-1 text-label-md text-on-surface-variant">
-            Archived {video.archivedDate}
+            Archived {new Date(video.deletedAt).toLocaleDateString()}
           </p>
         </div>
         <span className="hidden rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant sm:inline-flex">
-          {video.reason}
+          Purges in {video.purgesInDays} days
         </span>
         <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-          <span>{video.duration}</span>
-          <span className="h-1 w-1 rounded-full bg-outline-variant" />
-          <span>{video.resolution}</span>
+          {/* Missing duration / resolution on trash items */}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -507,16 +435,11 @@ function ArchivedVideoCard({
             Archived
           </span>
         </div>
-        {video.duration !== "—" && (
-          <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
-            <span className="material-symbols-outlined text-[12px]">play_arrow</span>
-            {video.duration}
-          </span>
-        )}
+        {/* Trash item no duration atm */}
       </div>
       <div className="p-4">
         <div className="mb-2 flex items-start justify-between">
-          <h3 className="truncate text-body-sm font-bold text-on-surface/70">{video.title}</h3>
+          <h3 className="truncate text-body-sm font-bold text-on-surface/70">{video.filename}</h3>
           <button
             type="button"
             className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
@@ -525,15 +448,12 @@ function ArchivedVideoCard({
           </button>
         </div>
         <p className="mb-2 text-label-md text-on-surface-variant">
-          Archived {video.archivedDate}
+          Archived {new Date(video.deletedAt).toLocaleDateString()}
         </p>
-        <p className="mb-3 text-label-sm text-on-surface-variant/60">{video.reason}</p>
+        <p className="mb-3 text-label-sm text-on-surface-variant/60">Purges in {video.purgesInDays} days</p>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">videocam</span>
-              {video.resolution}
-            </span>
+            {/* Resolution missing in DTO */}
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -557,7 +477,8 @@ function ArchivedVideoCard({
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 
-export default function Videos() {
+export default function Videos({ loaderData }: Route.ComponentProps) {
+  const { videos: apiVideos, archived: apiArchived } = loaderData;
   const [searchParams] = useSearchParams();
   const pageView = searchParams.get("view");
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -572,9 +493,9 @@ export default function Videos() {
     }
   }, [pageView]);
 
-  const videos = [...MOCK_VIDEOS].sort((a, b) => {
-    if (sort === "name") return a.title.localeCompare(b.title);
-    return 0; // "latest" — mock data is already in order
+  const videos = [...apiVideos].sort((a, b) => {
+    if (sort === "name") return a.filename.localeCompare(b.filename);
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
   return (
@@ -758,7 +679,7 @@ export default function Videos() {
             <div>
               <h2 className="text-headline-md font-bold text-on-surface">Archived</h2>
               <p className="text-label-sm text-on-surface-variant">
-                {MOCK_ARCHIVED.length} archived project{MOCK_ARCHIVED.length !== 1 ? "s" : ""}
+                {apiArchived.length} archived project{apiArchived.length !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -771,7 +692,7 @@ export default function Videos() {
           </button>
         </div>
 
-        {MOCK_ARCHIVED.length === 0 ? (
+        {apiArchived.length === 0 ? (
           <EmptyState
             icon="archive"
             title="No archived videos"
@@ -779,13 +700,13 @@ export default function Videos() {
           />
         ) : view === "list" ? (
           <div className="space-y-3">
-            {MOCK_ARCHIVED.map((video, i) => (
+            {apiArchived.map((video, i) => (
               <ArchivedVideoCard key={video.id} video={video} index={i} listView />
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {MOCK_ARCHIVED.map((video, i) => (
+            {apiArchived.map((video, i) => (
               <ArchivedVideoCard key={video.id} video={video} index={i} listView={false} />
             ))}
           </div>

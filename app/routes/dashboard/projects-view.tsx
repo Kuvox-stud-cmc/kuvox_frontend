@@ -1,9 +1,16 @@
 import { useState } from "react";
+import { useLoaderData, useSearchParams } from "react-router";
 
-import {
-    Modal,
-    primaryButtonClass,
-} from "~/components/dashboard/section";
+import { Modal, primaryButtonClass } from "~/components/dashboard/section";
+
+import { PERSONAL, type ProjectDto, projectKindLabel } from "~/lib/api";
+
+function formatDuration(sec: number | null): string {
+    if (!sec) return "";
+    const min = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
 
 /* ── Mock data ──────────────────────────────────────────────────────────── */
 
@@ -23,90 +30,7 @@ const MOCK_STATS = {
     storagePercent: 12.8,
 };
 
-interface MockProject {
-    id: string;
-    title: string;
-    editedAgo: string;
-    duration: string;
-    type: "video" | "photo" | "audio" | "template";
-    starred: boolean;
-    collaborators: string[];
-}
-
-const MOCK_PROJECTS: MockProject[] = [
-    {
-        id: "p1",
-        title: "Summer Campaign 2024",
-        editedAgo: "2 hours ago",
-        duration: "04:20",
-        type: "video",
-        starred: true,
-        collaborators: ["SC", "JS", "+2"],
-    },
-    {
-        id: "p2",
-        title: "TikTok Ads Pack",
-        editedAgo: "5 hours ago",
-        duration: "01:15",
-        type: "video",
-        starred: false,
-        collaborators: ["LK", "+3"],
-    },
-    {
-        id: "p3",
-        title: "Product Launch Video",
-        editedAgo: "1 day ago",
-        duration: "00:45",
-        type: "video",
-        starred: false,
-        collaborators: ["MJ", "+1"],
-    },
-    {
-        id: "p4",
-        title: "Client Interview",
-        editedAgo: "2 days ago",
-        duration: "06:30",
-        type: "video",
-        starred: false,
-        collaborators: ["AK", "+2"],
-    },
-    {
-        id: "p5",
-        title: "Brand Photo Shoot",
-        editedAgo: "3 days ago",
-        duration: "",
-        type: "photo",
-        starred: false,
-        collaborators: ["SC"],
-    },
-    {
-        id: "p6",
-        title: "Podcast Episode 12",
-        editedAgo: "4 days ago",
-        duration: "32:10",
-        type: "audio",
-        starred: true,
-        collaborators: ["JS", "MJ"],
-    },
-    {
-        id: "p7",
-        title: "Social Media Template",
-        editedAgo: "5 days ago",
-        duration: "",
-        type: "template",
-        starred: false,
-        collaborators: ["LK"],
-    },
-    {
-        id: "p8",
-        title: "Event Recap Reel",
-        editedAgo: "1 week ago",
-        duration: "02:45",
-        type: "video",
-        starred: false,
-        collaborators: ["AK", "SC", "+1"],
-    },
-];
+// Mock data removed in favor of real API data
 
 interface MockTeamProject {
     id: string;
@@ -287,13 +211,12 @@ function AvatarStack({ collaborators }: { collaborators: string[] }) {
     );
 }
 
-function ProjectCard({ project, index }: { project: MockProject; index: number }) {
+function ProjectCard({ project, index }: { project: ProjectDto; index: number }) {
+    const typeLabel = projectKindLabel(project.kind).toLowerCase();
     const typeIcon = {
         video: "movie",
-        photo: "image",
-        audio: "audiotrack",
-        template: "view_quilt",
-    }[project.type];
+        image: "image",
+    }[typeLabel] || "movie";
 
     return (
         <div className="bento-card group cursor-pointer overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50">
@@ -307,32 +230,15 @@ function ProjectCard({ project, index }: { project: MockProject; index: number }
                 </div>
                 <div className="absolute inset-0 bg-black/20 transition-colors group-hover:bg-black/10" />
 
-                {project.starred && (
-                    <div className="absolute left-2 top-2 rounded-lg bg-primary p-1 shadow-lg">
-                        <span
-                            className="material-symbols-outlined text-[14px] text-on-primary"
-                            style={{ fontVariationSettings: "'FILL' 1" }}
-                        >
-                            star
-                        </span>
-                    </div>
-                )}
-
-                {project.duration && (
-                    <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-label-sm font-bold text-white backdrop-blur-md">
-                        <span className="material-symbols-outlined text-[12px]">schedule</span>
-                        {project.duration}
-                    </span>
-                )}
             </div>
 
             <div className="p-4">
                 <h5 className="mb-1 truncate text-body-sm font-bold text-on-surface transition-colors group-hover:text-primary">
-                    {project.title}
+                    {project.name}
                 </h5>
-                <p className="mb-3 text-label-sm text-outline">{project.editedAgo}</p>
+                <p className="mb-3 text-label-sm text-outline">{new Date(project.updatedAt).toLocaleDateString()}</p>
                 <div className="flex items-center justify-between">
-                    <AvatarStack collaborators={project.collaborators} />
+                    <AvatarStack collaborators={["SC"]} />
                     <button
                         type="button"
                         className="text-outline transition-colors hover:text-on-surface"
@@ -345,13 +251,12 @@ function ProjectCard({ project, index }: { project: MockProject; index: number }
     );
 }
 
-function ProjectListRow({ project, index }: { project: MockProject; index: number }) {
+function ProjectListRow({ project, index }: { project: ProjectDto; index: number }) {
+    const typeLabel = projectKindLabel(project.kind).toLowerCase();
     const typeIcon = {
         video: "movie",
-        photo: "image",
-        audio: "audiotrack",
-        template: "view_quilt",
-    }[project.type];
+        image: "image",
+    }[typeLabel] || "movie";
 
     return (
         <div className="group flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40">
@@ -363,28 +268,18 @@ function ProjectListRow({ project, index }: { project: MockProject; index: numbe
                         {typeIcon}
                     </span>
                 </div>
-                {project.starred && (
-                    <div className="absolute left-1 top-1 rounded bg-primary p-0.5">
-                        <span
-                            className="material-symbols-outlined text-[10px] text-on-primary"
-                            style={{ fontVariationSettings: "'FILL' 1" }}
-                        >
-                            star
-                        </span>
-                    </div>
-                )}
+                {/* project.starred support later */}
             </div>
             <div className="min-w-0 flex-1">
-                <h5 className="truncate text-body-sm font-bold text-on-surface">{project.title}</h5>
-                <p className="mt-0.5 text-label-sm text-outline">{project.editedAgo}</p>
+                <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
+                <p className="mt-0.5 text-label-sm text-outline">{new Date(project.updatedAt).toLocaleDateString()}</p>
             </div>
             <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
-                {project.duration && <span>{project.duration}</span>}
                 <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
-                    {project.type}
+                    {typeLabel}
                 </span>
             </div>
-            <AvatarStack collaborators={project.collaborators} />
+            <AvatarStack collaborators={["SC"]} />
             <button
                 type="button"
                 className="text-outline transition-colors hover:text-on-surface"
@@ -524,7 +419,7 @@ function TemplateRow({ template }: { template: MockTemplate }) {
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 
-export default function ProjectsDashboard() {
+export default function ProjectsDashboard({ projects }: { projects: ProjectDto[] }) {
     const [view, setView] = useState<"grid" | "list">("grid");
     const [sort, setSort] = useState<"latest" | "name">("latest");
     const [activeTab, setActiveTab] = useState<TabFilter>("all");
@@ -532,14 +427,14 @@ export default function ProjectsDashboard() {
 
     const filteredProjects =
         activeTab === "all"
-            ? MOCK_PROJECTS
+            ? projects
             : activeTab === "team" || activeTab === "archived"
-                ? MOCK_PROJECTS.slice(0, 3) // stub subset
-                : MOCK_PROJECTS.filter((p) => p.type === activeTab);
+                ? projects.slice(0, 3) 
+                : projects.filter((p) => projectKindLabel(p.kind).toLowerCase() === activeTab);
 
     const sortedProjects = [...filteredProjects].sort((a, b) => {
-        if (sort === "name") return a.title.localeCompare(b.title);
-        return 0; // latest — mock already in order
+        if (sort === "name") return a.name.localeCompare(b.name);
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
 
     return (

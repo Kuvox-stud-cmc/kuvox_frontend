@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, Form, useNavigation, useActionData, useLoaderData } from "react-router";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+
+import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
+import { ApiError, createMedia, listMedia, softDelete, albumsApi } from "~/lib/api.server";
+import { createRequestLogger } from "~/lib/logger.server";
+import { getSession } from "~/lib/session.server";
+import { TextField } from "~/components/dashboard/shared/form";
 
 import {
   CARD_GRADIENTS,
@@ -19,219 +26,82 @@ export function meta() {
   return [{ title: "Audio · Kuvox" }];
 }
 
-/* ── Mock data ──────────────────────────────────────────────────────────── */
+export async function loader({ request }: LoaderFunctionArgs) {
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+  if (!accessToken) {
+    return { media: [] as MediaDto[], albums: [] as AlbumDto[], albumMedia: {} as Record<string, MediaDto[]>, error: "Your session expired. Please sign in again." };
+  }
 
-interface MockAudioTrack {
-  id: string;
-  title: string;
-  category: "music" | "sfx" | "voiceover";
-  genre: string;
-  format: "WAV" | "MP3" | "M4A" | "FLAC";
-  duration: string;
-  size: string;
-  dateAdded: string;
-  sampleRate?: string;
+  const reqLog = createRequestLogger(request).child({ component: "AudioLoader" });
+  try {
+    const page = await listMedia(accessToken, PERSONAL, reqLog);
+    const audioMedia = page.items.filter(m => m.kind === MediaKind.Audio);
+    
+    const allAlbums = await albumsApi.listAlbums(accessToken, reqLog);
+    const audioAlbums = allAlbums.filter(a => a.kind === AlbumKind.Audio && !a.isDeleteAble);
+
+    const albumMedia: Record<string, MediaDto[]> = {};
+    for (const album of audioAlbums) {
+      const am = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);
+      albumMedia[album.name] = am.items;
+    }
+
+    return { media: audioMedia, albums: audioAlbums, albumMedia, error: null as string | null };
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : "Couldn't load your audio.";
+    reqLog.error({ err: error }, "failed to load audio");
+    return { media: [] as MediaDto[], albums: [] as AlbumDto[], albumMedia: {} as Record<string, MediaDto[]>, error: message };
+  }
 }
 
-const MOCK_TRACKS: MockAudioTrack[] = [
-  {
-    id: "a1",
-    title: "Midnight Drive",
-    category: "music",
-    genre: "Synthwave",
-    format: "WAV",
-    duration: "03:42",
-    size: "35.6 MB",
-    dateAdded: "May 12, 2024",
-    sampleRate: "44.1 kHz",
-  },
-  {
-    id: "a2",
-    title: "Neon City Lights",
-    category: "music",
-    genre: "Electronic",
-    format: "FLAC",
-    duration: "04:18",
-    size: "42.1 MB",
-    dateAdded: "May 11, 2024",
-    sampleRate: "48 kHz",
-  },
-  {
-    id: "a3",
-    title: "Acoustic Morning",
-    category: "music",
-    genre: "Folk",
-    format: "MP3",
-    duration: "03:05",
-    size: "7.2 MB",
-    dateAdded: "May 10, 2024",
-    sampleRate: "44.1 kHz",
-  },
-  {
-    id: "a4",
-    title: "Rock Guitar Riff",
-    category: "music",
-    genre: "Rock",
-    format: "WAV",
-    duration: "01:32",
-    size: "15.8 MB",
-    dateAdded: "May 9, 2024",
-    sampleRate: "44.1 kHz",
-  },
-  {
-    id: "a5",
-    title: "Lo-Fi Study Beat",
-    category: "music",
-    genre: "Lo-Fi",
-    format: "MP3",
-    duration: "02:48",
-    size: "6.4 MB",
-    dateAdded: "May 8, 2024",
-    sampleRate: "44.1 kHz",
-  },
-  {
-    id: "a6",
-    title: "City Ambience",
-    category: "sfx",
-    genre: "Ambient",
-    format: "MP3",
-    duration: "05:18",
-    size: "12.4 MB",
-    dateAdded: "May 12, 2024",
-  },
-  {
-    id: "a7",
-    title: "Ocean Waves",
-    category: "sfx",
-    genre: "Nature",
-    format: "WAV",
-    duration: "10:01",
-    size: "89.3 MB",
-    dateAdded: "May 10, 2024",
-  },
-  {
-    id: "a8",
-    title: "Explosion Impact",
-    category: "sfx",
-    genre: "Action",
-    format: "WAV",
-    duration: "00:04",
-    size: "1.8 MB",
-    dateAdded: "May 9, 2024",
-  },
-  {
-    id: "a9",
-    title: "UI Click",
-    category: "sfx",
-    genre: "Interface",
-    format: "MP3",
-    duration: "00:01",
-    size: "0.1 MB",
-    dateAdded: "May 8, 2024",
-  },
-  {
-    id: "a10",
-    title: "Rain on Rooftop",
-    category: "sfx",
-    genre: "Nature",
-    format: "FLAC",
-    duration: "15:30",
-    size: "112.0 MB",
-    dateAdded: "May 7, 2024",
-  },
-  {
-    id: "a11",
-    title: "Whoosh Transition",
-    category: "sfx",
-    genre: "Transition",
-    format: "WAV",
-    duration: "00:02",
-    size: "0.9 MB",
-    dateAdded: "May 6, 2024",
-  },
-  {
-    id: "a12",
-    title: "Podcast Intro",
-    category: "voiceover",
-    genre: "Voice Recording",
-    format: "M4A",
-    duration: "00:28",
-    size: "1.2 MB",
-    dateAdded: "May 11, 2024",
-  },
-  {
-    id: "a13",
-    title: "Product Narration",
-    category: "voiceover",
-    genre: "Commercial",
-    format: "WAV",
-    duration: "02:15",
-    size: "22.4 MB",
-    dateAdded: "May 10, 2024",
-    sampleRate: "48 kHz",
-  },
-  {
-    id: "a14",
-    title: "Tutorial Voiceover",
-    category: "voiceover",
-    genre: "Educational",
-    format: "M4A",
-    duration: "08:42",
-    size: "18.6 MB",
-    dateAdded: "May 9, 2024",
-  },
-  {
-    id: "a15",
-    title: "Character Dialogue",
-    category: "voiceover",
-    genre: "Animation",
-    format: "WAV",
-    duration: "00:45",
-    size: "7.5 MB",
-    dateAdded: "May 8, 2024",
-    sampleRate: "48 kHz",
-  },
-  {
-    id: "a16",
-    title: "Audiobook Chapter 1",
-    category: "voiceover",
-    genre: "Audiobook",
-    format: "MP3",
-    duration: "12:30",
-    size: "28.8 MB",
-    dateAdded: "May 7, 2024",
-  },
-];
+export async function action({ request }: ActionFunctionArgs) {
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+  if (!accessToken) return { error: "Not signed in" };
 
-const MOCK_METRICS = {
-  totalAudio: 1248,
-  totalDuration: "86.4",
-  storageUsedGb: 128,
-  storagePercent: 12.8,
-  editsApplied: 382,
-};
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+  const reqLog = createRequestLogger(request).child({ component: "AudioAction" });
 
-/** The featured track shown in the Quick Preview player. */
-const FEATURED_TRACK = MOCK_TRACKS[0];
+  try {
+    if (intent === "create") {
+      const filename = String(formData.get("filename") ?? "");
+      const sizeBytes = 1024 * 1024 * 2; // fake size 2MB
+      await createMedia(accessToken, PERSONAL, {
+        kind: MediaKind.Audio,
+        filename,
+        storageKey: `audio/${crypto.randomUUID()}`,
+        sizeBytes,
+        projectId: null,
+      }, reqLog);
+      return { ok: true, intent };
+    }
 
-/** Random-ish waveform heights for visualization. */
+    if (intent === "delete") {
+      const id = String(formData.get("id") ?? "");
+      if (id) {
+        await softDelete(accessToken, "media", id, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    return { error: "Unknown action." };
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    return { error: message };
+  }
+}
+
+/* ── Sub-components ─────────────────────────────────────────────────────── */
+
+
+
 const WAVEFORM_BARS = [
   40, 60, 30, 80, 50, 70, 40, 90, 55, 35, 45, 75, 65, 50, 40, 85, 60, 30, 70,
   95, 50, 40, 80, 60, 30, 75, 55, 45, 85, 40, 65, 35, 90, 50, 70, 40, 80, 60,
   30, 75, 55, 45, 85, 40, 65, 35, 90, 50, 70, 40,
 ];
-
-const CATEGORY_ICONS: Record<MockAudioTrack["category"], string> = {
-  music: "music_note",
-  sfx: "graphic_eq",
-  voiceover: "mic",
-};
-
-const CATEGORY_LABELS: Record<MockAudioTrack["category"], string> = {
-  music: "Music",
-  sfx: "Sound Effect",
-  voiceover: "Voice Recording",
-};
 
 const FORMAT_TONES: Record<string, string> = {
   WAV: "bg-primary/10 text-primary",
@@ -239,12 +109,6 @@ const FORMAT_TONES: Record<string, string> = {
   M4A: "bg-tertiary/10 text-tertiary",
   FLAC: "bg-primary/10 text-primary",
 };
-
-
-
-/* ── Sub-components ─────────────────────────────────────────────────────── */
-
-
 
 function FormatBadge({ format }: { format: string }) {
   return (
@@ -301,11 +165,13 @@ function AudioCardGrid({
   emptyIcon,
   emptyTitle,
   emptyHint,
+  albumIcon,
 }: {
-  tracks: MockAudioTrack[];
+  tracks: import("~/lib/api").MediaDto[];
   emptyIcon: string;
   emptyTitle: string;
   emptyHint: string;
+  albumIcon: string;
 }) {
   if (tracks.length === 0) {
     return (
@@ -325,11 +191,11 @@ function AudioCardGrid({
             className={`relative flex aspect-[2/1] items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[i % CARD_GRADIENTS.length]}`}
           >
             <span className="material-symbols-outlined text-[36px] text-on-surface-variant/20">
-              {CATEGORY_ICONS[track.category]}
+              {albumIcon}
             </span>
             {/* Duration badge */}
             <span className="absolute bottom-2 right-2 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 font-mono text-label-sm font-bold text-on-surface backdrop-blur-md">
-              {track.duration}
+              {track.durationSeconds ? Math.floor(track.durationSeconds / 60) + ":" + String(Math.floor(track.durationSeconds % 60)).padStart(2, "0") : "0:00"}
             </span>
             {/* Play overlay */}
             <div className="absolute inset-0 flex items-center justify-center bg-surface/40 opacity-0 transition-opacity group-hover:opacity-100">
@@ -344,7 +210,7 @@ function AudioCardGrid({
           <div className="p-4">
             <div className="mb-2 flex items-start justify-between">
               <h4 className="truncate text-body-sm font-bold text-on-surface">
-                {track.title}
+                {track.filename}
               </h4>
               <button
                 type="button"
@@ -356,12 +222,12 @@ function AudioCardGrid({
               </button>
             </div>
             <p className="mb-3 text-label-md text-on-surface-variant">
-              {track.genre} • {CATEGORY_LABELS[track.category]}
+              {track.codec || "Audio"}
             </p>
             <div className="flex items-center justify-between">
-              <FormatBadge format={track.format} />
+              <FormatBadge format={track.codec ? track.codec.toUpperCase() : "MP3"} />
               <span className="text-label-sm text-on-surface-variant">
-                {track.size}
+                {(track.sizeBytes / 1024 / 1024).toFixed(1)} MB
               </span>
             </div>
           </div>
@@ -376,6 +242,9 @@ function AudioCardGrid({
 export default function Audio() {
   const [searchParams] = useSearchParams();
   const view = searchParams.get("view");
+  const loaderData = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const transition = useNavigation();
 
   const [sort, setSort] = useState<"latest" | "duration" | "size">("latest");
   const [importOpen, setImportOpen] = useState(false);
@@ -385,6 +254,10 @@ export default function Audio() {
   const sectionMusicRef = useRef<HTMLElement>(null);
   const sectionSfxRef = useRef<HTMLElement>(null);
   const sectionVoiceoversRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (actionData?.ok) setImportOpen(false);
+  }, [actionData]);
 
   // Scroll to the section matching the `?view` param
   useEffect(() => {
@@ -399,11 +272,17 @@ export default function Audio() {
     }
   }, [view]);
 
-  const musicTracks = MOCK_TRACKS.filter((t) => t.category === "music");
-  const sfxTracks = MOCK_TRACKS.filter((t) => t.category === "sfx");
-  const voiceoverTracks = MOCK_TRACKS.filter(
-    (t) => t.category === "voiceover",
-  );
+  const allTracks = loaderData?.media || [];
+  const musicTracks = loaderData?.albumMedia?.["Music"] || [];
+  const sfxTracks = loaderData?.albumMedia?.["Sound Effects"] || [];
+  const voiceoverTracks = loaderData?.albumMedia?.["Voiceovers"] || [];
+
+  const totalDuration = allTracks.reduce((acc, curr) => acc + (curr.durationSeconds || 0), 0);
+  const durationHours = (totalDuration / 3600).toFixed(1);
+  const storageUsed = allTracks.reduce((acc, curr) => acc + curr.sizeBytes, 0);
+  const storageUsedGb = (storageUsed / (1024 * 1024 * 1024)).toFixed(2);
+  
+  const FEATURED_TRACK = allTracks.length > 0 ? allTracks[0] : null;
 
   return (
     <section className="space-y-10">
@@ -432,13 +311,13 @@ export default function Audio() {
         <MetricCard
           icon="music_note"
           label="Total Audio"
-          value={MOCK_METRICS.totalAudio.toLocaleString()}
+          value={allTracks.length.toLocaleString()}
           trend={15}
         />
         <MetricCard
           icon="schedule"
           label="Total Duration"
-          value={MOCK_METRICS.totalDuration}
+          value={durationHours}
           suffix="h"
           tone="tertiary"
           trend={12}
@@ -446,17 +325,17 @@ export default function Audio() {
         <MetricCard
           icon="cloud"
           label="Storage Used"
-          value={MOCK_METRICS.storageUsedGb}
+          value={storageUsedGb}
           suffix="GB"
         >
-          <ProgressRing progress={MOCK_METRICS.storagePercent} size={36} />
+          <ProgressRing progress={12} size={36} />
         </MetricCard>
         <MetricCard
           icon="auto_fix_high"
           label="Edits Applied"
-          value={MOCK_METRICS.editsApplied}
+          value={0}
           tone="secondary"
-          trend={18}
+          trend={0}
         />
       </div>
 
@@ -496,38 +375,46 @@ export default function Audio() {
 
           {/* Track info + waveform + controls */}
           <div className="flex flex-1 flex-col justify-between">
-            {/* Track info */}
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="mb-1 flex items-center gap-2">
-                  <h3 className="text-headline-md font-bold text-on-surface">
-                    {FEATURED_TRACK.title}
-                  </h3>
-                  <FormatBadge format={FEATURED_TRACK.format} />
+            {FEATURED_TRACK ? (
+              <>
+                {/* Track info */}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="mb-1 flex items-center gap-2">
+                      <h3 className="text-headline-md font-bold text-on-surface">
+                        {FEATURED_TRACK.filename}
+                      </h3>
+                      <FormatBadge format={FEATURED_TRACK.codec ? FEATURED_TRACK.codec.toUpperCase() : "MP3"} />
+                    </div>
+                    <p className="text-body-sm text-on-surface-variant">
+                      Audio • {FEATURED_TRACK.durationSeconds ? Math.floor(FEATURED_TRACK.durationSeconds / 60) + ":" + String(Math.floor(FEATURED_TRACK.durationSeconds % 60)).padStart(2, "0") : "0:00"} •{" "}
+                      {(FEATURED_TRACK.sizeBytes / 1024 / 1024).toFixed(1)} MB
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-on-surface-variant transition-colors hover:text-on-surface"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">
+                      more_horiz
+                    </span>
+                  </button>
                 </div>
-                <p className="text-body-sm text-on-surface-variant">
-                  {FEATURED_TRACK.genre} • {FEATURED_TRACK.duration} •{" "}
-                  {FEATURED_TRACK.sampleRate}
-                </p>
+
+                {/* Waveform */}
+                <WaveformVisualizer playheadPercent={40} />
+
+                {/* Time display */}
+                <div className="mb-4 flex justify-between font-mono text-label-sm text-on-surface-variant">
+                  <span>01:24</span>
+                  <span>{FEATURED_TRACK.durationSeconds ? Math.floor(FEATURED_TRACK.durationSeconds / 60) + ":" + String(Math.floor(FEATURED_TRACK.durationSeconds % 60)).padStart(2, "0") : "0:00"}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full items-center justify-center text-on-surface-variant">
+                No audio tracks uploaded yet.
               </div>
-              <button
-                type="button"
-                className="text-on-surface-variant transition-colors hover:text-on-surface"
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  more_horiz
-                </span>
-              </button>
-            </div>
-
-            {/* Waveform */}
-            <WaveformVisualizer playheadPercent={40} />
-
-            {/* Time display */}
-            <div className="mb-4 flex justify-between font-mono text-label-sm text-on-surface-variant">
-              <span>01:24</span>
-              <span>{FEATURED_TRACK.duration}</span>
-            </div>
+            )}
 
             {/* Transport controls */}
             <div className="flex items-center justify-between">
@@ -610,7 +497,7 @@ export default function Audio() {
         ref={sectionAllRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <SectionHeader title="All Audio" count={`${MOCK_TRACKS.length} files`} />
+        <SectionHeader title="All Audio" count={`${allTracks.length} files`} />
 
         <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
           <table className="w-full text-left text-body-sm">
@@ -637,7 +524,13 @@ export default function Audio() {
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/50">
-              {MOCK_TRACKS.map((track) => (
+              {allTracks.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-on-surface-variant">
+                    No audio tracks available.
+                  </td>
+                </tr>
+              ) : allTracks.map((track) => (
                 <tr
                   key={track.id}
                   className="group transition-colors hover:bg-surface-container"
@@ -645,40 +538,34 @@ export default function Audio() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div
-                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-                          track.category === "music"
-                            ? "bg-primary/10 text-primary"
-                            : track.category === "sfx"
-                              ? "bg-tertiary/10 text-tertiary"
-                              : "bg-secondary/10 text-secondary"
-                        }`}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
                       >
                         <span className="material-symbols-outlined text-[20px]">
-                          {CATEGORY_ICONS[track.category]}
+                          audio_file
                         </span>
                       </div>
                       <div className="min-w-0">
                         <p className="truncate font-medium text-on-surface">
-                          {track.title}
+                          {track.filename}
                         </p>
                         <p className="text-label-sm text-on-surface-variant">
-                          {track.genre} • {CATEGORY_LABELS[track.category]}
+                          Audio
                         </p>
                       </div>
                       <MiniWaveform />
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <FormatBadge format={track.format} />
+                    <FormatBadge format={track.codec ? track.codec.toUpperCase() : "MP3"} />
                   </td>
                   <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
-                    {track.duration}
+                    {track.durationSeconds ? Math.floor(track.durationSeconds / 60) + ":" + String(Math.floor(track.durationSeconds % 60)).padStart(2, "0") : "0:00"}
                   </td>
                   <td className="px-4 py-3 text-center text-on-surface-variant">
-                    {track.size}
+                    {(track.sizeBytes / 1024 / 1024).toFixed(1)} MB
                   </td>
                   <td className="hidden px-4 py-3 text-on-surface-variant lg:table-cell">
-                    {track.dateAdded}
+                    {new Date(track.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -690,14 +577,18 @@ export default function Audio() {
                           play_circle
                         </span>
                       </button>
-                      <button
-                        type="button"
-                        className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">
-                          more_horiz
-                        </span>
-                      </button>
+                      <Form method="post" className="inline" onSubmit={(e) => { if(!confirm("Delete this audio?")) e.preventDefault(); }}>
+                        <input type="hidden" name="intent" value="delete" />
+                        <input type="hidden" name="id" value={track.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg p-1.5 text-error transition-colors hover:bg-error/10 hover:text-error"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            delete
+                          </span>
+                        </button>
+                      </Form>
                     </div>
                   </td>
                 </tr>
@@ -708,8 +599,7 @@ export default function Audio() {
           {/* Pagination */}
           <div className="flex items-center justify-between border-t border-outline-variant px-4 py-3">
             <p className="text-label-sm text-on-surface-variant">
-              Showing 1 to {MOCK_TRACKS.length} of{" "}
-              {MOCK_METRICS.totalAudio.toLocaleString()} results
+              Showing 1 to {allTracks.length} of {allTracks.length} results
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -769,6 +659,7 @@ export default function Audio() {
           emptyIcon="music_note"
           emptyTitle="No music tracks"
           emptyHint="Import music files to build your collection."
+          albumIcon="music_note"
         />
       </section>
 
@@ -784,6 +675,7 @@ export default function Audio() {
           emptyIcon="graphic_eq"
           emptyTitle="No sound effects"
           emptyHint="Add sound effects to your library."
+          albumIcon="graphic_eq"
         />
       </section>
 
@@ -799,6 +691,7 @@ export default function Audio() {
           emptyIcon="mic"
           emptyTitle="No voiceovers"
           emptyHint="Record or import voiceovers to get started."
+          albumIcon="mic"
         />
       </section>
 
@@ -812,37 +705,17 @@ export default function Audio() {
           Registers an audio record now; real file upload to storage lands in a
           later phase.
         </p>
-        <div className="space-y-4">
-          <div>
-            <label
-              htmlFor="audio-filename"
-              className="block text-label-md text-on-surface-variant"
-            >
-              Filename
-            </label>
-            <input
-              id="audio-filename"
-              type="text"
-              placeholder="midnight-drive.wav"
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface placeholder:text-on-surface-variant/40 focus:border-primary focus:outline-none"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="audio-category"
-              className="block text-label-md text-on-surface-variant"
-            >
-              Category
-            </label>
-            <select
-              id="audio-category"
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary"
-            >
-              <option value="music">Music</option>
-              <option value="sfx">Sound Effect</option>
-              <option value="voiceover">Voiceover</option>
-            </select>
-          </div>
+        <Form method="post" className="space-y-4">
+          <input type="hidden" name="intent" value="create" />
+          
+          <TextField
+            name="filename"
+            label="Filename"
+            placeholder="midnight-drive.wav"
+            required
+            autoFocus
+          />
+
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
@@ -852,15 +725,19 @@ export default function Audio() {
               Cancel
             </button>
             <button
-              type="button"
-              onClick={() => setImportOpen(false)}
+              type="submit"
+              disabled={transition.state === "submitting"}
               className={primaryButtonClass()}
             >
-              Import
+              <span className="material-symbols-outlined text-[18px]">
+                {transition.state === "submitting" ? "hourglass_empty" : "upload"}
+              </span>
+              {transition.state === "submitting" ? "Importing..." : "Import"}
             </button>
           </div>
-        </div>
+        </Form>
       </Modal>
     </section>
   );
 }
+

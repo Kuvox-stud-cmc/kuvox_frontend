@@ -73,6 +73,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-export default function Projects() {
-  return <ProjectsDashboard />;
+export default function Projects({ loaderData }: Route.ComponentProps) {
+  return <ProjectsDashboard projects={loaderData.projects} />;
 }
