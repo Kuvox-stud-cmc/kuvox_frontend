@@ -16,8 +16,10 @@ import {
   Modal,
   primaryButtonClass,
 } from "~/components/dashboard/section";
-import { MediaKind, PERSONAL, type MediaDto } from "~/lib/api";
-import { ApiError, createMedia, listMedia, softDelete } from "~/lib/api.server";
+import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
+import { ApiError, createMedia, listMedia, softDelete, albumsApi } from "~/lib/api.server";
+import { TextField, TextArea } from "~/components/dashboard/shared/form";
+import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -36,16 +38,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const accessToken = session.get("accessToken");
 
   if (!accessToken) {
-    return { media: [] as MediaDto[], error: "Your session expired. Please sign in again." };
+    return { media: [] as MediaDto[], albums: [] as AlbumDto[], error: "Your session expired. Please sign in again." };
   }
 
   try {
     const page = await listMedia(accessToken, PERSONAL, reqLog);
-    return { media: page.items, error: null as string | null };
+    const albums = await albumsApi.listAlbums(accessToken, reqLog);
+    return { media: page.items, albums, error: null as string | null };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load your media.";
     reqLog.error({ err: error }, "failed to load media");
-    return { media: [] as MediaDto[], error: message };
+    return { media: [] as MediaDto[], albums: [] as AlbumDto[], error: message };
   }
 }
 
@@ -92,6 +95,25 @@ export async function action({ request }: Route.ActionArgs) {
       return { ok: true, intent };
     }
 
+    if (intent === "create-album") {
+      const name = String(formData.get("name") ?? "").trim();
+      const description = String(formData.get("description") ?? "").trim();
+      const materialSymbol = String(formData.get("materialSymbol") ?? "folder").trim();
+      
+      if (!name) {
+        return { error: "Enter a name for the album." };
+      }
+      
+      await albumsApi.createAlbum(accessToken, PERSONAL, {
+        name,
+        description,
+        kind: AlbumKind.Photo,
+        materialSymbol
+      }, reqLog);
+      
+      return { ok: true, intent };
+    }
+
     return { error: "Unknown action." };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Something went wrong.";
@@ -100,13 +122,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-const PHOTO_ALBUMS = [
-  { name: "Travel", count: 156, icon: "flight_takeoff" },
-  { name: "Client Work", count: 235, icon: "work" },
-  { name: "Mountains", count: 128, icon: "landscape" },
-  { name: "City Nights", count: 92, icon: "location_city" },
-  { name: "Nature", count: 342, icon: "eco" },
-];
+
 
 function formatSize(bytes: number): string {
   if (bytes <= 0) return "Pending";
@@ -233,6 +249,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
   const [searchParams] = useSearchParams();
   const pageView = searchParams.get("view");
   const [importOpen, setImportOpen] = useState(false);
+  const [albumModalOpen, setAlbumModalOpen] = useState(false);
   const [sort, setSort] = useState<"latest" | "name" | "size">("latest");
   const [layoutMode, setLayoutMode] = useState<"grid" | "list">("grid");
 
@@ -249,8 +266,9 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
   }, [pageView]);
 
   useEffect(() => {
-    if (actionData?.ok && actionData.intent === "create") {
-      setImportOpen(false);
+    if (actionData?.ok) {
+      if (actionData.intent === "create") setImportOpen(false);
+      if (actionData.intent === "create-album") setAlbumModalOpen(false);
     }
   }, [actionData]);
 
@@ -292,7 +310,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard icon="image" label="Total Photos" value={photos.length} detail="+12% this month" />
         <MetricCard icon="favorite" label="Favorites" value="0" detail="Coming soon" tone="tertiary" />
-        <MetricCard icon="folder" label="Albums" value={PHOTO_ALBUMS.length} tone="secondary" />
+        <MetricCard icon="folder" label="Albums" value={loaderData.albums.length} tone="secondary" />
         <MetricCard
           icon="cloud"
           label="Storage Used"
@@ -349,18 +367,42 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
 
       <section ref={albumsRef} style={{ scrollMarginTop: "6rem" }}>
         <SectionHeader title="Albums" actionOnClick={() => {}} />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {PHOTO_ALBUMS.map((album, index) => (
-            <AlbumCard key={album.name} album={album} index={index} />
-          ))}
-          <button
-            type="button"
-            className="flex aspect-square flex-col items-center justify-center rounded-xl border border-dashed border-outline-variant bg-surface-container-low text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-surface-container hover:text-on-surface"
-          >
-            <span className="material-symbols-outlined text-[28px]">add</span>
-            <span className="mt-2 text-label-md font-medium">Create Album</span>
-          </button>
-        </div>
+        {isLoading ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="aspect-square animate-pulse rounded-xl border border-outline-variant bg-surface-container-low"
+              />
+            ))}
+          </div>
+        ) : loaderData.albums.length === 0 ? (
+          <EmptyState
+            icon="folder_open"
+            title="No albums yet"
+            hint="Create an album to start organizing your photos."
+            action={
+              <button type="button" onClick={() => setAlbumModalOpen(true)} className={primaryButtonClass()}>
+                <span className="material-symbols-outlined text-[18px]">add</span>
+                Create Album
+              </button>
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            {loaderData.albums.map((album, index) => (
+              <AlbumCard key={album.id} album={{ name: album.name, count: 0, icon: album.materialSymbol }} index={index} />
+            ))}
+            <button
+              type="button"
+              onClick={() => setAlbumModalOpen(true)}
+              className="flex aspect-square flex-col items-center justify-center rounded-xl border border-dashed border-outline-variant bg-surface-container-low text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-surface-container hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[28px]">add</span>
+              <span className="mt-2 text-label-md font-medium">Create Album</span>
+            </button>
+          </div>
+        )}
       </section>
 
       <section ref={favoritesRef} style={{ scrollMarginTop: "6rem" }}>
@@ -379,19 +421,12 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
         <Form method="post" className="space-y-4">
           <input type="hidden" name="intent" value="create" />
           <input type="hidden" name="kind" value={MediaKind.Image} />
-          <div>
-            <label htmlFor="filename" className="block text-label-md text-on-surface-variant">
-              Filename
-            </label>
-            <input
-              id="filename"
-              name="filename"
-              type="text"
-              required
-              placeholder="mountain-view.jpg"
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
-            />
-          </div>
+          <TextField
+            name="filename"
+            label="Filename"
+            required
+            placeholder="mountain-view.jpg"
+          />
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
@@ -406,6 +441,48 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
               className={primaryButtonClass()}
             >
               {navigation.state === "submitting" ? "Importing..." : "Import"}
+            </button>
+          </div>
+        </Form>
+      </Modal>
+
+      <Modal open={albumModalOpen} onClose={() => setAlbumModalOpen(false)} title="Create Album">
+        <Form method="post" className="space-y-4">
+          <input type="hidden" name="intent" value="create-album" />
+          
+          <TextField 
+            name="name" 
+            label="Album Name" 
+            placeholder="Summer Vacation" 
+            required 
+          />
+          
+          <TextArea 
+            name="description" 
+            label="Description (Optional)" 
+            placeholder="Photos from our trip to Hawaii" 
+            rows={3}
+          />
+          
+          <IconPicker 
+            name="materialSymbol" 
+            label="Album Icon" 
+          />
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setAlbumModalOpen(false)}
+              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={navigation.state === "submitting"}
+              className={primaryButtonClass()}
+            >
+              {navigation.state === "submitting" ? "Creating..." : "Create Album"}
             </button>
           </div>
         </Form>

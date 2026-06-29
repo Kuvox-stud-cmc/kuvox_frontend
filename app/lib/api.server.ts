@@ -4,6 +4,7 @@ export * from "./api/projects.server";
 export * from "./api/media.server";
 export * from "./api/trash.server";
 export * from "./api/studios.server";
+export * from "./api/albums.server";
 export { ApiError } from "./api/api-client.server";
 
 // Keep AuthTokens and apiFetch explicitly exported if any legacy code imports them directly

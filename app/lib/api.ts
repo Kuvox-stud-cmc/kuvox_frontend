@@ -165,3 +165,25 @@ export function toTrashEntries(
 
 /** The active workspace as a discriminated value, used by the switcher. */
 export type ActiveWorkspace = { kind: "personal" } | { kind: "studio"; studioId: string };
+
+/** Mirrors `Media.Enums.AlbumKind` (integers on the wire). */
+export const AlbumKind = { Mixed: 0, Photo: 1, Video: 2, Audio: 3 } as const;
+
+/** Mirrors `Media.Dtos.AlbumDto`. */
+export interface AlbumDto {
+  id: string;
+  name: string;
+  description: string;
+  kind: number;
+  materialSymbol: string;
+  isDeleteAble: boolean;
+}
+
+/** Mirrors `Media.Dtos.CreateAlbumDto`. */
+export interface CreateAlbumDto {
+  name: string;
+  description: string;
+  kind: number;
+  materialSymbol: string;
+}
+
