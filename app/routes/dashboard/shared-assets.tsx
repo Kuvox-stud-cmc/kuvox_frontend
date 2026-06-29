@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { Link, useNavigation } from "react-router";
 
 import {
+  FilterTabs,
   FilterButton,
-  GradientPlaceholder,
+  GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
@@ -185,7 +186,7 @@ function AssetCard({ item, index }: { item: SharedItem; index: number }) {
     <div className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-all hover:border-primary/40">
       {/* Thumbnail area */}
       <div className="relative aspect-[4/3] overflow-hidden">
-        <GradientPlaceholder index={index} icon={item.icon} iconSize="text-[40px]" />
+        <GradientThumbnail index={index} icon={item.icon} />
         {/* Gradient overlay on hover */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
         {/* Type badge */}
@@ -450,22 +451,12 @@ export default function Shared({ loaderData }: Route.ComponentProps) {
       </div>
 
       {/* ── Category Tabs ────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-6 overflow-x-auto border-b border-outline-variant">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`whitespace-nowrap pb-3 text-body-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? "border-b-2 border-primary font-bold text-primary"
-                : "border-b-2 border-transparent text-on-surface-variant hover:text-on-surface"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <FilterTabs
+        items={TABS.map((tab) => ({ value: tab.key, label: tab.label }))}
+        value={activeTab}
+        onChange={setActiveTab}
+        variant="underline"
+      />
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
       {isLoading ? (

@@ -2,18 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import {
-  CARD_GRADIENTS,
+  CardOverflowMenu,
   FilterButton,
-  GradientPlaceholder,
+  FormActions,
+  GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
+  StatusBadge,
   SortDropdown,
   ViewToggle,
 } from "~/components/dashboard/layout/DashboardPageLayout";
-import { EmptyState, Modal, primaryButtonClass } from "~/components/dashboard/section";
+import { EmptyState, ErrorBanner, Modal, primaryButtonClass } from "~/components/dashboard/section";
 
-import { listMedia, listMediaTrash } from "~/lib/api.server";
+import { ApiError, listMedia, listMediaTrash, softDelete } from "~/lib/api.server";
 import { getSession } from "~/lib/session.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
@@ -43,6 +45,36 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { videos: videosRes.items, archived: trashRes.items };
 }
 
+export async function action({ request }: Route.ActionArgs) {
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+  if (!accessToken) {
+    return { error: "Your session expired. Please sign in again." };
+  }
+
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  try {
+    if (intent === "delete") {
+      const id = String(formData.get("id") ?? "");
+      if (id) {
+        await softDelete(accessToken, "media", id, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    return { error: "Unknown action." };
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    reqLog.error({ err: error, intent }, "video action failed");
+    return { error: message };
+  }
+}
+
 function formatDuration(sec: number | null): string {
   if (!sec) return "—";
   const min = Math.floor(sec / 60);
@@ -50,43 +82,30 @@ function formatDuration(sec: number | null): string {
   return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-function StatusBadge({ status }: { status: string }) {
+function videoStatusBadge(status: string) {
   const normStatus = status.toLowerCase();
-  const config = {
+  return {
     ready: {
       label: "Ready",
-      dotCls: "bg-secondary",
-      cls: "bg-secondary/20 text-secondary",
+      tone: "success" as const,
     },
     uploaded: {
       label: "Uploaded",
-      dotCls: "bg-primary",
-      cls: "bg-primary/20 text-primary",
+      tone: "primary" as const,
     },
     processing: {
       label: "Processing",
-      dotCls: "bg-tertiary animate-pulse",
-      cls: "bg-tertiary/20 text-tertiary",
+      tone: "warning" as const,
+      pulse: true,
     },
     failed: {
       label: "Failed",
-      dotCls: "bg-error",
-      cls: "bg-error/20 text-error",
+      tone: "danger" as const,
     },
   }[normStatus] || {
     label: status,
-    dotCls: "bg-outline",
-    cls: "bg-surface-container-high text-on-surface-variant",
+    tone: "neutral" as const,
   };
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label-sm font-bold backdrop-blur-md ${config.cls}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${config.dotCls}`} />
-      {config.label}
-    </span>
-  );
 }
 
 
@@ -133,7 +152,7 @@ function VideoCard({
               </span>
             </div>
           ) : (
-            <GradientPlaceholder index={index} icon="play_circle" />
+            <GradientThumbnail index={index} icon="play_circle" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -158,15 +177,8 @@ function VideoCard({
             </>
           )}
         </div>
-        <StatusBadge status={video.status} />
-        <button
-          type="button"
-          className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
-        >
-          <span className="material-symbols-outlined text-[18px]">
-            more_horiz
-          </span>
-        </button>
+        <StatusBadge {...videoStatusBadge(video.status)} />
+        <CardOverflowMenu id={video.id} itemLabel={video.filename} />
       </div>
     );
   }
@@ -184,7 +196,7 @@ function VideoCard({
             </div>
           </div>
           <div className="absolute left-3 top-3">
-            <StatusBadge status="failed" />
+            <StatusBadge {...videoStatusBadge("failed")} />
           </div>
         </div>
         <div className="p-4">
@@ -195,14 +207,7 @@ function VideoCard({
             Import failed.
           </p>
           <div className="mt-3 flex items-center justify-end">
-            <button
-              type="button"
-              className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                more_horiz
-              </span>
-            </button>
+            <CardOverflowMenu id={video.id} itemLabel={video.filename} />
           </div>
         </div>
       </article>
@@ -231,7 +236,7 @@ function VideoCard({
             </div>
           </div>
           <div className="absolute left-3 top-3">
-            <StatusBadge status="uploading" />
+            <StatusBadge {...videoStatusBadge("uploading")} />
           </div>
         </div>
         <div className="p-4">
@@ -239,14 +244,7 @@ function VideoCard({
             <h3 className="truncate text-body-sm font-bold text-on-surface">
               {video.filename}
             </h3>
-            <button
-              type="button"
-              className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                more_horiz
-              </span>
-            </button>
+            <CardOverflowMenu id={video.id} itemLabel={video.filename} />
           </div>
           <p className="mb-3 text-label-md text-on-surface-variant">
             {(video.sizeBytes / 1024 / 1024).toFixed(1)} MB
@@ -265,12 +263,12 @@ function VideoCard({
   return (
     <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <div className="relative aspect-video overflow-hidden">
-        <GradientPlaceholder index={index} icon="play_circle" />
+        <GradientThumbnail index={index} icon="play_circle" />
         <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
 
         {/* Status badge */}
         <div className="absolute left-3 top-3">
-          <StatusBadge status={video.status} />
+          <StatusBadge {...videoStatusBadge(video.status)} />
         </div>
 
         {/* Processing overlay */}
@@ -298,14 +296,7 @@ function VideoCard({
           <h3 className="truncate text-body-sm font-bold text-on-surface">
             {video.filename}
           </h3>
-          <button
-            type="button"
-            className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              more_horiz
-            </span>
-          </button>
+          <CardOverflowMenu id={video.id} itemLabel={video.filename} />
         </div>
         <p className="mb-3 text-label-md text-on-surface-variant">
           {new Date(video.createdAt).toLocaleDateString()}
@@ -360,13 +351,12 @@ function ArchivedVideoCard({
     return (
       <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
         <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
-          <div
-            className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[index % CARD_GRADIENTS.length]} opacity-50`}
-          >
-            <span className="material-symbols-outlined text-[24px] text-on-surface-variant/30">
-              archive
-            </span>
-          </div>
+          <GradientThumbnail
+            index={index}
+            icon="archive"
+            iconClassName="text-[24px] text-on-surface-variant/30"
+            className="opacity-50"
+          />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-body-sm font-bold text-on-surface/70" title={video.filename}>
@@ -405,13 +395,7 @@ function ArchivedVideoCard({
   return (
     <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <div className="relative aspect-video overflow-hidden">
-        <div
-          className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[index % CARD_GRADIENTS.length]} opacity-40`}
-        >
-          <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
-            archive
-          </span>
-        </div>
+        <GradientThumbnail index={index} icon="archive" className="opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
         <div className="absolute left-3 top-3">
           <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high/80 px-2 py-0.5 text-label-sm font-bold text-on-surface-variant backdrop-blur-md">
@@ -461,7 +445,7 @@ function ArchivedVideoCard({
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 
-export default function Videos({ loaderData }: Route.ComponentProps) {
+export default function Videos({ loaderData, actionData }: Route.ComponentProps) {
   const { videos: apiVideos, archived: apiArchived } = loaderData;
   const [searchParams] = useSearchParams();
   const pageView = searchParams.get("view");
@@ -530,6 +514,7 @@ export default function Videos({ loaderData }: Route.ComponentProps) {
           Import Video
         </button>
       </PageHeader>
+      {actionData?.error && <ErrorBanner message={actionData.error} />}
 
       {/* ── Hero Drop Zone ─────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-outline-variant bg-surface-container-low p-10 transition-colors hover:border-primary/30">
@@ -739,22 +724,12 @@ export default function Videos({ loaderData }: Route.ComponentProps) {
               className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface placeholder:text-on-surface-variant/40 focus:border-primary focus:outline-none"
             />
           </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setImportOpen(false)}
-              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => setImportOpen(false)}
-              className={primaryButtonClass()}
-            >
-              Import
-            </button>
-          </div>
+          <FormActions
+            onCancel={() => setImportOpen(false)}
+            onSubmit={() => setImportOpen(false)}
+            submitLabel="Import"
+            submitType="button"
+          />
         </div>
       </Modal>
     </section>

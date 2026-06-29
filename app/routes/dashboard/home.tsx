@@ -1,14 +1,23 @@
 import { Link } from "react-router";
 
+import {
+  CardOverflowMenu,
+  GradientThumbnail,
+  MetricCard,
+  QuickActionCard,
+  StatusBadge,
+} from "~/components/dashboard/layout/DashboardPageLayout";
 import { ErrorBanner } from "~/components/dashboard/section";
 import { PERSONAL, ProjectKind, projectKindLabel, type ProjectDto } from "~/lib/api";
 import {
+  ApiError,
   listMedia,
   listMediaTrash,
   listProjects,
   listProjectTrash,
   listSharedMedia,
   listSharedProjects,
+  softDelete,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
@@ -70,6 +79,36 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
+export async function action({ request }: Route.ActionArgs) {
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+  if (!accessToken) {
+    return { error: "Your session expired. Please sign in again." };
+  }
+
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  try {
+    if (intent === "delete") {
+      const id = String(formData.get("id") ?? "");
+      if (id) {
+        await softDelete(accessToken, "projects", id, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    return { error: "Unknown action." };
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    reqLog.error({ err: error, intent }, "dashboard home action failed");
+    return { error: message };
+  }
+}
+
 /* ── Mock data (to be replaced by real API integration) ─────────────────── */
 
 const MOCK_REVIEWS = [
@@ -108,37 +147,6 @@ const TEAM_INITIALS = ["A", "S", "J", "M", "E"];
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
-const THUMBNAIL_GRADIENTS = [
-  "from-primary/20 via-surface-container to-secondary/10",
-  "from-tertiary/25 via-surface-container to-primary/10",
-  "from-secondary/20 via-surface-container to-tertiary/10",
-  "from-primary/15 via-surface-container-high to-tertiary/15",
-];
-
-/** Gradient placeholder when no thumbnailUrl is available; drop-in swap later. */
-function ProjectThumbnail({
-  index,
-  thumbnailUrl,
-}: {
-  index: number;
-  thumbnailUrl?: string | null;
-}) {
-  if (thumbnailUrl) {
-    return (
-      <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
-    );
-  }
-  return (
-    <div
-      className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
-    >
-      <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
-        play_circle
-      </span>
-    </div>
-  );
-}
-
 function formatStatus(status: string) {
   return status
     .split(/[_\s-]+/)
@@ -161,98 +169,84 @@ function projectHref(project: ProjectDto) {
   return project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
 }
 
-function StatusBadge({ status }: { status: string }) {
+function projectStatusBadge(status: string) {
   const normalized = status.toLowerCase();
-  const statusStyles: Record<string, { dotCls: string; cls: string }> = {
-    ready: { dotCls: "bg-secondary", cls: "bg-secondary/20 text-secondary" },
-    completed: { dotCls: "bg-secondary", cls: "bg-secondary/20 text-secondary" },
-    processing: {
-      dotCls: "bg-tertiary animate-pulse",
-      cls: "bg-tertiary/20 text-tertiary",
-    },
-    uploading: { dotCls: "bg-primary", cls: "bg-primary/20 text-primary" },
-    draft: { dotCls: "bg-outline", cls: "bg-surface-container text-on-surface-variant" },
+  const statusTones: Record<string, { tone: Parameters<typeof StatusBadge>[0]["tone"]; pulse?: boolean }> = {
+    ready: { tone: "success" },
+    completed: { tone: "success" },
+    processing: { tone: "warning", pulse: true },
+    uploading: { tone: "primary" },
+    draft: { tone: "neutral" },
   };
-  const config = statusStyles[normalized] ?? {
-    dotCls: "bg-outline",
-    cls: "bg-surface-container text-on-surface-variant",
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label-sm font-bold backdrop-blur-md ${config.cls}`}
-    >
-      <span className={`h-1 w-1 rounded-full ${config.dotCls}`} />
-      {formatStatus(status)}
-    </span>
-  );
+  return statusTones[normalized] ?? { tone: "neutral" as const };
 }
 
-function ReviewStatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; text: string; dot: string }> = {
+function reviewStatusBadge(status: string) {
+  const map: Record<string, { label: string; tone: Parameters<typeof StatusBadge>[0]["tone"] }> = {
     waiting_approval: {
       label: "Waiting Approval",
-      text: "text-tertiary",
-      dot: "bg-tertiary",
+      tone: "warning",
     },
     changes_requested: {
       label: "Changes Requested",
-      text: "text-error",
-      dot: "bg-error",
+      tone: "danger",
     },
     waiting_review: {
       label: "Waiting Review",
-      text: "text-primary",
-      dot: "bg-primary",
+      tone: "primary",
     },
   };
-  const c = map[status] ?? { label: status, text: "text-on-surface-variant", dot: "bg-outline" };
-  return (
-    <span className={`flex items-center gap-1 text-label-sm font-bold ${c.text}`}>
-      {c.label}
-      <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
-    </span>
-  );
+  return map[status] ?? { label: status, tone: "neutral" as const };
 }
 
-function StatCard({
-  icon,
-  iconBg,
-  iconColor,
-  label,
-  value,
-}: {
-  icon: string;
-  iconBg: string;
-  iconColor: string;
-  label: string;
-  value: string | number;
-}) {
+/* ── Main component ─────────────────────────────────────────────────────── */
+
+function ProjectCard({ project, index }: { project: ProjectDto; index: number }) {
   return (
-    <div className="rounded-2xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-      <div className="mb-4">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconBg}`}>
-          <span className={`material-symbols-outlined text-[20px] ${iconColor}`}>{icon}</span>
+    <div className="group relative overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
+      <Link to={projectHref(project)} className="block">
+        <div className="relative h-44">
+          <GradientThumbnail index={index} icon="play_circle" />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
+          <div className="absolute left-3 top-3">
+            <StatusBadge
+              label={formatStatus(project.status)}
+              {...projectStatusBadge(project.status)}
+            />
+          </div>
         </div>
-      </div>
-      <p className="mb-1 text-label-sm font-medium uppercase tracking-wider text-on-surface-variant">
-        {label}
-      </p>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-headline-lg font-bold leading-none text-on-surface">{value}</span>
+      </Link>
+
+      <div className="p-4">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <Link to={projectHref(project)} className="min-w-0">
+              <h3 className="truncate text-body-sm font-bold text-on-surface">
+                {project.name}
+              </h3>
+              <p className="mt-2 text-label-md text-on-surface-variant">
+                {formatUpdatedAt(project.updatedAt)}
+              </p>
+          </Link>
+          <CardOverflowMenu id={project.id} itemLabel={project.name} />
+        </div>
+        <div className="flex items-center gap-2 text-label-sm text-on-surface-variant">
+          <span className="material-symbols-outlined text-[14px]">
+            {project.kind === ProjectKind.Image ? "image" : "movie"}
+          </span>
+          <span>{projectKindLabel(project.kind)}</span>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ── Main component ─────────────────────────────────────────────────────── */
-
-export default function DashboardHome({ loaderData }: Route.ComponentProps) {
+export default function DashboardHome({ loaderData, actionData }: Route.ComponentProps) {
   const { user, counts, recent, error } = loaderData;
 
   return (
     <div className="space-y-8">
       {error && <ErrorBanner message={error} />}
+      {actionData?.error && <ErrorBanner message={actionData.error} />}
 
       {/* ── Hero Welcome ──────────────────────────────────────────────────── */}
       <section className="flex items-end justify-between">
@@ -277,31 +271,35 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
       {/* ── Stats Row ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:col-span-8 xl:col-span-9 lg:grid-cols-2 xl:grid-cols-4">
-          <StatCard
+          <MetricCard
+            variant="stacked"
             icon="folder"
-            iconBg="bg-primary/10"
-            iconColor="text-primary"
+            iconBgClassName="bg-primary/10"
+            iconClassName="text-primary"
             label="Total Projects"
             value={counts.projects}
           />
-          <StatCard
+          <MetricCard
+            variant="stacked"
             icon="perm_media"
-            iconBg="bg-tertiary/10"
-            iconColor="text-tertiary"
+            iconBgClassName="bg-tertiary/10"
+            iconClassName="text-tertiary"
             label="Media Files"
             value={counts.media}
           />
-          <StatCard
+          <MetricCard
+            variant="stacked"
             icon="groups"
-            iconBg="bg-primary/10"
-            iconColor="text-primary"
+            iconBgClassName="bg-primary/10"
+            iconClassName="text-primary"
             label="Shared Items"
             value={counts.shared}
           />
-          <StatCard
+          <MetricCard
+            variant="stacked"
             icon="delete"
-            iconBg="bg-secondary/10"
-            iconColor="text-secondary"
+            iconBgClassName="bg-secondary/10"
+            iconClassName="text-secondary"
             label="Trash Items"
             value={counts.trash}
           />
@@ -359,39 +357,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
         ) : (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
             {recent.map((project, i) => (
-              <Link
-                key={project.id}
-                to={projectHref(project)}
-                className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30"
-              >
-                <div className="relative h-44">
-                  <ProjectThumbnail index={i} />
-                  <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
-                  <div className="absolute left-3 top-3">
-                    <StatusBadge status={project.status} />
-                  </div>
-                </div>
-
-                <div className="p-4">
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <h3 className="truncate text-body-sm font-bold text-on-surface">
-                      {project.name}
-                    </h3>
-                    <span className="material-symbols-outlined shrink-0 text-[18px] text-on-surface-variant transition-colors group-hover:text-on-surface">
-                      arrow_forward
-                    </span>
-                  </div>
-                  <p className="mb-4 text-label-md text-on-surface-variant">
-                    {formatUpdatedAt(project.updatedAt)}
-                  </p>
-                  <div className="flex items-center gap-2 text-label-sm text-on-surface-variant">
-                    <span className="material-symbols-outlined text-[14px]">
-                      {project.kind === ProjectKind.Image ? "image" : "movie"}
-                    </span>
-                    <span>{projectKindLabel(project.kind)}</span>
-                  </div>
-                </div>
-              </Link>
+              <ProjectCard key={project.id} project={project} index={i} />
             ))}
           </div>
         )}
@@ -427,7 +393,11 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
                   </h4>
                   <p className="text-label-sm text-on-surface-variant">By {review.reviewer}</p>
                 </div>
-                <ReviewStatusBadge status={review.status} />
+                <StatusBadge
+                  {...reviewStatusBadge(review.status)}
+                  className="bg-transparent px-0 py-0"
+                  dotPosition="end"
+                />
               </div>
             ))}
           </div>
@@ -506,20 +476,14 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
                 },
               ] as const
             ).map((action) => (
-              <Link
+              <QuickActionCard
                 key={action.label}
+                icon={action.icon}
+                title={action.label}
                 to={action.to}
-                className="group flex flex-col items-center justify-center rounded-xl border border-outline-variant bg-surface-container p-4 transition-colors hover:bg-surface-container-high"
-              >
-                <div
-                  className={`mb-3 flex h-8 w-8 items-center justify-center rounded-lg transition-transform group-hover:scale-110 ${action.color}`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{action.icon}</span>
-                </div>
-                <span className="text-label-sm font-bold text-on-surface-variant">
-                  {action.label}
-                </span>
-              </Link>
+                variant="compact"
+                className={action.color.includes("tertiary") ? "[&_div:first-child]:bg-tertiary/20 [&_div:first-child]:text-tertiary" : ""}
+              />
             ))}
           </div>
         </div>
@@ -546,24 +510,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
           ) : (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-4">
               {recent.slice(0, 4).map((project, i) => (
-                <Link
-                  key={project.id}
-                  to={projectHref(project)}
-                  className="group space-y-3"
-                >
-                  <div className="aspect-video overflow-hidden rounded-xl border border-outline-variant transition-colors group-hover:border-primary/30">
-                    <ProjectThumbnail index={i} />
-                  </div>
-                  <div>
-                    <h4 className="truncate text-label-md font-bold text-on-surface">
-                      {project.name}
-                    </h4>
-                    <p className="text-label-sm text-on-surface-variant">{project.status}</p>
-                    <div className="mt-1 flex items-center gap-2 text-label-sm text-on-surface-variant">
-                      <span>{projectKindLabel(project.kind)}</span>
-                    </div>
-                  </div>
-                </Link>
+                <ProjectCard key={project.id} project={project} index={i} />
               ))}
             </div>
           )}

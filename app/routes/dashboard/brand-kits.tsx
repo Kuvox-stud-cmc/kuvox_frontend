@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 import {
-  CARD_GRADIENTS,
+  FormActions,
+  GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
@@ -76,16 +77,14 @@ function ColorSwatches({ colors }: { colors: string[] }) {
 function BrandKitCard({ kit, index }: { kit: BrandKit; index: number }) {
   return (
     <div className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
-      <div
-        className={`relative flex h-32 items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[index % CARD_GRADIENTS.length]}`}
-      >
+      <GradientThumbnail index={index} className="relative h-32">
         <ColorSwatches colors={kit.colors} />
         {kit.isDefault && (
           <span className="absolute left-3 top-3 rounded-full bg-primary px-2 py-0.5 text-label-sm font-bold text-on-primary">
             Default
           </span>
         )}
-      </div>
+      </GradientThumbnail>
       <div className="p-5">
         <div className="mb-3 flex items-start justify-between gap-2">
           <div>
@@ -188,18 +187,12 @@ export default function BrandKits() {
               className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
             />
           </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setCreateOpen(false)}
-              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Cancel
-            </button>
-            <button type="button" onClick={() => setCreateOpen(false)} className={primaryButtonClass()}>
-              Create
-            </button>
-          </div>
+          <FormActions
+            onCancel={() => setCreateOpen(false)}
+            onSubmit={() => setCreateOpen(false)}
+            submitLabel="Create"
+            submitType="button"
+          />
         </div>
       </Modal>
     </section>

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, useNavigation, useSearchParams } from "react-router";
 
 import {
-  CARD_GRADIENTS,
-  GradientPlaceholder,
+  CardOverflowMenu,
+  FormActions,
+  GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
@@ -142,26 +143,6 @@ function photoLabel(photo: MediaDto): string {
   return [photo.status, dimensions, formatSize(photo.sizeBytes)].filter(Boolean).join(" · ");
 }
 
-function DeletePhotoButton({ photo, compact = false }: { photo: MediaDto; compact?: boolean }) {
-  return (
-    <Form method="post">
-      <input type="hidden" name="intent" value="delete" />
-      <input type="hidden" name="id" value={photo.id} />
-      <button
-        type="submit"
-        aria-label={`Move ${photo.filename} to Trash`}
-        className={
-          compact
-            ? "rounded-lg bg-surface-container-lowest/70 p-1.5 text-on-surface-variant backdrop-blur-md transition-colors hover:text-error"
-            : "rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100"
-        }
-      >
-        <span className="material-symbols-outlined text-[20px]">delete</span>
-      </button>
-    </Form>
-  );
-}
-
 function PhotoCard({
   photo,
   index,
@@ -175,7 +156,7 @@ function PhotoCard({
     return (
       <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
         <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
-          <GradientPlaceholder index={index} icon="image" iconSize="text-[40px]" />
+          <GradientThumbnail index={index} icon="image" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-body-md font-bold text-on-surface" title={photo.filename}>
@@ -186,7 +167,7 @@ function PhotoCard({
         <span className="hidden text-label-sm text-on-surface-variant sm:block">
           {formatDate(photo.createdAt)}
         </span>
-        <DeletePhotoButton photo={photo} />
+        <CardOverflowMenu id={photo.id} itemLabel={photo.filename} />
       </div>
     );
   }
@@ -194,7 +175,7 @@ function PhotoCard({
   return (
     <div className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
       <div className="relative aspect-[4/3] overflow-hidden">
-        <GradientPlaceholder index={index} icon="image" iconSize="text-[40px]" />
+        <GradientThumbnail index={index} icon="image" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
         <div className="absolute left-3 top-3">
           <span className="rounded-md bg-surface-container-lowest/70 px-2 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
@@ -202,7 +183,11 @@ function PhotoCard({
           </span>
         </div>
         <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
-          <DeletePhotoButton photo={photo} compact />
+          <CardOverflowMenu
+            id={photo.id}
+            itemLabel={photo.filename}
+            buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
+          />
         </div>
         <div className="absolute bottom-3 left-3 right-3 translate-y-2 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100">
           <h3 className="truncate text-label-md font-bold text-white" title={photo.filename}>
@@ -225,15 +210,11 @@ function AlbumCard({
   return (
     <div className="group cursor-pointer space-y-3">
       <div className="aspect-square overflow-hidden rounded-xl border border-outline-variant transition-colors group-hover:border-primary/40">
-        <div
-          className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${
-            CARD_GRADIENTS[index % CARD_GRADIENTS.length]
-          }`}
-        >
-          <span className="material-symbols-outlined text-[34px] text-on-surface-variant/35">
-            {album.icon}
-          </span>
-        </div>
+        <GradientThumbnail
+          index={index}
+          icon={album.icon}
+          iconClassName="text-[34px] text-on-surface-variant/35"
+        />
       </div>
       <div>
         <h4 className="truncate text-label-md font-bold text-on-surface">{album.name}</h4>
@@ -427,22 +408,11 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
             required
             placeholder="mountain-view.jpg"
           />
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setImportOpen(false)}
-              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={navigation.state === "submitting"}
-              className={primaryButtonClass()}
-            >
-              {navigation.state === "submitting" ? "Importing..." : "Import"}
-            </button>
-          </div>
+          <FormActions
+            onCancel={() => setImportOpen(false)}
+            submitLabel={navigation.state === "submitting" ? "Importing..." : "Import"}
+            isSubmitting={navigation.state === "submitting"}
+          />
         </Form>
       </Modal>
 
@@ -469,22 +439,11 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
             label="Album Icon" 
           />
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setAlbumModalOpen(false)}
-              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={navigation.state === "submitting"}
-              className={primaryButtonClass()}
-            >
-              {navigation.state === "submitting" ? "Creating..." : "Create Album"}
-            </button>
-          </div>
+          <FormActions
+            onCancel={() => setAlbumModalOpen(false)}
+            submitLabel={navigation.state === "submitting" ? "Creating..." : "Create Album"}
+            isSubmitting={navigation.state === "submitting"}
+          />
         </Form>
       </Modal>
     </section>

@@ -9,7 +9,9 @@ import { getSession } from "~/lib/session.server";
 import { TextField } from "~/components/dashboard/shared/form";
 
 import {
-  CARD_GRADIENTS,
+  CardOverflowMenu,
+  FormActions,
+  GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
@@ -186,12 +188,12 @@ function AudioCardGrid({
           className="bento-card group cursor-pointer overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low"
         >
           {/* Cover placeholder */}
-          <div
-            className={`relative flex aspect-[2/1] items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[i % CARD_GRADIENTS.length]}`}
-          >
-            <span className="material-symbols-outlined text-[36px] text-on-surface-variant/20">
-              {albumIcon}
-            </span>
+          <div className="relative aspect-[2/1]">
+            <GradientThumbnail
+              index={i}
+              icon={albumIcon}
+              iconClassName="text-[36px] text-on-surface-variant/20"
+            />
             {/* Duration badge */}
             <span className="absolute bottom-2 right-2 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 font-mono text-label-sm font-bold text-on-surface backdrop-blur-md">
               {track.durationSeconds ? Math.floor(track.durationSeconds / 60) + ":" + String(Math.floor(track.durationSeconds % 60)).padStart(2, "0") : "0:00"}
@@ -211,14 +213,7 @@ function AudioCardGrid({
               <h4 className="truncate text-body-sm font-bold text-on-surface">
                 {track.filename}
               </h4>
-              <button
-                type="button"
-                className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
-              >
-                <span className="material-symbols-outlined text-[16px]">
-                  more_horiz
-                </span>
-              </button>
+              <CardOverflowMenu id={track.id} itemLabel={track.filename} />
             </div>
             <p className="mb-3 text-label-md text-on-surface-variant">
               {track.codec || "Audio"}
@@ -387,14 +382,7 @@ export default function Audio() {
                       {(FEATURED_TRACK.sizeBytes / 1024 / 1024).toFixed(1)} MB
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="text-on-surface-variant transition-colors hover:text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">
-                      more_horiz
-                    </span>
-                  </button>
+                  <CardOverflowMenu id={FEATURED_TRACK.id} itemLabel={FEATURED_TRACK.filename} />
                 </div>
 
                 {/* Waveform */}
@@ -573,18 +561,7 @@ export default function Audio() {
                           play_circle
                         </span>
                       </button>
-                      <Form method="post" className="inline" onSubmit={(e) => { if(!confirm("Delete this audio?")) e.preventDefault(); }}>
-                        <input type="hidden" name="intent" value="delete" />
-                        <input type="hidden" name="id" value={track.id} />
-                        <button
-                          type="submit"
-                          className="rounded-lg p-1.5 text-error transition-colors hover:bg-error/10 hover:text-error"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">
-                            delete
-                          </span>
-                        </button>
-                      </Form>
+                      <CardOverflowMenu id={track.id} itemLabel={track.filename} />
                     </div>
                   </td>
                 </tr>
@@ -712,25 +689,11 @@ export default function Audio() {
             autoFocus
           />
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setImportOpen(false)}
-              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={transition.state === "submitting"}
-              className={primaryButtonClass()}
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {transition.state === "submitting" ? "hourglass_empty" : "upload"}
-              </span>
-              {transition.state === "submitting" ? "Importing..." : "Import"}
-            </button>
-          </div>
+          <FormActions
+            onCancel={() => setImportOpen(false)}
+            submitLabel={transition.state === "submitting" ? "Importing..." : "Import"}
+            isSubmitting={transition.state === "submitting"}
+          />
         </Form>
       </Modal>
     </section>

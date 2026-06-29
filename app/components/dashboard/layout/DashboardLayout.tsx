@@ -1,4 +1,4 @@
-import { CARD_GRADIENTS } from "~/components/dashboard/constants/dashboard.constants";
+import { GradientThumbnail } from "~/components/dashboard/shared/GradientThumbnail";
 
 interface GradientPlaceholderProps {
   /** Index used to cycle through gradient presets. */
@@ -19,15 +19,11 @@ export function GradientPlaceholder({
   iconSize = "text-[40px]",
 }: GradientPlaceholderProps) {
   return (
-    <div
-      className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[index % CARD_GRADIENTS.length]}`}
-    >
-      <span
-        className={`material-symbols-outlined ${iconSize} text-on-surface-variant/20`}
-      >
-        {icon}
-      </span>
-    </div>
+    <GradientThumbnail
+      index={index}
+      icon={icon}
+      iconClassName={`${iconSize} text-on-surface-variant/20`}
+    />
   );
 }
 

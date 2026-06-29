@@ -26,6 +26,14 @@ interface MetricCardProps {
   trend?: number;
   /** Optional custom content rendered in the bottom-right area (e.g. ProgressRing). */
   children?: ReactNode;
+  /** Layout style. @default "default" */
+  variant?: "default" | "stacked";
+  /** Optional wrapper class. */
+  className?: string;
+  /** Optional icon container override used by older stacked stat cards. */
+  iconBgClassName?: string;
+  /** Optional icon color override used by older stacked stat cards. */
+  iconClassName?: string;
 }
 
 export function MetricCard({
@@ -37,9 +45,47 @@ export function MetricCard({
   suffix,
   trend,
   children,
+  variant = "default",
+  className = "",
+  iconBgClassName,
+  iconClassName,
 }: MetricCardProps) {
+  if (variant === "stacked") {
+    return (
+      <div
+        className={`rounded-2xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30 ${className}`}
+      >
+        <div className="mb-4">
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconBgClassName ?? TONE_MAP[tone]}`}
+          >
+            <span
+              className={`material-symbols-outlined text-[20px] ${iconClassName ?? ""}`}
+            >
+              {icon}
+            </span>
+          </div>
+        </div>
+        <p className="mb-1 truncate text-[14px] font-medium uppercase tracking-wider text-on-surface-variant">
+          {label}
+        </p>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-headline-md font-bold leading-none text-on-surface">
+            {value}
+          </span>
+          {suffix && (
+            <span className="text-label-sm text-on-surface-variant">{suffix}</span>
+          )}
+          {detail && (
+            <span className="text-label-sm text-on-surface-variant">{detail}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
+    <div className={`rounded-xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30 ${className}`}>
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div

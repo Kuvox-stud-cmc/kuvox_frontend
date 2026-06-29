@@ -7,6 +7,14 @@ import {
     Modal,
     primaryButtonClass,
 } from "~/components/dashboard/section";
+import {
+    CardOverflowMenu,
+    FilterTabs,
+    FormActions,
+    GradientThumbnail,
+    MetricCard,
+    QuickActionCard,
+} from "~/components/dashboard/layout/DashboardPageLayout";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 
 import {
@@ -128,17 +136,6 @@ const MOCK_TEMPLATES: MockTemplate[] = [
     { id: "tpl4", name: "Event Recap", icon: "celebration", tone: "tertiary" },
 ];
 
-const THUMBNAIL_GRADIENTS = [
-    "from-primary/20 via-surface-container to-secondary/10",
-    "from-tertiary/25 via-surface-container to-primary/10",
-    "from-secondary/20 via-surface-container to-tertiary/10",
-    "from-primary/15 via-surface-container-high to-tertiary/15",
-    "from-secondary/15 via-surface-container to-primary/15",
-    "from-tertiary/15 via-surface-container-high to-secondary/15",
-    "from-primary/25 via-surface-container to-tertiary/15",
-    "from-secondary/20 via-surface-container-high to-primary/10",
-];
-
 const AVATAR_COLORS = [
     "bg-primary/20 text-primary",
     "bg-secondary/20 text-secondary",
@@ -164,41 +161,6 @@ function buildTabs(metrics: DashboardMetrics): { id: TabFilter; label: string; c
 }
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
-
-function StatCard({
-    icon,
-    iconBg,
-    iconColor,
-    label,
-    value,
-    detail,
-}: {
-    icon: string;
-    iconBg: string;
-    iconColor: string;
-    label: string;
-    value: string | number;
-    detail?: string;
-}) {
-    return (
-        <div className="rounded-2xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
-            <div className="mb-4">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconBg}`}>
-                    <span className={`material-symbols-outlined text-[20px] ${iconColor}`}>{icon}</span>
-                </div>
-            </div>
-            <p className="mb-1 truncate text-[14px] font-medium uppercase tracking-wider text-on-surface-variant">
-                {label}
-            </p>
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="text-headline-md font-bold leading-none text-on-surface">{value}</span>
-                {detail && <span className="text-label-sm text-on-surface-variant">{detail}</span>}
-            </div>
-        </div>
-    );
-}
-
-
 
 function AvatarStack({ collaborators }: { collaborators: string[] }) {
     return (
@@ -230,37 +192,37 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
     const href = project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
 
     return (
-        <Link
-            to={href}
-            className="bento-card group block cursor-pointer overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50"
-        >
-            <div className="relative aspect-video">
-                <div
-                    className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
-                >
-                    <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
-                        {typeIcon}
-                    </span>
-                </div>
-                <div className="absolute inset-0 bg-black/20 transition-colors group-hover:bg-black/10" />
+        <div className="bento-card group relative overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50">
+            <Link to={href} className="block cursor-pointer">
+                <div className="relative aspect-video">
+                    <GradientThumbnail index={index} icon={typeIcon} />
+                    <div className="absolute inset-0 bg-black/20 transition-colors group-hover:bg-black/10" />
 
-            </div>
-
-            <div className="p-4">
-                <h5 className="mb-1 truncate text-body-sm font-bold text-on-surface transition-colors group-hover:text-primary">
-                    {project.name}
-                </h5>
-                <p className="mb-3 text-label-sm text-outline">
-                    Updated {new Date(project.updatedAt).toLocaleDateString()}
-                </p>
-                <div className="flex items-center justify-between">
-                    <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
-                        {typeLabel}
-                    </span>
-                    <span className="text-label-sm text-outline">{project.status}</span>
                 </div>
+
+                <div className="p-4">
+                    <h5 className="mb-1 truncate pr-8 text-body-sm font-bold text-on-surface transition-colors group-hover:text-primary">
+                        {project.name}
+                    </h5>
+                    <p className="mb-3 text-label-sm text-outline">
+                        Updated {new Date(project.updatedAt).toLocaleDateString()}
+                    </p>
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
+                            {typeLabel}
+                        </span>
+                        <span className="truncate text-label-sm text-outline">{project.status}</span>
+                    </div>
+                </div>
+            </Link>
+            <div className="absolute right-3 top-3">
+                <CardOverflowMenu
+                    id={project.id}
+                    itemLabel={project.name}
+                    buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
+                />
             </div>
-        </Link>
+        </div>
     );
 }
 
@@ -273,32 +235,30 @@ function ProjectListRow({ project, index }: { project: ProjectDto; index: number
     const href = project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
 
     return (
-        <Link
-            to={href}
-            className="group flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40"
-        >
-            <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg">
-                <div
-                    className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
-                >
-                    <span className="material-symbols-outlined text-[20px] text-on-surface-variant/20">
-                        {typeIcon}
+        <div className="group flex items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40">
+            <Link to={href} className="flex min-w-0 flex-1 items-center gap-4">
+                <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg">
+                    <GradientThumbnail
+                        index={index}
+                        icon={typeIcon}
+                        iconClassName="text-[20px] text-on-surface-variant/20"
+                    />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
+                    <p className="mt-0.5 text-label-sm text-outline">
+                        Updated {new Date(project.updatedAt).toLocaleDateString()}
+                    </p>
+                </div>
+                <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
+                    <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
+                        {typeLabel}
                     </span>
                 </div>
-            </div>
-            <div className="min-w-0 flex-1">
-                <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
-                <p className="mt-0.5 text-label-sm text-outline">
-                    Updated {new Date(project.updatedAt).toLocaleDateString()}
-                </p>
-            </div>
-            <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
-                <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
-                    {typeLabel}
-                </span>
-            </div>
-            <span className="text-label-sm text-outline">{project.status}</span>
-        </Link>
+                <span className="text-label-sm text-outline">{project.status}</span>
+            </Link>
+            <CardOverflowMenu id={project.id} itemLabel={project.name} />
+        </div>
     );
 }
 
@@ -306,13 +266,7 @@ function ArchivedProjectCard({ project, index }: { project: ProjectTrashItem; in
     return (
         <div className="bento-card overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low opacity-80">
             <div className="relative aspect-video">
-                <div
-                    className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
-                >
-                    <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
-                        inventory_2
-                    </span>
-                </div>
+                <GradientThumbnail index={index} icon="inventory_2" />
             </div>
             <div className="p-4">
                 <h5 className="mb-1 truncate text-body-sm font-bold text-on-surface">
@@ -333,13 +287,11 @@ function ArchivedProjectListRow({ project, index }: { project: ProjectTrashItem;
     return (
         <div className="group flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 opacity-80">
             <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg">
-                <div
-                    className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
-                >
-                    <span className="material-symbols-outlined text-[20px] text-on-surface-variant/20">
-                        inventory_2
-                    </span>
-                </div>
+                <GradientThumbnail
+                    index={index}
+                    icon="inventory_2"
+                    iconClassName="text-[20px] text-on-surface-variant/20"
+                />
             </div>
             <div className="min-w-0 flex-1">
                 <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
@@ -379,34 +331,6 @@ function TeamProjectRow({ team, index }: { team: MockTeamProject; index: number 
                 Open
             </button>
         </div>
-    );
-}
-
-function QuickActionCard({
-    icon,
-    title,
-    description,
-    onClick,
-}: {
-    icon: string;
-    title: string;
-    description: string;
-    onClick: () => void;
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className="group flex flex-col items-start gap-3 rounded-xl border border-outline-variant/10 bg-surface-container-high p-4 text-left transition-all hover:border-primary/50"
-        >
-            <span className="material-symbols-outlined text-[24px] text-primary transition-transform group-hover:scale-110">
-                {icon}
-            </span>
-            <div>
-                <p className="text-body-sm font-bold text-on-surface">{title}</p>
-                <p className="text-label-sm text-outline">{description}</p>
-            </div>
-        </button>
     );
 }
 
@@ -641,45 +565,50 @@ export default function ProjectsDashboard({
 
             {/* ── Summary Stats ──────────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
-                <StatCard
+                <MetricCard
+                    variant="stacked"
                     icon="folder"
                     label="Total Projects"
                     value={metrics.total}
                     detail={`${metrics.video} video, ${metrics.image} image`}
-                    iconBg="bg-primary-container/10"
-                    iconColor="text-primary"
+                    iconBgClassName="bg-primary-container/10"
+                    iconClassName="text-primary"
                 />
-                <StatCard
+                <MetricCard
+                    variant="stacked"
                     icon="schedule"
                     label="In Progress"
                     value={metrics.inProgress}
                     detail="Active project status"
-                    iconBg="bg-secondary-container/10"
-                    iconColor="text-secondary"
+                    iconBgClassName="bg-secondary-container/10"
+                    iconClassName="text-secondary"
                 />
-                <StatCard
+                <MetricCard
+                    variant="stacked"
                     icon="task_alt"
                     label="Completed"
                     value={metrics.completed}
                     detail="Completed status"
-                    iconBg="bg-secondary/10"
-                    iconColor="text-secondary"
+                    iconBgClassName="bg-secondary/10"
+                    iconClassName="text-secondary"
                 />
-                <StatCard
+                <MetricCard
+                    variant="stacked"
                     icon="share"
                     label="Shared Projects"
                     value={metrics.shared}
                     detail="Shared with you"
-                    iconBg="bg-primary/10"
-                    iconColor="text-primary"
+                    iconBgClassName="bg-primary/10"
+                    iconClassName="text-primary"
                 />
-                <StatCard
+                <MetricCard
+                    variant="stacked"
                     icon="inventory_2"
                     label="Archived"
                     value={metrics.archived}
                     detail="In trash"
-                    iconBg="bg-tertiary/10"
-                    iconColor="text-tertiary"
+                    iconBgClassName="bg-tertiary/10"
+                    iconClassName="text-tertiary"
                 />
                 <div className="rounded-2xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
                     <div className="mb-4">
@@ -706,29 +635,16 @@ export default function ProjectsDashboard({
                 {/* ── Left column (9 cols) ─────────────────────────────────────────── */}
                 <div className="col-span-12 space-y-6 xl:col-span-9">
                     {/* Category Tabs */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-2 rounded-full px-5 py-2 text-body-sm font-medium transition-colors ${activeTab === tab.id
-                                    ? "bg-primary text-on-primary font-bold"
-                                    : "text-on-surface-variant hover:bg-surface-container"
-                                    }`}
-                            >
-                                {tab.label}
-                                <span
-                                    className={`rounded-lg px-2 py-0.5 text-label-sm ${activeTab === tab.id
-                                        ? "bg-on-primary/20 text-on-primary"
-                                        : "bg-surface-container-highest text-on-surface-variant"
-                                        }`}
-                                >
-                                    {tab.count}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
+                    <FilterTabs
+                        items={tabs.map((tab) => ({
+                            value: tab.id,
+                            label: tab.label,
+                            count: tab.count,
+                        }))}
+                        value={activeTab}
+                        onChange={setActiveTab}
+                        className="[&_button:not(.bg-primary)]:bg-transparent [&_button:not(.bg-primary)]:px-5 [&_button:not(.bg-primary)]:py-2"
+                    />
 
                     {/* Recent Projects */}
                     <section>
@@ -945,22 +861,11 @@ export default function ProjectsDashboard({
                         rows={2}
                         placeholder="Brief project description..."
                     />
-                    <div className="flex justify-end gap-3 pt-2">
-                        <button
-                            type="button"
-                            onClick={() => setCreateOpen(false)}
-                            className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isSubmitting}
-                            className={primaryButtonClass()}
-                        >
-                            {isSubmitting ? "Creating..." : "Create"}
-                        </button>
-                    </div>
+                    <FormActions
+                        onCancel={() => setCreateOpen(false)}
+                        submitLabel={isSubmitting ? "Creating..." : "Create"}
+                        isSubmitting={isSubmitting}
+                    />
                 </Form>
             </Modal>
             <Modal
@@ -1027,22 +932,11 @@ export default function ProjectsDashboard({
                     <p className="text-label-sm text-on-surface-variant">
                         This registers a media record. File upload to object storage is handled in a later phase.
                     </p>
-                    <div className="flex justify-end gap-3 pt-2">
-                        <button
-                            type="button"
-                            onClick={() => setImportOpen(false)}
-                            className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isSubmitting}
-                            className={primaryButtonClass()}
-                        >
-                            {isSubmitting ? "Importing..." : "Import"}
-                        </button>
-                    </div>
+                    <FormActions
+                        onCancel={() => setImportOpen(false)}
+                        submitLabel={isSubmitting ? "Importing..." : "Import"}
+                        isSubmitting={isSubmitting}
+                    />
                 </Form>
             </Modal>
         </section>

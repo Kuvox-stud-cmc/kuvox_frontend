@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import {
+  FilterTabs,
   MetricCard,
   PageHeader,
   SectionHeader,
+  StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { primaryButtonClass } from "~/components/dashboard/section";
 
@@ -74,31 +76,23 @@ const MOCK_REVIEWS: MockReview[] = [
 
 const STATUS_CONFIG: Record<
   ReviewStatus,
-  { label: string; text: string; dot: string; bg: string }
+  { label: string; tone: Parameters<typeof StatusBadge>[0]["tone"] }
 > = {
   waiting_approval: {
     label: "Waiting Approval",
-    text: "text-tertiary",
-    dot: "bg-tertiary",
-    bg: "bg-tertiary/15",
+    tone: "warning",
   },
   changes_requested: {
     label: "Changes Requested",
-    text: "text-error",
-    dot: "bg-error",
-    bg: "bg-error/15",
+    tone: "danger",
   },
   waiting_review: {
     label: "Waiting Review",
-    text: "text-primary",
-    dot: "bg-primary",
-    bg: "bg-primary/15",
+    tone: "primary",
   },
   approved: {
     label: "Approved",
-    text: "text-secondary",
-    dot: "bg-secondary",
-    bg: "bg-secondary/15",
+    tone: "success",
   },
 };
 
@@ -113,19 +107,9 @@ const FILTER_OPTIONS = [
 
 
 
-function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
-  const config = STATUS_CONFIG[status];
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label-sm font-bold ${config.bg} ${config.text}`}
-    >
-      {config.label}
-      <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} />
-    </span>
-  );
-}
-
 function ReviewRow({ review }: { review: MockReview }) {
+  const statusConfig = STATUS_CONFIG[review.status];
+
   return (
     <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-4 transition-colors hover:border-primary/30">
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-label-md font-bold text-on-surface-variant">
@@ -141,7 +125,12 @@ function ReviewRow({ review }: { review: MockReview }) {
         <span className="material-symbols-outlined text-[16px]">chat</span>
         {review.comments}
       </div>
-      <ReviewStatusBadge status={review.status} />
+      <StatusBadge
+        label={statusConfig.label}
+        tone={statusConfig.tone}
+        dotPosition="end"
+        className="px-2.5 py-1"
+      />
       <button
         type="button"
         className="shrink-0 rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-on-surface group-hover:opacity-100"
@@ -195,22 +184,7 @@ export default function Reviews() {
         <MetricCard icon="schedule" label="Avg. Turnaround" value="1.8 d" />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {FILTER_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => setFilter(option.value)}
-            className={`rounded-full px-4 py-1.5 text-label-md font-medium transition-colors ${
-              filter === option.value
-                ? "bg-primary text-on-primary"
-                : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <FilterTabs items={FILTER_OPTIONS} value={filter} onChange={setFilter} />
 
       <section>
         <SectionHeader

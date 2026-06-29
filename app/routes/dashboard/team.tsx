@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import {
+  FormActions,
   MetricCard,
   PageHeader,
   SectionHeader,
@@ -242,18 +243,12 @@ export default function Team() {
               <option value="admin">Admin</option>
             </select>
           </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setInviteOpen(false)}
-              className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Cancel
-            </button>
-            <button type="button" onClick={() => setInviteOpen(false)} className={primaryButtonClass()}>
-              Send invite
-            </button>
-          </div>
+          <FormActions
+            onCancel={() => setInviteOpen(false)}
+            onSubmit={() => setInviteOpen(false)}
+            submitLabel="Send invite"
+            submitType="button"
+          />
         </div>
       </Modal>
     </section>

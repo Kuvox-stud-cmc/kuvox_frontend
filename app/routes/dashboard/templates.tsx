@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import {
-  CARD_GRADIENTS,
+  FilterTabs,
+  GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
@@ -209,19 +210,15 @@ function TemplateCard({
   index: number;
   compact?: boolean;
 }) {
-  const gradientIdx = index % CARD_GRADIENTS.length;
-
   if (compact) {
     return (
       <div className="bento-card group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
         <div className="relative h-32 overflow-hidden">
-          <div
-            className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[gradientIdx]}`}
-          >
+          <GradientThumbnail index={index}>
             <h4 className="px-4 text-center text-body-sm font-black uppercase leading-tight tracking-tight text-on-surface/30">
               {template.title}
             </h4>
-          </div>
+          </GradientThumbnail>
         </div>
         <div className="p-3">
           <p className="mb-1 truncate text-label-md font-medium text-on-surface">
@@ -247,13 +244,11 @@ function TemplateCard({
     <div className="bento-card group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low">
       {/* Thumbnail */}
       <div className="relative h-40 overflow-hidden">
-        <div
-          className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${CARD_GRADIENTS[gradientIdx]}`}
-        >
-          <span className="material-symbols-outlined text-[48px] text-on-surface-variant/15">
-            movie
-          </span>
-        </div>
+        <GradientThumbnail
+          index={index}
+          icon="movie"
+          iconClassName="text-[48px] text-on-surface-variant/15"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 via-transparent to-transparent" />
 
         {/* Badges */}
@@ -316,13 +311,12 @@ function CategoryCard({
 }) {
   return (
     <div className="bento-card group cursor-pointer rounded-xl border border-outline-variant bg-surface-container-low p-6 text-center transition-colors">
-      <div
-        className={`mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${CARD_GRADIENTS[index % CARD_GRADIENTS.length]}`}
-      >
-        <span className="material-symbols-outlined text-[24px] text-on-surface-variant/60">
-          {category.icon}
-        </span>
-      </div>
+      <GradientThumbnail
+        index={index}
+        icon={category.icon}
+        iconClassName="text-[24px] text-on-surface-variant/60"
+        className="mx-auto mb-4 h-12 w-12 rounded-xl"
+      />
       <h4 className="text-body-sm font-bold text-on-surface">
         {category.name}
       </h4>
@@ -420,25 +414,16 @@ export default function Templates() {
       {/* ── Category Filter Pills ──────────────────────────────────────────── */}
       <div>
         <SectionHeader title="Browse by Category" actionOnClick={() => {}} />
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.name}
-              type="button"
-              onClick={() => setActiveCategory(cat.name)}
-              className={`flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-body-sm font-medium transition-colors ${
-                activeCategory === cat.name
-                  ? "bg-primary text-on-primary"
-                  : "border border-outline-variant bg-surface-container-low text-on-surface-variant hover:border-primary/30 hover:text-on-surface"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">
-                {cat.icon}
-              </span>
-              {cat.name}
-            </button>
-          ))}
-        </div>
+        <FilterTabs
+          items={CATEGORIES.map((cat) => ({
+            value: cat.name,
+            label: cat.name,
+            icon: cat.icon,
+          }))}
+          value={activeCategory}
+          onChange={setActiveCategory}
+          variant="boxed"
+        />
       </div>
 
       {/* ── Featured Templates ─────────────────────────────────────────────── */}
