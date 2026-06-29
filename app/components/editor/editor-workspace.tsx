@@ -1,12 +1,22 @@
 import { useEffect } from "react";
 
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
-import { mediaModeChanged, projectOpened } from "~/store/slices/editor-slice";
+import { projectOpened } from "~/store/slices/editor-slice";
 
-import { AgentPanel } from "./panels/agent-panel";
+import { AiAssistantPanel } from "./ai-assistant-panel";
+import { EditorTopBar } from "./editor-top-bar";
+import { MediaLibraryPanel } from "./media-library-panel";
+import {
+  assistantMessages,
+  assistantSuggestions,
+  editorProject,
+  editorTools,
+  mediaAssets,
+  timelineTracks,
+} from "./mock-editor-data";
 import { PreviewPanel } from "./panels/preview-panel";
-import { SuggestionsPanel } from "./panels/suggestions-panel";
 import { TimelinePanel } from "./panels/timeline-panel";
+import { ToolRail } from "./tool-rail";
 
 interface EditorWorkspaceProps {
   projectId: string;
@@ -19,12 +29,31 @@ interface EditorWorkspaceProps {
  */
 export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
   const dispatch = useAppDispatch();
-  const mediaMode = useAppSelector((state) => state.editor.mediaMode);
+  const editorMode = useAppSelector((state) => state.editor.editorMode);
 
   useEffect(() => {
     dispatch(projectOpened(projectId));
   }, [dispatch, projectId]);
 
+  return (
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-on-background">
+      <EditorTopBar project={{ ...editorProject, id: projectId }} />
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <MediaLibraryPanel assets={mediaAssets} />
+        <PreviewPanel project={editorProject} />
+        {editorMode === "ai" ? (
+          <AiAssistantPanel messages={assistantMessages} suggestions={assistantSuggestions} />
+        ) : (
+          <ToolRail tools={editorTools} />
+        )}
+      </div>
+
+      <TimelinePanel tracks={timelineTracks} />
+    </div>
+  );
+
+  /*
   return (
     <div className="flex h-screen w-full flex-col bg-gray-50">
       <header className="flex h-12 items-center justify-between border-b border-gray-200 bg-white px-4">
@@ -64,4 +93,5 @@ export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
       </footer>
     </div>
   );
+  */
 }
