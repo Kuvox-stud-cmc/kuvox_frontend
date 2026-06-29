@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLoaderData, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 
 import {
   CARD_GRADIENTS,
@@ -7,7 +7,6 @@ import {
   GradientPlaceholder,
   MetricCard,
   PageHeader,
-  ProgressRing,
   SectionHeader,
   SortDropdown,
   ViewToggle,
@@ -50,21 +49,6 @@ function formatDuration(sec: number | null): string {
   const s = Math.floor(sec % 60);
   return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
-
-/* ── Mock data (to be replaced by real API integration) ─────────────────── */
-
-// Mock data replaced with loader data.
-
-const MOCK_METRICS = {
-  totalProjects: 24,
-  inProgress: 6,
-  rendering: 2,
-  renderingProgress: 45,
-  completed: 14,
-  failed: 2,
-};
-
-
 
 function StatusBadge({ status }: { status: string }) {
   const normStatus = status.toLowerCase();
@@ -497,6 +481,32 @@ export default function Videos({ loaderData }: Route.ComponentProps) {
     if (sort === "name") return a.filename.localeCompare(b.filename);
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
+  const metrics = apiVideos.reduce(
+    (acc, video) => {
+      const status = video.status.trim().toLowerCase();
+
+      if (["processing", "uploading", "uploaded"].includes(status)) {
+        acc.inProgress += 1;
+      }
+
+      if (["ready", "complete", "completed"].includes(status)) {
+        acc.completed += 1;
+      }
+
+      if (status === "failed") {
+        acc.failed += 1;
+      }
+
+      return acc;
+    },
+    {
+      totalVideos: apiVideos.length,
+      inProgress: 0,
+      archived: apiArchived.length,
+      completed: 0,
+      failed: 0,
+    },
+  );
 
   return (
     <section className="space-y-10">
@@ -571,49 +581,40 @@ export default function Videos({ loaderData }: Route.ComponentProps) {
       {/* ── Metrics Row ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
-          icon="folder"
-          label="Total Projects"
-          value={MOCK_METRICS.totalProjects}
-          tone="primary"
-        >
-          <span className="text-label-sm font-bold text-secondary">
-            ↑ 12%{" "}
-            <span className="font-normal text-on-surface-variant">
-              vs last month
-            </span>
-          </span>
-        </MetricCard>
-
-        <MetricCard
-          icon="pending"
-          label="In Progress"
-          value={MOCK_METRICS.inProgress}
-          detail="Currently editing"
+          icon="videocam"
+          label="Total Videos"
+          value={metrics.totalVideos}
           tone="primary"
         />
 
         <MetricCard
-          icon="bolt"
-          label="Rendering"
-          value={MOCK_METRICS.rendering}
-          detail="Rendering videos"
+          icon="pending"
+          label="In Progress"
+          value={metrics.inProgress}
+          detail="Processing or uploaded"
+          tone="primary"
+        />
+
+        <MetricCard
+          icon="archive"
+          label="Archived"
+          value={metrics.archived}
+          detail="In trash"
           tone="tertiary"
-        >
-          <ProgressRing progress={MOCK_METRICS.renderingProgress} />
-        </MetricCard>
+        />
 
         <MetricCard
           icon="check_circle"
           label="Completed"
-          value={MOCK_METRICS.completed}
-          detail="Ready to export"
+          value={metrics.completed}
+          detail="Ready"
           tone="secondary"
         />
 
         <MetricCard
           icon="error"
           label="Failed"
-          value={MOCK_METRICS.failed}
+          value={metrics.failed}
           detail="Need attention"
           tone="error"
         />

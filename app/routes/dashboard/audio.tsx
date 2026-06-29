@@ -12,7 +12,6 @@ import {
   CARD_GRADIENTS,
   MetricCard,
   PageHeader,
-  ProgressRing,
   SectionHeader,
   SortDropdown,
 } from "~/components/dashboard/layout/DashboardPageLayout";
@@ -281,6 +280,7 @@ export default function Audio() {
   const durationHours = (totalDuration / 3600).toFixed(1);
   const storageUsed = allTracks.reduce((acc, curr) => acc + curr.sizeBytes, 0);
   const storageUsedGb = (storageUsed / (1024 * 1024 * 1024)).toFixed(2);
+  const albumCount = loaderData?.albums?.length || 0;
   
   const FEATURED_TRACK = allTracks.length > 0 ? allTracks[0] : null;
 
@@ -312,7 +312,6 @@ export default function Audio() {
           icon="music_note"
           label="Total Audio"
           value={allTracks.length.toLocaleString()}
-          trend={15}
         />
         <MetricCard
           icon="schedule"
@@ -320,22 +319,19 @@ export default function Audio() {
           value={durationHours}
           suffix="h"
           tone="tertiary"
-          trend={12}
         />
         <MetricCard
           icon="cloud"
           label="Storage Used"
           value={storageUsedGb}
           suffix="GB"
-        >
-          <ProgressRing progress={12} size={36} />
-        </MetricCard>
+        />
         <MetricCard
-          icon="auto_fix_high"
-          label="Edits Applied"
-          value={0}
+          icon="album"
+          label="Albums"
+          value={albumCount.toLocaleString()}
           tone="secondary"
-          trend={0}
+          detail={`${musicTracks.length} music / ${sfxTracks.length} SFX / ${voiceoverTracks.length} voiceovers`}
         />
       </div>
 

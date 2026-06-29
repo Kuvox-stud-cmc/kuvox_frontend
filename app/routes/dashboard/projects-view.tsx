@@ -1,36 +1,51 @@
-import { useState } from "react";
-import { useLoaderData, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Form, Link, useActionData, useNavigation } from "react-router";
 
-import { Modal, primaryButtonClass } from "~/components/dashboard/section";
+import {
+    EmptyState,
+    ErrorBanner,
+    Modal,
+    primaryButtonClass,
+} from "~/components/dashboard/section";
+import { TextArea, TextField } from "~/components/dashboard/shared/form";
 
-import { PERSONAL, type ProjectDto, projectKindLabel } from "~/lib/api";
-
-function formatDuration(sec: number | null): string {
-    if (!sec) return "";
-    const min = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-}
+import {
+    MediaKind,
+    ProjectKind,
+    mediaKindLabel,
+    projectKindLabel,
+    type MediaDto,
+    type ProjectDto,
+    type ProjectTrashItem,
+} from "~/lib/api";
 
 /* ── Mock data ──────────────────────────────────────────────────────────── */
 
-const MOCK_STATS = {
-    total: 48,
-    totalTrend: 16,
-    inProgress: 23,
-    inProgressTrend: 12,
-    completed: 15,
-    completedTrend: 8,
-    shared: 10,
-    sharedTrend: 20,
-    archived: 8,
-    archivedTrend: -5,
-    storageUsedGb: 128,
-    storageTotalTb: 1,
-    storagePercent: 12.8,
-};
+interface ProjectsDashboardProps {
+    projects: ProjectDto[];
+    sharedProjects: ProjectDto[];
+    archivedProjects: ProjectTrashItem[];
+    media: MediaDto[];
+    error: string | null;
+}
 
-// Mock data removed in favor of real API data
+interface ActionData {
+    ok?: boolean;
+    intent?: string;
+    error?: string;
+}
+
+interface DashboardMetrics {
+    total: number;
+    video: number;
+    image: number;
+    inProgress: number;
+    completed: number;
+    shared: number;
+    archived: number;
+    storageLabel: string;
+    mediaCount: number;
+}
 
 interface MockTeamProject {
     id: string;
@@ -137,17 +152,16 @@ const TEAM_GRADIENTS = [
     "from-secondary/25 via-surface-container-high to-tertiary/10",
 ];
 
-type TabFilter = "all" | "video" | "photo" | "audio" | "template" | "team" | "archived";
+type TabFilter = "all" | "video" | "image" | "archived";
 
-const TABS: { id: TabFilter; label: string; count?: number }[] = [
-    { id: "all", label: "All Projects" },
-    { id: "video", label: "Video", count: 28 },
-    { id: "photo", label: "Photo", count: 8 },
-    { id: "audio", label: "Audio", count: 6 },
-    { id: "template", label: "Template", count: 6 },
-    { id: "team", label: "Team", count: 10 },
-    { id: "archived", label: "Archived", count: 8 },
-];
+function buildTabs(metrics: DashboardMetrics): { id: TabFilter; label: string; count: number }[] {
+    return [
+        { id: "all", label: "All Projects", count: metrics.total },
+        { id: "video", label: "Video", count: metrics.video },
+        { id: "image", label: "Image", count: metrics.image },
+        { id: "archived", label: "Archived", count: metrics.archived },
+    ];
+}
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
@@ -157,16 +171,15 @@ function StatCard({
     iconColor,
     label,
     value,
-    trend,
+    detail,
 }: {
     icon: string;
     iconBg: string;
     iconColor: string;
     label: string;
     value: string | number;
-    trend: number;
+    detail?: string;
 }) {
-    const isPositive = trend >= 0;
     return (
         <div className="rounded-2xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
             <div className="mb-4">
@@ -179,10 +192,7 @@ function StatCard({
             </p>
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="text-headline-md font-bold leading-none text-on-surface">{value}</span>
-                <span className={`text-label-sm font-bold ${isPositive ? "text-secondary" : "text-error"}`}>
-                    {isPositive ? "↑" : "↓"} {Math.abs(trend)}%{" "}
-                    <span className="font-normal text-on-surface-variant">vs last month</span>
-                </span>
+                {detail && <span className="text-label-sm text-on-surface-variant">{detail}</span>}
             </div>
         </div>
     );
@@ -217,9 +227,13 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
         video: "movie",
         image: "image",
     }[typeLabel] || "movie";
+    const href = project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
 
     return (
-        <div className="bento-card group cursor-pointer overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50">
+        <Link
+            to={href}
+            className="bento-card group block cursor-pointer overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50"
+        >
             <div className="relative aspect-video">
                 <div
                     className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
@@ -236,18 +250,17 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
                 <h5 className="mb-1 truncate text-body-sm font-bold text-on-surface transition-colors group-hover:text-primary">
                     {project.name}
                 </h5>
-                <p className="mb-3 text-label-sm text-outline">{new Date(project.updatedAt).toLocaleDateString()}</p>
+                <p className="mb-3 text-label-sm text-outline">
+                    Updated {new Date(project.updatedAt).toLocaleDateString()}
+                </p>
                 <div className="flex items-center justify-between">
-                    <AvatarStack collaborators={["SC"]} />
-                    <button
-                        type="button"
-                        className="text-outline transition-colors hover:text-on-surface"
-                    >
-                        <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-                    </button>
+                    <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
+                        {typeLabel}
+                    </span>
+                    <span className="text-label-sm text-outline">{project.status}</span>
                 </div>
             </div>
-        </div>
+        </Link>
     );
 }
 
@@ -257,9 +270,13 @@ function ProjectListRow({ project, index }: { project: ProjectDto; index: number
         video: "movie",
         image: "image",
     }[typeLabel] || "movie";
+    const href = project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
 
     return (
-        <div className="group flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40">
+        <Link
+            to={href}
+            className="group flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40"
+        >
             <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg">
                 <div
                     className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
@@ -268,24 +285,71 @@ function ProjectListRow({ project, index }: { project: ProjectDto; index: number
                         {typeIcon}
                     </span>
                 </div>
-                {/* project.starred support later */}
             </div>
             <div className="min-w-0 flex-1">
                 <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
-                <p className="mt-0.5 text-label-sm text-outline">{new Date(project.updatedAt).toLocaleDateString()}</p>
+                <p className="mt-0.5 text-label-sm text-outline">
+                    Updated {new Date(project.updatedAt).toLocaleDateString()}
+                </p>
             </div>
             <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
                 <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
                     {typeLabel}
                 </span>
             </div>
-            <AvatarStack collaborators={["SC"]} />
-            <button
-                type="button"
-                className="text-outline transition-colors hover:text-on-surface"
-            >
-                <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-            </button>
+            <span className="text-label-sm text-outline">{project.status}</span>
+        </Link>
+    );
+}
+
+function ArchivedProjectCard({ project, index }: { project: ProjectTrashItem; index: number }) {
+    return (
+        <div className="bento-card overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low opacity-80">
+            <div className="relative aspect-video">
+                <div
+                    className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
+                >
+                    <span className="material-symbols-outlined text-[40px] text-on-surface-variant/20">
+                        inventory_2
+                    </span>
+                </div>
+            </div>
+            <div className="p-4">
+                <h5 className="mb-1 truncate text-body-sm font-bold text-on-surface">
+                    {project.name}
+                </h5>
+                <p className="text-label-sm text-outline">
+                    Deleted {new Date(project.deletedAt).toLocaleDateString()}
+                </p>
+                <p className="mt-2 text-label-sm text-on-surface-variant">
+                    Purges in {project.purgesInDays} days
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function ArchivedProjectListRow({ project, index }: { project: ProjectTrashItem; index: number }) {
+    return (
+        <div className="group flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 opacity-80">
+            <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg">
+                <div
+                    className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[index % THUMBNAIL_GRADIENTS.length]}`}
+                >
+                    <span className="material-symbols-outlined text-[20px] text-on-surface-variant/20">
+                        inventory_2
+                    </span>
+                </div>
+            </div>
+            <div className="min-w-0 flex-1">
+                <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
+                <p className="mt-0.5 text-label-sm text-outline">
+                    Deleted {new Date(project.deletedAt).toLocaleDateString()}
+                </p>
+            </div>
+            <span className="hidden text-label-sm text-on-surface-variant sm:inline">
+                Purges in {project.purgesInDays} days
+            </span>
         </div>
     );
 }
@@ -322,14 +386,17 @@ function QuickActionCard({
     icon,
     title,
     description,
+    onClick,
 }: {
     icon: string;
     title: string;
     description: string;
+    onClick: () => void;
 }) {
     return (
         <button
             type="button"
+            onClick={onClick}
             className="group flex flex-col items-start gap-3 rounded-xl border border-outline-variant/10 bg-surface-container-high p-4 text-left transition-all hover:border-primary/50"
         >
             <span className="material-symbols-outlined text-[24px] text-primary transition-transform group-hover:scale-110">
@@ -419,26 +486,90 @@ function TemplateRow({ template }: { template: MockTemplate }) {
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 
-export default function ProjectsDashboard({ projects }: { projects: ProjectDto[] }) {
+function normalizeStatus(status: string): string {
+    return status.replace(/\s|_/g, "").toLowerCase();
+}
+
+function formatBytes(bytes: number): string {
+    if (bytes >= 1024 * 1024 * 1024) {
+        return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+    }
+    if (bytes >= 1024 * 1024) {
+        return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    }
+    return `${bytes.toLocaleString()} B`;
+}
+
+function getProjectMetrics(
+    projects: ProjectDto[],
+    sharedProjects: ProjectDto[],
+    archivedProjects: ProjectTrashItem[],
+    media: MediaDto[],
+): DashboardMetrics {
+    const storageBytes = media.reduce((total, item) => total + item.sizeBytes, 0);
+    return {
+        total: projects.length,
+        video: projects.filter((project) => project.kind === ProjectKind.Video).length,
+        image: projects.filter((project) => project.kind === ProjectKind.Image).length,
+        inProgress: projects.filter((project) => normalizeStatus(project.status) === "inprogress").length,
+        completed: projects.filter((project) => normalizeStatus(project.status) === "completed").length,
+        shared: sharedProjects.length,
+        archived: archivedProjects.length,
+        storageLabel: formatBytes(storageBytes),
+        mediaCount: media.length,
+    };
+}
+
+export default function ProjectsDashboard({
+    projects,
+    sharedProjects,
+    archivedProjects,
+    media,
+    error,
+}: ProjectsDashboardProps) {
     const [view, setView] = useState<"grid" | "list">("grid");
     const [sort, setSort] = useState<"latest" | "name">("latest");
     const [activeTab, setActiveTab] = useState<TabFilter>("all");
     const [createOpen, setCreateOpen] = useState(false);
+    const [importOpen, setImportOpen] = useState(false);
+    const actionData = useActionData<ActionData>();
+    const navigation = useNavigation();
+    const isSubmitting = navigation.state === "submitting";
+    const metrics = getProjectMetrics(projects, sharedProjects, archivedProjects, media);
+    const tabs = buildTabs(metrics);
+
+    useEffect(() => {
+        if (!actionData?.ok) return;
+        if (actionData.intent === "create") setCreateOpen(false);
+        if (actionData.intent === "importMedia") setImportOpen(false);
+    }, [actionData]);
 
     const filteredProjects =
         activeTab === "all"
             ? projects
-            : activeTab === "team" || activeTab === "archived"
-                ? projects.slice(0, 3) 
-                : projects.filter((p) => projectKindLabel(p.kind).toLowerCase() === activeTab);
+            : activeTab === "video"
+                ? projects.filter((project) => project.kind === ProjectKind.Video)
+                : activeTab === "image"
+                    ? projects.filter((project) => project.kind === ProjectKind.Image)
+                    : [];
 
     const sortedProjects = [...filteredProjects].sort((a, b) => {
         if (sort === "name") return a.name.localeCompare(b.name);
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
 
+    const sortedArchivedProjects = [...archivedProjects].sort((a, b) => {
+        if (sort === "name") return a.name.localeCompare(b.name);
+        return new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime();
+    });
+
+    const visibleCount =
+        activeTab === "archived" ? sortedArchivedProjects.length : sortedProjects.length;
+
     return (
         <section className="space-y-8">
+            {error && <ErrorBanner message={error} />}
+            {actionData?.error && <ErrorBanner message={actionData.error} />}
             {/* ── Page Header + Toolbar ──────────────────────────────────────────── */}
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
@@ -513,40 +644,40 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                 <StatCard
                     icon="folder"
                     label="Total Projects"
-                    value={MOCK_STATS.total}
-                    trend={MOCK_STATS.totalTrend}
+                    value={metrics.total}
+                    detail={`${metrics.video} video, ${metrics.image} image`}
                     iconBg="bg-primary-container/10"
                     iconColor="text-primary"
                 />
                 <StatCard
                     icon="schedule"
                     label="In Progress"
-                    value={MOCK_STATS.inProgress}
-                    trend={MOCK_STATS.inProgressTrend}
+                    value={metrics.inProgress}
+                    detail="Active project status"
                     iconBg="bg-secondary-container/10"
                     iconColor="text-secondary"
                 />
                 <StatCard
                     icon="task_alt"
                     label="Completed"
-                    value={MOCK_STATS.completed}
-                    trend={MOCK_STATS.completedTrend}
+                    value={metrics.completed}
+                    detail="Completed status"
                     iconBg="bg-secondary/10"
                     iconColor="text-secondary"
                 />
                 <StatCard
                     icon="share"
                     label="Shared Projects"
-                    value={MOCK_STATS.shared}
-                    trend={MOCK_STATS.sharedTrend}
+                    value={metrics.shared}
+                    detail="Shared with you"
                     iconBg="bg-primary/10"
                     iconColor="text-primary"
                 />
                 <StatCard
                     icon="inventory_2"
                     label="Archived"
-                    value={MOCK_STATS.archived}
-                    trend={MOCK_STATS.archivedTrend}
+                    value={metrics.archived}
+                    detail="In trash"
                     iconBg="bg-tertiary/10"
                     iconColor="text-tertiary"
                 />
@@ -561,10 +692,10 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                     </p>
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <span className="text-headline-md font-bold leading-none text-on-surface">
-                            {MOCK_STATS.storageUsedGb} GB
+                            {metrics.storageLabel}
                         </span>
                         <span className="text-label-sm text-on-surface-variant">
-                            {MOCK_STATS.storagePercent}% of {MOCK_STATS.storageTotalTb} TB
+                            {metrics.mediaCount} media file{metrics.mediaCount === 1 ? "" : "s"}
                         </span>
                     </div>
                 </div>
@@ -576,7 +707,7 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                 <div className="col-span-12 space-y-6 xl:col-span-9">
                     {/* Category Tabs */}
                     <div className="flex flex-wrap items-center gap-2">
-                        {TABS.map((tab) => (
+                        {tabs.map((tab) => (
                             <button
                                 key={tab.id}
                                 type="button"
@@ -587,16 +718,14 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                                     }`}
                             >
                                 {tab.label}
-                                {tab.count != null && (
-                                    <span
-                                        className={`rounded-lg px-2 py-0.5 text-label-sm ${activeTab === tab.id
-                                            ? "bg-on-primary/20 text-on-primary"
-                                            : "bg-surface-container-highest text-on-surface-variant"
-                                            }`}
-                                    >
-                                        {tab.count}
-                                    </span>
-                                )}
+                                <span
+                                    className={`rounded-lg px-2 py-0.5 text-label-sm ${activeTab === tab.id
+                                        ? "bg-on-primary/20 text-on-primary"
+                                        : "bg-surface-container-highest text-on-surface-variant"
+                                        }`}
+                                >
+                                    {tab.count}
+                                </span>
                             </button>
                         ))}
                     </div>
@@ -605,16 +734,54 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                     <section>
                         <div className="mb-4 flex items-center justify-between">
                             <h2 className="text-headline-md font-bold text-on-surface">Recent Projects</h2>
-                            <button
-                                type="button"
+                            <Link
+                                to="/dashboard/projects"
                                 className="flex items-center gap-1 text-label-md font-bold text-primary transition-colors hover:text-primary-fixed"
                             >
-                                View All
+                                {visibleCount} item{visibleCount === 1 ? "" : "s"}
                                 <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                            </button>
+                            </Link>
                         </div>
 
-                        {view === "list" ? (
+                        {visibleCount === 0 ? (
+                            <EmptyState
+                                icon={activeTab === "archived" ? "inventory_2" : "folder"}
+                                title={
+                                    activeTab === "archived"
+                                        ? "No archived projects"
+                                        : "No projects yet"
+                                }
+                                hint={
+                                    activeTab === "archived"
+                                        ? "Deleted projects will appear here until they are purged."
+                                        : "Create a project to start editing."
+                                }
+                                action={
+                                    activeTab === "archived" ? undefined : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setCreateOpen(true)}
+                                            className={primaryButtonClass()}
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">add</span>
+                                            Create Project
+                                        </button>
+                                    )
+                                }
+                            />
+                        ) : activeTab === "archived" && view === "list" ? (
+                            <div className="space-y-3">
+                                {sortedArchivedProjects.map((project, i) => (
+                                    <ArchivedProjectListRow key={project.id} project={project} index={i} />
+                                ))}
+                            </div>
+                        ) : activeTab === "archived" ? (
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                {sortedArchivedProjects.map((project, i) => (
+                                    <ArchivedProjectCard key={project.id} project={project} index={i} />
+                                ))}
+                            </div>
+                        ) : view === "list" ? (
                             <div className="space-y-3">
                                 {sortedProjects.map((project, i) => (
                                     <ProjectListRow key={project.id} project={project} index={i} />
@@ -658,21 +825,21 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                                     icon="cloud_upload"
                                     title="Import Media"
                                     description="Upload photos, videos, audio"
+                                    onClick={() => setImportOpen(true)}
                                 />
                                 <QuickActionCard
                                     icon="add_box"
                                     title="Create Project"
                                     description="Start a new project"
-                                />
-                                <QuickActionCard
-                                    icon="create_new_folder"
-                                    title="New Folder"
-                                    description="Organize your projects"
+                                    onClick={() => setCreateOpen(true)}
                                 />
                                 <QuickActionCard
                                     icon="auto_awesome"
                                     title="AI Assistant"
                                     description="Get AI suggestions"
+                                    onClick={() => {
+                                        window.location.href = "/dashboard/ai-tools";
+                                    }}
                                 />
                             </div>
                         </div>
@@ -746,21 +913,15 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                 onClose={() => setCreateOpen(false)}
                 title="New project"
             >
-                <div className="space-y-4">
-                    <div>
-                        <label
-                            htmlFor="project-name"
-                            className="block text-label-md text-on-surface-variant"
-                        >
-                            Name
-                        </label>
-                        <input
-                            id="project-name"
-                            type="text"
-                            placeholder="My new edit"
-                            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface placeholder:text-on-surface-variant/40 focus:border-primary focus:outline-none"
-                        />
-                    </div>
+                <Form method="post" className="space-y-4">
+                    <input type="hidden" name="intent" value="create" />
+                    <TextField
+                        name="name"
+                        label="Name"
+                        placeholder="My new edit"
+                        required
+                        autoFocus
+                    />
                     <div>
                         <label
                             htmlFor="project-kind"
@@ -770,27 +931,20 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                         </label>
                         <select
                             id="project-kind"
+                            name="kind"
+                            defaultValue={ProjectKind.Video}
                             className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
                         >
-                            <option>Video</option>
-                            <option>Image</option>
-                            <option>Audio</option>
+                            <option value={ProjectKind.Video}>Video</option>
+                            <option value={ProjectKind.Image}>Image</option>
                         </select>
                     </div>
-                    <div>
-                        <label
-                            htmlFor="project-description"
-                            className="block text-label-md text-on-surface-variant"
-                        >
-                            Description <span className="text-on-surface-variant">(optional)</span>
-                        </label>
-                        <textarea
-                            id="project-description"
-                            rows={2}
-                            placeholder="Brief project description..."
-                            className="mt-1 w-full resize-none rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface placeholder:text-on-surface-variant/40 focus:border-primary focus:outline-none"
-                        />
-                    </div>
+                    <TextArea
+                        name="description"
+                        label="Description"
+                        rows={2}
+                        placeholder="Brief project description..."
+                    />
                     <div className="flex justify-end gap-3 pt-2">
                         <button
                             type="button"
@@ -800,14 +954,96 @@ export default function ProjectsDashboard({ projects }: { projects: ProjectDto[]
                             Cancel
                         </button>
                         <button
-                            type="button"
-                            onClick={() => setCreateOpen(false)}
+                            type="submit"
+                            disabled={isSubmitting}
                             className={primaryButtonClass()}
                         >
-                            Create
+                            {isSubmitting ? "Creating..." : "Create"}
                         </button>
                     </div>
-                </div>
+                </Form>
+            </Modal>
+            <Modal
+                open={importOpen}
+                onClose={() => setImportOpen(false)}
+                title="Import media"
+            >
+                <Form method="post" className="space-y-4">
+                    <input type="hidden" name="intent" value="importMedia" />
+                    <TextField
+                        name="filename"
+                        label="Filename"
+                        placeholder="campaign-clip.mp4"
+                        required
+                        autoFocus
+                    />
+                    <div>
+                        <label
+                            htmlFor="media-kind"
+                            className="block text-label-md text-on-surface-variant"
+                        >
+                            Kind
+                        </label>
+                        <select
+                            id="media-kind"
+                            name="kind"
+                            defaultValue={MediaKind.Video}
+                            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+                        >
+                            <option value={MediaKind.Video}>{mediaKindLabel(MediaKind.Video)}</option>
+                            <option value={MediaKind.Image}>{mediaKindLabel(MediaKind.Image)}</option>
+                            <option value={MediaKind.Audio}>{mediaKindLabel(MediaKind.Audio)}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label
+                            htmlFor="media-project"
+                            className="block text-label-md text-on-surface-variant"
+                        >
+                            Project <span className="text-on-surface-variant">(optional)</span>
+                        </label>
+                        <select
+                            id="media-project"
+                            name="projectId"
+                            defaultValue=""
+                            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+                        >
+                            <option value="">No project</option>
+                            {projects.map((project) => (
+                                <option key={project.id} value={project.id}>
+                                    {project.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <TextField
+                        name="sizeBytes"
+                        label="Size in bytes"
+                        type="number"
+                        min={1}
+                        defaultValue={1}
+                        required
+                    />
+                    <p className="text-label-sm text-on-surface-variant">
+                        This registers a media record. File upload to object storage is handled in a later phase.
+                    </p>
+                    <div className="flex justify-end gap-3 pt-2">
+                        <button
+                            type="button"
+                            onClick={() => setImportOpen(false)}
+                            className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className={primaryButtonClass()}
+                        >
+                            {isSubmitting ? "Importing..." : "Import"}
+                        </button>
+                    </div>
+                </Form>
             </Modal>
         </section>
     );

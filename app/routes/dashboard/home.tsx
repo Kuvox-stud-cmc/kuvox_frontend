@@ -72,57 +72,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 /* ── Mock data (to be replaced by real API integration) ─────────────────── */
 
-interface MockProject {
-  id: string;
-  title: string;
-  editedAgo: string;
-  status: "ready" | "processing" | "uploading";
-  duration: string;
-  resolution: string;
-  fps: string;
-  uploadProgress?: number;
-}
-
-const MOCK_CONTINUE_EDITING: MockProject[] = [
-  {
-    id: "mock-1",
-    title: "Cinematic Travel Vlog",
-    editedAgo: "2 hours ago",
-    status: "ready",
-    duration: "04:20",
-    resolution: "4K",
-    fps: "24fps",
-  },
-  {
-    id: "mock-2",
-    title: "Drone Footage - City Night",
-    editedAgo: "Yesterday",
-    status: "processing",
-    duration: "12:05",
-    resolution: "4K",
-    fps: "60fps",
-  },
-  {
-    id: "mock-3",
-    title: "Ocean Waves - Slow Motion",
-    editedAgo: "Uploading 2.4 GB of 4 GB",
-    status: "uploading",
-    duration: "—",
-    resolution: "1080p",
-    fps: "60fps",
-    uploadProgress: 45,
-  },
-  {
-    id: "mock-4",
-    title: "Music Video Teaser",
-    editedAgo: "3 days ago",
-    status: "ready",
-    duration: "01:15",
-    resolution: "4K",
-    fps: "24fps",
-  },
-];
-
 const MOCK_REVIEWS = [
   { id: "r1", title: "Travel Vlog", reviewer: "Sarah Chen", status: "waiting_approval" as const },
   {
@@ -190,23 +139,51 @@ function ProjectThumbnail({
   );
 }
 
-function StatusBadge({ status }: { status: MockProject["status"] }) {
-  const config = {
-    ready: { label: "Ready", dotCls: "bg-secondary", cls: "bg-secondary/20 text-secondary" },
+function formatStatus(status: string) {
+  return status
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function formatUpdatedAt(updatedAt: string) {
+  const date = new Date(updatedAt);
+  if (Number.isNaN(date.getTime())) return "Updated recently";
+  return `Updated ${new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date)}`;
+}
+
+function projectHref(project: ProjectDto) {
+  return project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const normalized = status.toLowerCase();
+  const statusStyles: Record<string, { dotCls: string; cls: string }> = {
+    ready: { dotCls: "bg-secondary", cls: "bg-secondary/20 text-secondary" },
+    completed: { dotCls: "bg-secondary", cls: "bg-secondary/20 text-secondary" },
     processing: {
-      label: "Processing",
       dotCls: "bg-tertiary animate-pulse",
       cls: "bg-tertiary/20 text-tertiary",
     },
-    uploading: { label: "Uploading", dotCls: "bg-primary", cls: "bg-primary/20 text-primary" },
-  }[status];
+    uploading: { dotCls: "bg-primary", cls: "bg-primary/20 text-primary" },
+    draft: { dotCls: "bg-outline", cls: "bg-surface-container text-on-surface-variant" },
+  };
+  const config = statusStyles[normalized] ?? {
+    dotCls: "bg-outline",
+    cls: "bg-surface-container text-on-surface-variant",
+  };
 
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label-sm font-bold backdrop-blur-md ${config.cls}`}
     >
       <span className={`h-1 w-1 rounded-full ${config.dotCls}`} />
-      {config.label}
+      {formatStatus(status)}
     </span>
   );
 }
@@ -244,16 +221,12 @@ function StatCard({
   iconColor,
   label,
   value,
-  trend,
-  suffix,
 }: {
   icon: string;
   iconBg: string;
   iconColor: string;
   label: string;
   value: string | number;
-  trend?: { value: number; positive: boolean };
-  suffix?: string;
 }) {
   return (
     <div className="rounded-2xl border border-outline-variant bg-surface-container-low p-5 transition-colors hover:border-primary/30">
@@ -267,15 +240,6 @@ function StatCard({
       </p>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-headline-lg font-bold leading-none text-on-surface">{value}</span>
-        {trend && (
-          <span className="text-label-sm font-bold text-secondary">
-            ↑ {trend.value}%{" "}
-            <span className="font-normal text-on-surface-variant">vs last month</span>
-          </span>
-        )}
-        {suffix && (
-          <span className="text-label-sm text-on-surface-variant">{suffix}</span>
-        )}
       </div>
     </div>
   );
@@ -319,31 +283,27 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
             iconColor="text-primary"
             label="Total Projects"
             value={counts.projects}
-            trend={{ value: 12, positive: true }}
           />
           <StatCard
-            icon="schedule"
+            icon="perm_media"
             iconBg="bg-tertiary/10"
             iconColor="text-tertiary"
-            label="Hours Edited"
-            value="86.4 h"
-            trend={{ value: 18, positive: true }}
+            label="Media Files"
+            value={counts.media}
           />
           <StatCard
-            icon="download"
+            icon="groups"
             iconBg="bg-primary/10"
             iconColor="text-primary"
-            label="Exports"
-            value="52"
-            trend={{ value: 8, positive: true }}
+            label="Shared Items"
+            value={counts.shared}
           />
           <StatCard
-            icon="inventory_2"
+            icon="delete"
             iconBg="bg-secondary/10"
             iconColor="text-secondary"
-            label="Storage Used"
-            value="128 GB"
-            suffix="12.8% of 1 TB"
+            label="Trash Items"
+            value={counts.trash}
           />
         </div>
 
@@ -392,69 +352,49 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
             <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </Link>
         </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {MOCK_CONTINUE_EDITING.map((project, i) => (
-            <div
-              key={project.id}
-              className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30"
-            >
-              {/* Thumbnail */}
-              <div className="relative h-44">
-                <ProjectThumbnail index={i} />
-                <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
-
-                {/* Status badge */}
-                <div className="absolute left-3 top-3">
-                  <StatusBadge status={project.status} />
-                </div>
-
-                {/* Upload overlay */}
-                {project.status === "uploading" && project.uploadProgress != null && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-primary/20 p-6">
-                    <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-surface/60">
-                      <div
-                        className="h-full bg-primary"
-                        style={{ width: `${project.uploadProgress}%` }}
-                      />
-                    </div>
-                    <p className="text-label-sm font-bold text-on-surface">
-                      {project.uploadProgress}% • 2 mins left
-                    </p>
+        {recent.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-outline-variant bg-surface-container-low px-4 py-8 text-center text-body-sm text-on-surface-variant">
+            No projects yet - create one to get started.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {recent.map((project, i) => (
+              <Link
+                key={project.id}
+                to={projectHref(project)}
+                className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30"
+              >
+                <div className="relative h-44">
+                  <ProjectThumbnail index={i} />
+                  <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
+                  <div className="absolute left-3 top-3">
+                    <StatusBadge status={project.status} />
                   </div>
-                )}
-
-                {/* Duration badge */}
-                {project.duration !== "—" && (
-                  <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
-                    <span className="material-symbols-outlined text-[12px]">play_arrow</span>
-                    {project.duration}
-                  </span>
-                )}
-              </div>
-
-              {/* Info */}
-              <div className="p-4">
-                <div className="mb-2 flex items-start justify-between">
-                  <h3 className="truncate text-body-sm font-bold text-on-surface">
-                    {project.title}
-                  </h3>
-                  <button
-                    type="button"
-                    className="shrink-0 text-on-surface-variant hover:text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-                  </button>
                 </div>
-                <p className="mb-4 text-label-md text-on-surface-variant">{project.editedAgo}</p>
-                <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-                  <span>{project.resolution}</span>
-                  <span className="h-1 w-1 rounded-full bg-outline-variant" />
-                  <span>{project.fps}</span>
+
+                <div className="p-4">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <h3 className="truncate text-body-sm font-bold text-on-surface">
+                      {project.name}
+                    </h3>
+                    <span className="material-symbols-outlined shrink-0 text-[18px] text-on-surface-variant transition-colors group-hover:text-on-surface">
+                      arrow_forward
+                    </span>
+                  </div>
+                  <p className="mb-4 text-label-md text-on-surface-variant">
+                    {formatUpdatedAt(project.updatedAt)}
+                  </p>
+                  <div className="flex items-center gap-2 text-label-sm text-on-surface-variant">
+                    <span className="material-symbols-outlined text-[14px]">
+                      {project.kind === ProjectKind.Image ? "image" : "movie"}
+                    </span>
+                    <span>{projectKindLabel(project.kind)}</span>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ── Three Column Middle ───────────────────────────────────────────── */}
@@ -564,12 +504,6 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
                   to: "/dashboard/ai-tools",
                   color: "text-tertiary bg-tertiary/20",
                 },
-                {
-                  icon: "create_new_folder",
-                  label: "New Folder",
-                  to: "/dashboard/projects",
-                  color: "text-secondary bg-secondary/20",
-                },
               ] as const
             ).map((action) => (
               <Link
@@ -614,11 +548,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
               {recent.slice(0, 4).map((project, i) => (
                 <Link
                   key={project.id}
-                  to={
-                    project.kind === ProjectKind.Video
-                      ? `/editor/${project.id}`
-                      : `/projects/${project.id}`
-                  }
+                  to={projectHref(project)}
                   className="group space-y-3"
                 >
                   <div className="aspect-video overflow-hidden rounded-xl border border-outline-variant transition-colors group-hover:border-primary/30">

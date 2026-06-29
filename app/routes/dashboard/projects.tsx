@@ -1,6 +1,22 @@
 import ProjectsDashboard from "./projects-view";
-import { PERSONAL, ProjectKind, type ProjectDto } from "~/lib/api";
-import { ApiError, createProject, listProjects, softDelete } from "~/lib/api.server";
+import {
+  MediaKind,
+  PERSONAL,
+  ProjectKind,
+  type MediaDto,
+  type ProjectDto,
+  type ProjectTrashItem,
+} from "~/lib/api";
+import {
+  ApiError,
+  createMedia,
+  createProject,
+  listMedia,
+  listProjects,
+  listProjectTrash,
+  listSharedProjects,
+  softDelete,
+} from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -19,17 +35,41 @@ export async function loader({ request }: Route.LoaderArgs) {
   const accessToken = session.get("accessToken");
 
   if (!accessToken) {
-    return { projects: [] as ProjectDto[], error: "Your session expired. Please sign in again." };
+    return {
+      projects: [] as ProjectDto[],
+      sharedProjects: [] as ProjectDto[],
+      archivedProjects: [] as ProjectTrashItem[],
+      media: [] as MediaDto[],
+      error: "Your session expired. Please sign in again.",
+    };
   }
 
-  try {
-    const page = await listProjects(accessToken, PERSONAL, reqLog);
-    return { projects: page.items, error: null as string | null };
-  } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Couldn't load your projects.";
-    reqLog.error({ err: error }, "failed to load projects");
-    return { projects: [] as ProjectDto[], error: message };
+  const [projects, sharedProjects, archivedProjects, media] = await Promise.allSettled([
+    listProjects(accessToken, PERSONAL, reqLog),
+    listSharedProjects(accessToken, reqLog),
+    listProjectTrash(accessToken, PERSONAL, reqLog),
+    listMedia(accessToken, PERSONAL, reqLog),
+  ]);
+
+  const anyFailed = [projects, sharedProjects, archivedProjects, media].some(
+    (result) => result.status === "rejected",
+  );
+
+  if (anyFailed) {
+    reqLog.warn("some projects dashboard data failed to load");
   }
+
+  return {
+    projects: projects.status === "fulfilled" ? projects.value.items : ([] as ProjectDto[]),
+    sharedProjects:
+      sharedProjects.status === "fulfilled" ? sharedProjects.value.items : ([] as ProjectDto[]),
+    archivedProjects:
+      archivedProjects.status === "fulfilled"
+        ? archivedProjects.value.items
+        : ([] as ProjectTrashItem[]),
+    media: media.status === "fulfilled" ? media.value.items : ([] as MediaDto[]),
+    error: anyFailed ? "Some projects dashboard data couldn't be loaded." : null,
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -57,6 +97,30 @@ export async function action({ request }: Route.ActionArgs) {
       return { ok: true, intent };
     }
 
+    if (intent === "importMedia") {
+      const filename = String(formData.get("filename") ?? "").trim();
+      const kind = Number(formData.get("kind") ?? MediaKind.Video);
+      const projectId = String(formData.get("projectId") ?? "") || null;
+      const sizeBytesRaw = Number(formData.get("sizeBytes") ?? 0);
+      const sizeBytes = Number.isFinite(sizeBytesRaw) && sizeBytesRaw > 0 ? sizeBytesRaw : 1;
+      if (!filename) {
+        return { error: "Give the media file a name." };
+      }
+      await createMedia(
+        accessToken,
+        PERSONAL,
+        {
+          kind,
+          filename,
+          storageKey: `media/${crypto.randomUUID()}/${filename}`,
+          sizeBytes,
+          projectId,
+        },
+        reqLog,
+      );
+      return { ok: true, intent };
+    }
+
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
@@ -74,5 +138,13 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Projects({ loaderData }: Route.ComponentProps) {
-  return <ProjectsDashboard projects={loaderData.projects} />;
+  return (
+    <ProjectsDashboard
+      projects={loaderData.projects}
+      sharedProjects={loaderData.sharedProjects}
+      archivedProjects={loaderData.archivedProjects}
+      media={loaderData.media}
+      error={loaderData.error}
+    />
+  );
 }
