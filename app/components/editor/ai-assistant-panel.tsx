@@ -1,3 +1,14 @@
+import type { FormEvent } from "react";
+
+import { useAppDispatch, useAppSelector } from "~/store/hooks";
+import {
+  assistantActionResolved,
+  assistantMessageAdded,
+  assistantSuggestionChosen,
+  commandInputChanged,
+  toastShown,
+} from "~/store/slices/editor-slice";
+
 import { EditorIcon } from "./editor-ui";
 import type { AssistantMessageMock, AssistantSuggestionMock } from "./mock-editor-data";
 
@@ -7,15 +18,50 @@ interface AiAssistantPanelProps {
 }
 
 export function AiAssistantPanel({ messages, suggestions }: AiAssistantPanelProps) {
+  const dispatch = useAppDispatch();
+  const commandInput = useAppSelector((state) => state.editor.commandInput);
+  const extraMessages = useAppSelector((state) => state.editor.assistantMessages);
+  const visibleMessages = [...messages, ...extraMessages];
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedCommand = commandInput.trim();
+
+    if (!trimmedCommand) {
+      dispatch(toastShown("Enter a command for the assistant"));
+      return;
+    }
+
+    const timestamp = Date.now();
+    dispatch(
+      assistantMessageAdded({
+        id: `user-${timestamp}`,
+        role: "user",
+        text: trimmedCommand,
+      }),
+    );
+    dispatch(
+      assistantMessageAdded({
+        id: `assistant-${timestamp}`,
+        role: "assistant",
+        text: `Mock edit prepared: ${trimmedCommand}. Review the timeline and preview before accepting.`,
+        actions: ["Accept", "Modify", "Dismiss"],
+      }),
+    );
+    dispatch(commandInputChanged(""));
+  }
+
   return (
-    <aside className="z-40 hidden h-full w-[360px] shrink-0 flex-col border-l border-outline-variant bg-surface md:flex xl:w-[392px]">
+    <aside
+      className="z-40 hidden h-full w-[min(30vw,360px)] min-w-[280px] shrink-0 flex-col border-l border-outline-variant bg-surface lg:flex 2xl:w-[392px]"
+    >
       <div className="flex h-14 items-center gap-3 border-b border-outline-variant px-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-[6px] border border-primary/25 bg-surface-container-high text-primary">
           <EditorIcon className="text-[18px]" filled>
             smart_toy
           </EditorIcon>
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="text-body-sm font-semibold text-on-surface">Editing Assistant</h2>
           <p className="text-label-sm uppercase tracking-[0.08em] text-on-surface-variant">
             Ready to help with your cut
@@ -24,7 +70,7 @@ export function AiAssistantPanel({ messages, suggestions }: AiAssistantPanelProp
       </div>
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-3">
-        {messages.map((message) => {
+        {visibleMessages.map((message) => {
           const fromUser = message.role === "user";
           return (
             <div
@@ -62,6 +108,7 @@ export function AiAssistantPanel({ messages, suggestions }: AiAssistantPanelProp
                       <button
                         key={action}
                         type="button"
+                        onClick={() => dispatch(assistantActionResolved(action))}
                         className={`h-8 rounded-[4px] px-3 text-label-md font-semibold transition-colors ${
                           index === 0
                             ? "bg-primary text-on-primary hover:opacity-90"
@@ -91,6 +138,7 @@ export function AiAssistantPanel({ messages, suggestions }: AiAssistantPanelProp
               <li key={suggestion.id}>
                 <button
                   type="button"
+                  onClick={() => dispatch(assistantSuggestionChosen(suggestion.label))}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-body-sm text-on-surface transition-colors hover:bg-surface-container-high"
                 >
                   <EditorIcon className="text-[16px] text-primary">{suggestion.icon}</EditorIcon>
@@ -101,21 +149,22 @@ export function AiAssistantPanel({ messages, suggestions }: AiAssistantPanelProp
           </ul>
         </div>
 
-        <div className="relative">
+        <form className="relative" onSubmit={handleSubmit}>
           <input
             className="h-11 w-full rounded-[6px] border border-outline-variant bg-surface py-2 pl-3 pr-11 text-body-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant focus:border-primary focus:ring-1 focus:ring-primary"
             placeholder="Tell me what to edit..."
             type="text"
-            defaultValue="Add cap"
+            value={commandInput}
+            onChange={(event) => dispatch(commandInputChanged(event.target.value))}
           />
           <button
-            type="button"
+            type="submit"
             className="absolute right-2 top-1/2 flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors -translate-y-1/2 hover:text-primary"
             aria-label="Send command"
           >
             <EditorIcon filled>send</EditorIcon>
           </button>
-        </div>
+        </form>
       </div>
     </aside>
   );

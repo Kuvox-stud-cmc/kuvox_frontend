@@ -1,8 +1,18 @@
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
-import { clipSelected, timelineZoomChanged } from "~/store/slices/editor-slice";
+import {
+  clipsLinkedToggled,
+  clipSelected,
+  operationAdded,
+  snappingToggled,
+  timelineHeightChanged,
+  timelineOpenChanged,
+  timelineZoomChanged,
+  toastShown,
+} from "~/store/slices/editor-slice";
 
 import { EditorIcon, EditorIconButton } from "../editor-ui";
 import type { TimelineClipMock, TimelineTrackMock } from "../mock-editor-data";
+import { useDragResize } from "../use-drag-resize";
 
 interface TimelinePanelProps {
   tracks: TimelineTrackMock[];
@@ -21,17 +31,85 @@ const clipToneClass: Record<TimelineClipMock["tone"], string> = {
 export function TimelinePanel({ tracks = [] }: Partial<TimelinePanelProps>) {
   const dispatch = useAppDispatch();
   const selectedClipId = useAppSelector((state) => state.editor.selectedClipId);
+  const timelineOpen = useAppSelector((state) => state.editor.timelineOpen);
+  const timelineHeight = useAppSelector((state) => state.editor.timelineHeight);
   const timelineZoom = useAppSelector((state) => state.editor.timelineZoom);
+  const snappingEnabled = useAppSelector((state) => state.editor.snappingEnabled);
+  const clipsLinked = useAppSelector((state) => state.editor.clipsLinked);
   const trackHeight = tracks.reduce((height, track) => height + track.height, 0);
+  const handleResizeStart = useDragResize({
+    axis: "y",
+    value: timelineHeight,
+    min: 180,
+    max: 420,
+    direction: "reverse",
+    onChange: (value) => dispatch(timelineHeightChanged(value)),
+  });
+
+  if (!timelineOpen) {
+    return (
+      <footer className="z-40 flex h-10 shrink-0 items-center justify-center border-t border-outline-variant bg-surface">
+        <button
+          type="button"
+          onClick={() => dispatch(timelineOpenChanged(true))}
+          className="flex h-8 items-center gap-2 rounded-[4px] border border-outline-variant px-3 text-label-md font-semibold uppercase tracking-[0.08em] text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+        >
+          <EditorIcon className="text-[18px]">keyboard_arrow_up</EditorIcon>
+          Timeline
+        </button>
+      </footer>
+    );
+  }
 
   return (
-    <footer className="z-40 flex h-[292px] shrink-0 flex-col border-t border-outline-variant bg-surface">
+    <footer
+      className="relative z-40 flex shrink-0 flex-col border-t border-outline-variant bg-surface"
+      style={{ height: timelineHeight }}
+    >
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        title="Resize timeline"
+        onPointerDown={handleResizeStart}
+        className="absolute left-0 top-[-3px] z-50 h-1.5 w-full cursor-row-resize bg-transparent transition-colors hover:bg-primary/40"
+      />
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-outline-variant bg-surface-container-lowest px-3">
         <div className="flex items-center gap-3">
-          <EditorIconButton icon="nest_cam_magnet_mount" label="Snapping on" active className="h-7 w-7" />
-          <EditorIconButton icon="link" label="Link clips" className="h-7 w-7" />
+          <EditorIconButton
+            icon="nest_cam_magnet_mount"
+            label={snappingEnabled ? "Disable snapping" : "Enable snapping"}
+            active={snappingEnabled}
+            className="h-7 w-7"
+            onClick={() => dispatch(snappingToggled())}
+          />
+          <EditorIconButton
+            icon={clipsLinked ? "link" : "link_off"}
+            label={clipsLinked ? "Unlink clips" : "Link clips"}
+            active={clipsLinked}
+            className="h-7 w-7"
+            onClick={() => dispatch(clipsLinkedToggled())}
+          />
           <div className="mx-1 h-4 w-px bg-outline-variant" />
-          <EditorIconButton icon="add_box" label="Add track" className="h-7 w-7" />
+          <EditorIconButton
+            icon="add_box"
+            label="Add track"
+            className="h-7 w-7"
+            onClick={() =>
+              dispatch(
+                operationAdded({
+                  id: `mock-track-${Date.now()}`,
+                  type: "add-track",
+                  shotId: "timeline",
+                }),
+              )
+            }
+          />
+          <EditorIconButton
+            icon="keyboard_arrow_down"
+            label="Hide timeline"
+            className="h-7 w-7"
+            onClick={() => dispatch(timelineOpenChanged(false))}
+          />
         </div>
         <label className="flex items-center gap-2">
           <EditorIcon className="text-[16px] text-on-surface-variant">zoom_out</EditorIcon>
@@ -49,7 +127,7 @@ export function TimelinePanel({ tracks = [] }: Partial<TimelinePanelProps>) {
       </div>
 
       <div className="relative flex flex-1 overflow-hidden">
-        <div className="z-10 flex w-44 shrink-0 flex-col border-r border-outline-variant bg-surface-container">
+        <div className="z-10 flex w-36 shrink-0 flex-col border-r border-outline-variant bg-surface-container xl:w-40 2xl:w-44">
           <div className="flex h-8 items-center border-b border-outline-variant px-2">
             <span className="text-label-sm font-semibold uppercase tracking-[0.08em] text-on-surface-variant">
               Timecode
@@ -66,8 +144,22 @@ export function TimelinePanel({ tracks = [] }: Partial<TimelinePanelProps>) {
                 <span className="text-label-md font-semibold text-on-surface">{track.label}</span>
               </div>
               <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                <EditorIcon className="text-[14px] text-on-surface-variant">visibility</EditorIcon>
-                <EditorIcon className="text-[14px] text-on-surface-variant">lock_open</EditorIcon>
+                <button
+                  type="button"
+                  className="flex h-5 w-5 items-center justify-center rounded-[3px] text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
+                  aria-label={`Toggle ${track.label} visibility`}
+                  onClick={() => dispatch(toastShown(`${track.label} visibility toggled`))}
+                >
+                  <EditorIcon className="text-[14px]">visibility</EditorIcon>
+                </button>
+                <button
+                  type="button"
+                  className="flex h-5 w-5 items-center justify-center rounded-[3px] text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
+                  aria-label={`Toggle ${track.label} lock`}
+                  onClick={() => dispatch(toastShown(`${track.label} lock toggled`))}
+                >
+                  <EditorIcon className="text-[14px]">lock_open</EditorIcon>
+                </button>
               </div>
             </div>
           ))}
@@ -76,7 +168,7 @@ export function TimelinePanel({ tracks = [] }: Partial<TimelinePanelProps>) {
         <div className="relative flex-1 overflow-x-auto bg-surface-container-lowest">
           <div className="sticky top-0 z-10 h-8 border-b border-outline-variant bg-surface-container">
             <div
-              className="relative h-full min-w-[1000px]"
+              className="relative h-full min-w-[760px] xl:min-w-[920px] 2xl:min-w-[1000px]"
               style={{
                 backgroundImage:
                   "repeating-linear-gradient(to right, transparent, transparent 49px, #464554 49px, #464554 50px)",
@@ -97,7 +189,10 @@ export function TimelinePanel({ tracks = [] }: Partial<TimelinePanelProps>) {
             </div>
           </div>
 
-          <div className="relative min-w-[1000px]" style={{ height: trackHeight }}>
+          <div
+            className="relative min-w-[760px] xl:min-w-[920px] 2xl:min-w-[1000px]"
+            style={{ height: trackHeight }}
+          >
             {tracks.map((track, trackIndex) => {
               const top = tracks
                 .slice(0, trackIndex)
