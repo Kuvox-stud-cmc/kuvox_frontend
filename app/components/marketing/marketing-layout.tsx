@@ -1,16 +1,27 @@
-import { Outlet } from "react-router";
+import { Outlet, useLoaderData } from "react-router";
 
 import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
+import { getOptionalUser } from "~/lib/auth.server";
+import { createRequestLogger } from "~/lib/logger.server";
+import type { SessionUser } from "~/lib/session.server";
+
+export async function loader({ request }: { request: Request }) {
+  const log = createRequestLogger(request);
+  const user = await getOptionalUser(request, log);
+  return { user };
+}
 
 /**
  * Layout for the public, SSR-rendered marketing pages (landing, pricing,
  * enterprise, help, community, about/privacy/terms).
  */
 export default function MarketingLayout() {
+  const { user } = useLoaderData() as { user: SessionUser | null };
+
   return (
     <div className="bg-surface text-on-surface font-sans min-h-screen flex flex-col">
-      <SiteHeader />
+      <SiteHeader user={user} />
 
       <main className="flex-grow pt-20 sm:pt-24 pb-10 sm:pb-16 px-4 sm:px-6 lg:px-container-padding flex flex-col items-center relative overflow-clip">
         {/* Subtle Background Glow — scaled down on mobile */}

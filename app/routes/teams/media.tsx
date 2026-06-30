@@ -4,10 +4,18 @@ import { ApiError, createMedia, listMedia, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import type { Route } from "./+types/media";
+namespace Route {
+  export type LoaderArgs = LoaderFunctionArgs;
+  export type ActionArgs = ActionFunctionArgs;
+  export type ComponentProps = {
+    loaderData: Awaited<ReturnType<typeof loader>>;
+    actionData?: { ok?: boolean; intent?: string; error?: string };
+  };
+}
 
-export function meta(_: Route.MetaArgs) {
+export function meta() {
   return [{ title: "Team media · Kuvox" }];
 }
 
@@ -25,7 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   try {
-    const page = await listMedia(accessToken, studioWs(params.studioId), reqLog);
+    const page = await listMedia(accessToken, studioWs(String(params.studioId ?? "")), reqLog);
     return { media: page.items, error: null as string | null };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load team media.";
@@ -46,7 +54,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
-  const ws = studioWs(params.studioId);
+  const ws = studioWs(String(params.studioId ?? ""));
 
   try {
     if (intent === "create") {

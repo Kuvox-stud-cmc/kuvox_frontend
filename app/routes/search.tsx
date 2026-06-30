@@ -29,8 +29,7 @@ type ContentCategory =
   | "photo"
   | "audio"
   | "template"
-  | "shared"
-  | "team";
+  | "shared";
 
 interface SearchItem {
   id: string;
@@ -60,7 +59,6 @@ const CATEGORY_CONFIG: Record<
     color: "text-secondary",
     bg: "bg-secondary/20",
   },
-  team: { label: "Team", color: "text-tertiary", bg: "bg-tertiary/20" },
 };
 
 const MOCK_ITEMS: SearchItem[] = [
@@ -254,29 +252,29 @@ const MOCK_ITEMS: SearchItem[] = [
   {
     id: "tm1",
     title: "Marketing Campaign Assets",
-    category: "team",
+    category: "shared",
     subtitle: "Creative Team · 18 files",
     icon: "group",
     meta: "Updated 2 days ago",
-    link: "/dashboard/team",
+    link: "/dashboard/shared-assets",
   },
   {
     id: "tm2",
     title: "Logo Animation Files",
-    category: "team",
+    category: "shared",
     subtitle: "Brand Team · 6 files",
     icon: "group",
     meta: "Updated last week",
-    link: "/dashboard/team",
+    link: "/dashboard/shared-assets",
   },
   {
     id: "tm3",
     title: "Social Media Calendar",
-    category: "team",
+    category: "shared",
     subtitle: "Marketing Team · Spreadsheet",
     icon: "group",
     meta: "Updated today",
-    link: "/dashboard/team",
+    link: "/dashboard/shared-assets",
   },
 ];
 
@@ -315,7 +313,6 @@ const CATEGORY_FILTERS: { value: ContentCategory | "all"; label: string }[] = [
   { value: "audio", label: "Audio" },
   { value: "template", label: "Templates" },
   { value: "shared", label: "Shared" },
-  { value: "team", label: "Team" },
 ];
 
 const RECENT_SEARCHES_KEY = "kuvox_recent_searches";

@@ -4,6 +4,7 @@ import { Form, useNavigation } from "react-router";
 import {
   CardGridSkeleton,
   Chip,
+  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   Modal,
@@ -39,16 +40,20 @@ export function MediaView({
   loadError,
   actionData,
   subtitle,
+  title = "Media",
+  fixedKind,
 }: {
   media: MediaDto[];
   loadError: string | null;
   actionData?: WorkspaceActionData;
   subtitle?: string;
+  title?: string;
+  fixedKind?: number;
 }) {
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
 
-  const [filter, setFilter] = useState<"all" | number>("all");
+  const [filter, setFilter] = useState<"all" | number>(fixedKind ?? "all");
   const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
@@ -57,12 +62,21 @@ export function MediaView({
     }
   }, [actionData]);
 
-  const visible = filter === "all" ? media : media.filter((item) => item.kind === filter);
+  const visible = fixedKind !== undefined
+    ? media.filter((item) => item.kind === fixedKind)
+    : filter === "all" ? media : media.filter((item) => item.kind === filter);
+  const emptyIcon = fixedKind === MediaKind.Image
+    ? "photo_library"
+    : fixedKind === MediaKind.Audio
+      ? "music_note"
+      : fixedKind === MediaKind.Video
+        ? "videocam"
+        : "perm_media";
 
   return (
     <section>
       <SectionHeader
-        title="Media"
+        title={title}
         subtitle={subtitle}
         action={
           <button
@@ -79,28 +93,30 @@ export function MediaView({
       {loadError && <ErrorBanner message={loadError} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        {KIND_FILTERS.map((option) => (
-          <button
-            key={String(option.value)}
-            type="button"
-            onClick={() => setFilter(option.value)}
-            className={`rounded-full px-3 py-1 text-label-md transition-colors ${
-              filter === option.value
-                ? "bg-primary text-on-primary"
-                : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      {fixedKind === undefined && (
+        <div className="mt-6 flex flex-wrap gap-2">
+          {KIND_FILTERS.map((option) => (
+            <button
+              key={String(option.value)}
+              type="button"
+              onClick={() => setFilter(option.value)}
+              className={`rounded-full px-3 py-1 text-label-md transition-colors ${
+                filter === option.value
+                  ? "bg-primary text-on-primary"
+                  : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <CardGridSkeleton />
       ) : visible.length === 0 ? (
         <EmptyState
-          icon="perm_media"
+          icon={emptyIcon}
           title={media.length === 0 ? "No media yet" : "No media match this filter"}
           hint={media.length === 0 ? "Import a file to build the library." : undefined}
           action={
@@ -136,17 +152,20 @@ export function MediaView({
                 <span className="text-label-md text-on-surface-variant">
                   {item.status} · {formatSize(item.sizeBytes)}
                 </span>
-                <Form method="post">
-                  <input type="hidden" name="intent" value="delete" />
-                  <input type="hidden" name="id" value={item.id} />
-                  <button
-                    type="submit"
-                    aria-label={`Move ${item.filename} to Trash`}
-                    className="rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">delete</span>
-                  </button>
-                </Form>
+                <ConfirmSubmitButton
+                  fields={{ intent: "delete", id: item.id }}
+                  title="Move media to trash?"
+                  message={
+                    <>
+                      Move <span className="font-medium text-on-surface">{item.filename}</span> to trash?
+                    </>
+                  }
+                  confirmLabel="Move to trash"
+                  ariaLabel={`Move ${item.filename} to Trash`}
+                  buttonClassName="rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[20px]">delete</span>
+                </ConfirmSubmitButton>
               </div>
             </div>
           ))}
@@ -172,21 +191,25 @@ export function MediaView({
               className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
             />
           </div>
-          <div>
-            <label htmlFor="kind" className="block text-label-md text-on-surface-variant">
-              Kind
-            </label>
-            <select
-              id="kind"
-              name="kind"
-              defaultValue={MediaKind.Video}
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
-            >
-              <option value={MediaKind.Video}>Video</option>
-              <option value={MediaKind.Image}>Image</option>
-              <option value={MediaKind.Audio}>Audio</option>
-            </select>
-          </div>
+          {fixedKind === undefined ? (
+            <div>
+              <label htmlFor="kind" className="block text-label-md text-on-surface-variant">
+                Kind
+              </label>
+              <select
+                id="kind"
+                name="kind"
+                defaultValue={MediaKind.Video}
+                className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+              >
+                <option value={MediaKind.Video}>Video</option>
+                <option value={MediaKind.Image}>Image</option>
+                <option value={MediaKind.Audio}>Audio</option>
+              </select>
+            </div>
+          ) : (
+            <input type="hidden" name="kind" value={fixedKind} />
+          )}
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"

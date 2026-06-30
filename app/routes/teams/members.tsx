@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Form, useNavigation } from "react-router";
 
 import {
+  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   Modal,
@@ -15,8 +16,8 @@ import {
   type StudioMemberDto,
 } from "~/lib/api";
 import {
-  addStudioMember,
   ApiError,
+  createStudioInvitation,
   listMyStudios,
   listStudioMembers,
   removeStudioMember,
@@ -50,7 +51,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const studios = await listMyStudios(accessToken, reqLog);
-  const role = studios.find((s) => s.id === studioId)?.role ?? UserStudioRole.User;
+  const role = studios.find((s) => s.id === studioId)?.role ?? UserStudioRole.Member;
 
   try {
     const members = await listStudioMembers(accessToken, studioId, reqLog);
@@ -84,17 +85,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   try {
     if (intent === "invite") {
       const email = String(formData.get("email") ?? "").trim();
-      const role = Number(formData.get("role") ?? UserStudioRole.User);
+      const role = Number(formData.get("role") ?? UserStudioRole.Member);
       if (!email) {
         return { error: "Enter an email to invite." };
       }
-      await addStudioMember(accessToken, studioId, { email, role }, reqLog);
+      await createStudioInvitation(accessToken, studioId, { email, role }, reqLog);
       return { ok: true, intent };
     }
 
     if (intent === "role") {
       const userId = String(formData.get("userId") ?? "");
-      const role = Number(formData.get("role") ?? UserStudioRole.User);
+      const role = Number(formData.get("role") ?? UserStudioRole.Member);
       if (userId) {
         await updateStudioMember(accessToken, studioId, userId, role, reqLog);
       }
@@ -177,7 +178,7 @@ export default function TeamMembers({ loaderData, actionData }: Route.ComponentP
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite member">
         <p className="mb-4 text-body-sm text-on-surface-variant">
-          The person must already have a Kuvox account; invite them by email.
+          Send a pending email invitation. New users can accept after signing up and verifying email.
         </p>
         <Form method="post" className="space-y-4">
           <input type="hidden" name="intent" value="invite" />
@@ -201,10 +202,11 @@ export default function TeamMembers({ loaderData, actionData }: Route.ComponentP
             <select
               id="role"
               name="role"
-              defaultValue={UserStudioRole.User}
+              defaultValue={UserStudioRole.Member}
               className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
             >
-              <option value={UserStudioRole.User}>Member</option>
+              <option value={UserStudioRole.Member}>Member</option>
+              <option value={UserStudioRole.Viewer}>Viewer</option>
               <option value={UserStudioRole.Admin}>Admin</option>
             </select>
           </div>
@@ -242,6 +244,8 @@ function MemberRow({
   busy: boolean;
 }) {
   const roleFormRef = useRef<HTMLFormElement>(null);
+  const isOwner = member.role === UserStudioRole.Owner;
+  const ownerSelf = isOwner && isSelf;
 
   return (
     <li className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-4">
@@ -259,33 +263,53 @@ function MemberRow({
       <div className="flex shrink-0 items-center gap-2">
         {isAdmin ? (
           <>
-            <Form method="post" ref={roleFormRef}>
-              <input type="hidden" name="intent" value="role" />
-              <input type="hidden" name="userId" value={member.userId} />
-              <select
-                name="role"
-                defaultValue={member.role}
-                disabled={busy}
-                onChange={(event) => event.currentTarget.form?.requestSubmit()}
-                className="rounded-lg border border-outline-variant bg-surface-container-high px-2 py-1.5 text-label-md text-on-surface focus:border-primary focus:outline-none"
-                aria-label={`Role for ${member.displayName}`}
+            {isOwner ? (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-label-sm font-semibold uppercase tracking-wide text-primary">
+                Owner
+              </span>
+            ) : (
+              <Form method="post" ref={roleFormRef}>
+                <input type="hidden" name="intent" value="role" />
+                <input type="hidden" name="userId" value={member.userId} />
+                <select
+                  name="role"
+                  defaultValue={member.role}
+                  disabled={busy}
+                  onChange={(event) => event.currentTarget.form?.requestSubmit()}
+                  className="rounded-lg border border-outline-variant bg-surface-container-high px-2 py-1.5 text-label-md text-on-surface focus:border-primary focus:outline-none"
+                  aria-label={`Role for ${member.displayName}`}
+                >
+                  <option value={UserStudioRole.Member}>Member</option>
+                  <option value={UserStudioRole.Viewer}>Viewer</option>
+                  <option value={UserStudioRole.Admin}>Admin</option>
+                </select>
+              </Form>
+            )}
+            {ownerSelf ? (
+              <span
+                title="Owners cannot remove their own account"
+                aria-label="Owners cannot remove their own account"
+                className="rounded-lg p-1.5 text-on-surface-variant/60"
               >
-                <option value={UserStudioRole.User}>Member</option>
-                <option value={UserStudioRole.Admin}>Admin</option>
-              </select>
-            </Form>
-            <Form method="post">
-              <input type="hidden" name="intent" value="remove" />
-              <input type="hidden" name="userId" value={member.userId} />
-              <button
-                type="submit"
+                <span className="material-symbols-outlined text-[20px]">lock</span>
+              </span>
+            ) : (
+              <ConfirmSubmitButton
+                fields={{ intent: "remove", userId: member.userId }}
+                title="Remove member?"
+                message={
+                  <>
+                    Remove <span className="font-medium text-on-surface">{member.displayName}</span> from this Studio?
+                  </>
+                }
+                confirmLabel="Remove member"
                 disabled={busy}
-                aria-label={`Remove ${member.displayName}`}
-                className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-on-error-container disabled:opacity-50"
+                ariaLabel={`Remove ${member.displayName}`}
+                buttonClassName="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-on-error-container disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[20px]">person_remove</span>
-              </button>
-            </Form>
+              </ConfirmSubmitButton>
+            )}
           </>
         ) : (
           <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm uppercase tracking-wide text-on-surface-variant">

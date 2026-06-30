@@ -109,14 +109,17 @@ export interface StudioDto {
 }
 
 /** Mirrors `Auth.Enums.UserStudioRole` (integers on the wire). */
-export const UserStudioRole = { User: 0, Admin: 1 } as const;
+export const UserStudioRole = { Owner: 0, Admin: 1, Member: 2, Viewer: 3 } as const;
 
 export function studioRoleLabel(role: number): string {
-  return role === UserStudioRole.Admin ? "Admin" : "Member";
+  if (role === UserStudioRole.Owner) return "Owner";
+  if (role === UserStudioRole.Admin) return "Admin";
+  if (role === UserStudioRole.Viewer) return "Viewer";
+  return "Member";
 }
 
 export function isStudioAdmin(role: number): boolean {
-  return role === UserStudioRole.Admin;
+  return role === UserStudioRole.Owner || role === UserStudioRole.Admin;
 }
 
 /** Mirrors `Auth.Dtos.StudioMemberDto`. */
@@ -125,6 +128,103 @@ export interface StudioMemberDto {
   email: string;
   displayName: string;
   role: number;
+}
+
+export interface StudioInvitationDto {
+  id: string;
+  studioId: string;
+  email: string;
+  role: number;
+  invitedByUserId: string;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface StudioRoleDto {
+  role: number;
+  label: string;
+  description: string;
+  permissions: string[];
+}
+
+export interface StudioPermissionDto {
+  key: string;
+  label: string;
+  roles: number[];
+}
+
+export interface StudioWorkspaceSettingsDto {
+  id: string;
+  name: string;
+  description: string | null;
+  avatarUrl: string | null;
+  publicSlug: string | null;
+}
+
+export interface StudioNotificationSettingsDto {
+  notifyOnInvites: boolean;
+  notifyOnMembers: boolean;
+  notifyOnProjects: boolean;
+  notifyOnMedia: boolean;
+}
+
+export interface StudioUsageSummaryDto {
+  memberCount: number;
+  projectCount: number;
+  mediaCount: number;
+  storageBytesUsed: number;
+  storageBytesQuota: number;
+}
+
+export interface StudioAuditLogEntryDto {
+  id: string;
+  actorUserId: string | null;
+  category: string;
+  action: string;
+  targetKind: string;
+  targetId: string | null;
+  summary: string;
+  metadataJson: string | null;
+  createdAt: string;
+}
+
+export const NotificationStatus = { Unread: 0, Read: 1, Archived: 2, Deleted: 3 } as const;
+
+export interface NotificationDto {
+  id: string;
+  userId: string;
+  studioId: string | null;
+  type: number;
+  status: number;
+  message: string;
+  linkUrl: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface UnreadCountDto {
+  count: number;
+}
+
+export function notificationStatusLabel(status: number): string {
+  if (status === NotificationStatus.Read) return "Read";
+  if (status === NotificationStatus.Archived) return "Archived";
+  if (status === NotificationStatus.Deleted) return "Deleted";
+  return "Unread";
+}
+
+export function notificationTypeIcon(type: number): string {
+  if ([5, 6, 7, 9, 10].includes(type)) return "group";
+  if (type === 8) return "admin_panel_settings";
+  if (type === 11) return "settings";
+  if (type === 12) return "folder";
+  if (type === 13 || [1, 2, 3, 4].includes(type)) return "perm_media";
+  if (type === 14 || type === 15) return "storage";
+  return "notifications";
 }
 
 export interface SettingsUserDto {

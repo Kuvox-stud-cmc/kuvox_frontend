@@ -5,6 +5,7 @@ import { SearchDropdown } from "~/components/dashboard/search-dropdown";
 
 interface HeaderBarProps {
   user: {
+    email?: string;
     displayName: string;
     plan: string;
   };
@@ -14,6 +15,7 @@ interface HeaderBarProps {
 
 export function HeaderBar({ user, onMenuToggle }: HeaderBarProps) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const initials = getInitials(user);
 
   return (
     <header className="flex h-14 sm:h-16 flex-shrink-0 items-center justify-between border-b border-outline-variant/50 px-4 sm:px-6 md:px-10">
@@ -76,7 +78,7 @@ export function HeaderBar({ user, onMenuToggle }: HeaderBarProps) {
             aria-expanded={profileOpen}
             aria-label="Profile menu"
           >
-            {user.displayName.charAt(0).toUpperCase()}
+            {initials}
           </button>
 
           {profileOpen && (
@@ -123,4 +125,13 @@ export function HeaderBar({ user, onMenuToggle }: HeaderBarProps) {
       </div>
     </header>
   );
+}
+
+function getInitials(user: { displayName?: string; email?: string }): string {
+  const source = user.displayName?.trim() || user.email?.trim() || "";
+  if (!source) return "U";
+  const words = source.includes("@")
+    ? [source.slice(0, 1)]
+    : source.split(/\s+/).filter(Boolean).slice(0, 2);
+  return words.map((word) => word[0]?.toUpperCase() ?? "").join("") || "U";
 }

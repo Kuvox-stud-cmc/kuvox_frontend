@@ -712,27 +712,8 @@ export default function ProjectsDashboard({
                         )}
                     </section>
 
-                    {/* Team Projects + Quick Actions */}
-                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                        {/* Team Projects */}
-                        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-6">
-                            <div className="mb-6 flex items-center justify-between">
-                                <h3 className="text-headline-md font-bold text-on-surface">Team Projects</h3>
-                                <button
-                                    type="button"
-                                    className="flex items-center gap-1 text-label-md font-bold text-primary transition-colors hover:text-primary-fixed"
-                                >
-                                    View All
-                                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                                </button>
-                            </div>
-                            <div className="space-y-3">
-                                {MOCK_TEAM_PROJECTS.map((team, i) => (
-                                    <TeamProjectRow key={team.id} team={team} index={i} />
-                                ))}
-                            </div>
-                        </div>
-
+                    {/* Quick Actions */}
+                    <div className="grid grid-cols-1 gap-6">
                         {/* Quick Actions */}
                         <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-6">
                             <h3 className="mb-6 text-headline-md font-bold text-on-surface">Quick Actions</h3>
@@ -748,6 +729,12 @@ export default function ProjectsDashboard({
                                     title="Create Project"
                                     description="Start a new project"
                                     onClick={() => setCreateOpen(true)}
+                                />
+                                <QuickActionCard
+                                    icon="collections"
+                                    title="Create Album"
+                                    description="Organize media assets"
+                                    to="/dashboard/albums"
                                 />
                                 <QuickActionCard
                                     icon="auto_awesome"

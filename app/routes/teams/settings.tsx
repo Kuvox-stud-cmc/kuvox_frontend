@@ -4,10 +4,16 @@ import { listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
+import type { LoaderFunctionArgs } from "react-router";
 
-import type { Route } from "./+types/settings";
+namespace Route {
+  export type LoaderArgs = LoaderFunctionArgs;
+  export type ComponentProps = {
+    loaderData: Awaited<ReturnType<typeof loader>>;
+  };
+}
 
-export function meta(_: Route.MetaArgs) {
+export function meta() {
   return [{ title: "Team settings · Kuvox" }];
 }
 
@@ -20,7 +26,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const studioId = params.studioId;
 
   if (!accessToken) {
-    return { name: "", role: UserStudioRole.User, error: "Your session expired. Please sign in again." };
+    return { name: "", role: UserStudioRole.Member, error: "Your session expired. Please sign in again." };
   }
 
   let studios: import("~/lib/api").StudioDto[] = [];
@@ -33,7 +39,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const studio = studios.find((s) => s.id === studioId);
   return {
     name: studio?.name ?? "",
-    role: studio?.role ?? UserStudioRole.User,
+    role: studio?.role ?? UserStudioRole.Member,
     error: null as string | null,
   };
 }

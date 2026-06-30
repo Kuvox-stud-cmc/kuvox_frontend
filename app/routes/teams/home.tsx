@@ -82,14 +82,14 @@ export default function TeamHome({ loaderData }: Route.ComponentProps) {
 
   const stats = [
     { key: "projects" as const, label: "Projects", icon: "movie", to: `/teams/${studioId}/projects` },
-    { key: "media" as const, label: "Media", icon: "perm_media", to: `/teams/${studioId}/media` },
+    { key: "media" as const, label: "Media", icon: "perm_media", to: `/teams/${studioId}/media/videos` },
     { key: "members" as const, label: "Members", icon: "group", to: `/teams/${studioId}/members` },
     { key: "trash" as const, label: "Trash", icon: "delete", to: `/teams/${studioId}/trash` },
   ];
 
   return (
     <section>
-      <SectionHeader title="Team overview" subtitle="What's happening in this workspace." />
+      <SectionHeader title="Studio Home" subtitle="What's happening in this Studio workspace." />
 
       {error && <ErrorBanner message={error} />}
 
@@ -146,7 +146,7 @@ export default function TeamHome({ loaderData }: Route.ComponentProps) {
           <div className="flex items-center justify-between">
             <h2 className="text-headline-md text-on-surface">Recent media</h2>
             <Link
-              to={`/teams/${studioId}/media`}
+              to={`/teams/${studioId}/media/videos`}
               className="text-label-md text-on-surface-variant transition-colors hover:text-primary"
             >
               View all

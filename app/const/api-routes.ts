@@ -4,4 +4,5 @@ export const API_ROUTES = {
     PROJECTS: "/api/projects",
     MEDIA: "/api/media",
     TRASH: "/api/trash",
+    NOTIFICATIONS: "/api/notifications",
 }

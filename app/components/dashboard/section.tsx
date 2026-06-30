@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Form } from "react-router";
 
 /** Section title + optional subtitle and a right-aligned action slot. */
 export function SectionHeader({
@@ -81,6 +82,86 @@ export function Chip({ children }: { children: ReactNode }) {
 /** Primary pill button used for section actions (matches auth/onboarding styling). */
 export function primaryButtonClass(extra = ""): string {
   return `inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-label-md font-medium text-on-primary transition-colors hover:bg-primary-fixed disabled:opacity-60 ${extra}`;
+}
+
+export function ConfirmSubmitButton({
+  fields,
+  title,
+  message,
+  confirmLabel,
+  label,
+  icon,
+  disabled = false,
+  ariaLabel,
+  buttonClassName = "",
+  confirmClassName,
+  onBeforeOpen,
+  children,
+}: {
+  fields: Record<string, string | number | boolean | null | undefined>;
+  title: string;
+  message: ReactNode;
+  confirmLabel: string;
+  label?: string;
+  icon?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
+  buttonClassName?: string;
+  confirmClassName?: string;
+  onBeforeOpen?: () => void;
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const hiddenFields = Object.entries(fields).filter(([, value]) => value !== undefined && value !== null);
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label={ariaLabel ?? label ?? confirmLabel}
+        onClick={() => {
+          onBeforeOpen?.();
+          setOpen(true);
+        }}
+        className={buttonClassName}
+      >
+        {children ?? (
+          <>
+            {icon ? <span className="material-symbols-outlined text-[18px]">{icon}</span> : null}
+            {label}
+          </>
+        )}
+      </button>
+
+      <Modal open={open} onClose={() => setOpen(false)} title={title}>
+        <div className="text-body-sm text-on-surface-variant">{message}</div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
+          >
+            Cancel
+          </button>
+          <Form method="post" onSubmit={() => setOpen(false)}>
+            {hiddenFields.map(([name, value]) => (
+              <input key={name} type="hidden" name={name} value={String(value)} />
+            ))}
+            <button
+              type="submit"
+              className={
+                confirmClassName ??
+                primaryButtonClass("!bg-error !text-on-error hover:!bg-error/90")
+              }
+            >
+              {confirmLabel}
+            </button>
+          </Form>
+        </div>
+      </Modal>
+    </>
+  );
 }
 
 /** Centered modal dialog with a click-away backdrop. Render only when `open`. */

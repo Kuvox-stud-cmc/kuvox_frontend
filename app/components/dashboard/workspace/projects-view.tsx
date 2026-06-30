@@ -4,6 +4,7 @@ import { Form, Link, useNavigation, useSearchParams } from "react-router";
 import {
   CardGridSkeleton,
   Chip,
+  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   Modal,
@@ -213,17 +214,20 @@ function ProjectCard({ project }: { project: ProjectDto }) {
       </Link>
       <div className="mt-4 flex items-center justify-between">
         <span className="text-label-md text-on-surface-variant">{project.status}</span>
-        <Form method="post">
-          <input type="hidden" name="intent" value="delete" />
-          <input type="hidden" name="id" value={project.id} />
-          <button
-            type="submit"
-            aria-label={`Move ${project.name} to Trash`}
-            className="rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100"
-          >
-            <span className="material-symbols-outlined text-[20px]">delete</span>
-          </button>
-        </Form>
+        <ConfirmSubmitButton
+          fields={{ intent: "delete", id: project.id }}
+          title="Move project to trash?"
+          message={
+            <>
+              Move <span className="font-medium text-on-surface">{project.name}</span> to trash?
+            </>
+          }
+          confirmLabel="Move to trash"
+          ariaLabel={`Move ${project.name} to Trash`}
+          buttonClassName="rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100 disabled:opacity-50"
+        >
+          <span className="material-symbols-outlined text-[20px]">delete</span>
+        </ConfirmSubmitButton>
       </div>
     </div>
   );

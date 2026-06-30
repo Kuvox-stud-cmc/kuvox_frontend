@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import {
+  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   Modal,
@@ -528,18 +529,21 @@ function AlbumDetail({
                 </p>
                 <p className="text-label-sm text-on-surface-variant">{mediaKindLabel(item.kind)}</p>
               </div>
-              <Form method="post">
-                <input type="hidden" name="intent" value="remove-media" />
-                <input type="hidden" name="albumId" value={album.id} />
-                <input type="hidden" name="mediaId" value={item.id} />
-                <button
-                  type="submit"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
-                  aria-label={`Remove ${item.filename} from ${album.name}`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">close</span>
-                </button>
-              </Form>
+              <ConfirmSubmitButton
+                fields={{ intent: "remove-media", albumId: album.id, mediaId: item.id }}
+                title="Remove media from album?"
+                message={
+                  <>
+                    Remove <span className="font-medium text-on-surface">{item.filename}</span> from{" "}
+                    <span className="font-medium text-on-surface">{album.name}</span>?
+                  </>
+                }
+                confirmLabel="Remove media"
+                ariaLabel={`Remove ${item.filename} from ${album.name}`}
+                buttonClassName="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </ConfirmSubmitButton>
             </div>
           ))}
         </div>

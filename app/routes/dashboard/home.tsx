@@ -143,8 +143,6 @@ const MOCK_AI_SUGGESTIONS = [
   },
 ];
 
-const TEAM_INITIALS = ["A", "S", "J", "M", "E"];
-
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
 function formatStatus(status: string) {
@@ -270,7 +268,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
 
       {/* ── Stats Row ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:col-span-8 xl:col-span-9 lg:grid-cols-2 xl:grid-cols-4">
+        <div className="col-span-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             variant="stacked"
             icon="folder"
@@ -305,37 +303,6 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
           />
         </div>
 
-        {/* Team Members card */}
-        <div className="col-span-12 flex flex-col justify-between rounded-2xl border border-primary/20 bg-primary/5 p-6 lg:col-span-4 xl:col-span-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20">
-              <span className="material-symbols-outlined text-[20px] text-primary">group</span>
-            </div>
-            <div>
-              <p className="text-label-md text-on-surface-variant">Team Members</p>
-              <p className="text-headline-md font-bold text-on-surface">8</p>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex -space-x-2">
-              {TEAM_INITIALS.map((initial, i) => (
-                <div
-                  key={i}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-high text-label-sm font-bold text-on-surface ring-2 ring-surface"
-                >
-                  {initial}
-                </div>
-              ))}
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container text-label-sm font-bold text-on-surface-variant ring-2 ring-surface">
-                +3
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
-              <span className="text-label-md text-on-surface-variant">6 active today</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* ── Continue Editing ──────────────────────────────────────────────── */}
@@ -366,7 +333,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
       {/* ── Three Column Middle ───────────────────────────────────────────── */}
       <div className="grid grid-cols-12 gap-8">
         {/* Pending Reviews */}
-        <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-4">
+        <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-8">
           <div className="mb-6 flex items-center justify-between">
             <h3 className="font-bold text-on-surface">
               Pending Reviews{" "}
@@ -403,55 +370,8 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
           </div>
         </div>
 
-        {/* Team Overview */}
-        <div className="col-span-12 flex flex-col rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-5">
-          <div className="mb-8 flex items-center justify-between">
-            <h3 className="font-bold text-on-surface">Team Overview</h3>
-            <select className="rounded-lg border border-outline-variant bg-surface-container px-2 py-1 text-label-sm text-on-surface-variant outline-none">
-              <option>This Week</option>
-              <option>Last Week</option>
-            </select>
-          </div>
-          <div className="mb-8 grid grid-cols-2 gap-8">
-            <div className="space-y-4">
-              {[
-                { icon: "group", label: "Active Members", value: "6 / 8" },
-                { icon: "assignment", label: "Projects in Progress", value: "12" },
-                { icon: "check_circle", label: "Completed Projects", value: "8" },
-              ].map((stat) => (
-                <div key={stat.label} className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-[16px] text-on-surface-variant">
-                    {stat.icon}
-                  </span>
-                  <div className="flex flex-1 items-center justify-between">
-                    <span className="text-label-sm text-on-surface-variant">{stat.label}</span>
-                    <span className="text-label-md font-bold text-on-surface">{stat.value}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Mini activity chart */}
-            <div className="flex items-end justify-between px-2">
-              {[50, 75, 100, 90, 75, 40, 25].map((h, i) => (
-                <div
-                  key={i}
-                  className={`w-3 rounded-t-sm ${i >= 2 && i <= 4 ? "bg-primary" : "bg-surface-container-high"}`}
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
-          </div>
-          <button
-            type="button"
-            className="flex w-fit items-center gap-2 rounded-xl bg-primary/10 px-4 py-2 text-label-md font-bold text-primary transition-colors hover:bg-primary/20"
-          >
-            Invite Members
-            <span className="material-symbols-outlined text-[14px]">expand_more</span>
-          </button>
-        </div>
-
         {/* Quick Actions */}
-        <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-3">
+        <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-4">
           <h3 className="mb-6 font-bold text-on-surface">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-4">
             {(
@@ -466,6 +386,12 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
                   icon: "upload",
                   label: "Import Media",
                   to: "/dashboard/photos",
+                  color: "text-primary bg-primary/20",
+                },
+                {
+                  icon: "collections",
+                  label: "Create Album",
+                  to: "/dashboard/albums",
                   color: "text-primary bg-primary/20",
                 },
                 {

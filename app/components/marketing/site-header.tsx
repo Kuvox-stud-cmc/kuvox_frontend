@@ -1,5 +1,6 @@
 import { Link, NavLink } from "react-router";
 import { useState } from "react";
+import type { SessionUser } from "~/lib/session.server";
 
 /* ── Plain nav items ─────────────────────────────────────────────────────── */
 const NAV_LINKS = [
@@ -197,8 +198,10 @@ function MobileDropdown({
 /* ── Header ──────────────────────────────────────────────────────────────── */
 
 /** Top navigation shared across the public marketing pages. */
-export function SiteHeader() {
+export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const signedIn = Boolean(user);
+  const initials = getInitials(user);
 
   return (
     <>
@@ -251,18 +254,39 @@ export function SiteHeader() {
 
         {/* Right: Auth + Mobile Toggle */}
         <div className="flex items-center gap-3 sm:gap-4">
-          <Link
-            to="/login"
-            className="text-on-surface-variant font-medium hover:text-primary transition-colors duration-300 text-label-md hidden lg:block"
-          >
-            Sign In
-          </Link>
-          <Link
-            to="/signup"
-            className="bg-primary text-on-primary px-3 sm:px-4 py-1.5 sm:py-2 rounded-sm font-medium text-label-md hover:bg-primary-fixed transition-colors duration-300 hidden sm:inline-flex"
-          >
-            Get Started
-          </Link>
+          {signedIn ? (
+            <>
+              <Link
+                to="/dashboard"
+                className="bg-primary text-on-primary px-3 sm:px-4 py-1.5 sm:py-2 rounded-sm font-medium text-label-md hover:bg-primary-fixed transition-colors duration-300 hidden sm:inline-flex"
+              >
+                Go to dashboard
+              </Link>
+              <Link
+                to="/dashboard"
+                aria-label="Go to dashboard"
+                className="hidden h-9 w-9 items-center justify-center rounded-xl bg-primary-container text-body-sm font-bold text-on-primary-container transition-colors hover:bg-primary-container/80 sm:inline-flex"
+                title={user?.displayName ?? user?.email ?? "Account"}
+              >
+                {initials}
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                className="text-on-surface-variant font-medium hover:text-primary transition-colors duration-300 text-label-md hidden lg:block"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/signup"
+                className="bg-primary text-on-primary px-3 sm:px-4 py-1.5 sm:py-2 rounded-sm font-medium text-label-md hover:bg-primary-fixed transition-colors duration-300 hidden sm:inline-flex"
+              >
+                Get Started
+              </Link>
+            </>
+          )}
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
@@ -329,22 +353,54 @@ export function SiteHeader() {
 
           <hr className="border-outline-variant/40 my-3" />
 
-          <Link
-            to="/login"
-            onClick={() => setMobileOpen(false)}
-            className="text-body-lg font-medium py-3 px-4 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors duration-200"
-          >
-            Sign In
-          </Link>
-          <Link
-            to="/signup"
-            onClick={() => setMobileOpen(false)}
-            className="bg-primary text-on-primary py-3 px-4 rounded-lg text-body-lg font-medium text-center hover:bg-primary-fixed transition-colors duration-300 mt-1"
-          >
-            Get Started
-          </Link>
+          {signedIn ? (
+            <div className="flex items-center gap-3 px-4 py-3">
+              <Link
+                to="/dashboard"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Go to dashboard"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-container text-body-sm font-bold text-on-primary-container transition-colors hover:bg-primary-container/80"
+                title={user?.displayName ?? user?.email ?? "Account"}
+              >
+                {initials}
+              </Link>
+              <Link
+                to="/dashboard"
+                onClick={() => setMobileOpen(false)}
+                className="flex-1 rounded-lg bg-primary px-4 py-3 text-center text-body-lg font-medium text-on-primary transition-colors duration-300 hover:bg-primary-fixed"
+              >
+                Go to dashboard
+              </Link>
+            </div>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                onClick={() => setMobileOpen(false)}
+                className="text-body-lg font-medium py-3 px-4 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors duration-200"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/signup"
+                onClick={() => setMobileOpen(false)}
+                className="bg-primary text-on-primary py-3 px-4 rounded-lg text-body-lg font-medium text-center hover:bg-primary-fixed transition-colors duration-300 mt-1"
+              >
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </>
   );
+}
+
+function getInitials(user: SessionUser | null): string {
+  const source = user?.displayName?.trim() || user?.email?.trim() || "";
+  if (!source) return "U";
+  const words = source.includes("@")
+    ? [source.slice(0, 1)]
+    : source.split(/\s+/).filter(Boolean).slice(0, 2);
+  return words.map((word) => word[0]?.toUpperCase() ?? "").join("") || "U";
 }

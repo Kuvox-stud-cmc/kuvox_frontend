@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Form } from "react-router";
+
+import { ConfirmSubmitButton } from "~/components/dashboard/section";
 
 interface CardOverflowMenuProps {
   id: string;
@@ -63,27 +64,17 @@ export function CardOverflowMenu({
             placement === "top" ? "bottom-full mb-1" : "top-full mt-1"
           } ${menuClassName}`}
         >
-          <Form
-            method="post"
-            onSubmit={(event) => {
-              if (!confirm(confirmMessage)) {
-                event.preventDefault();
-                return;
-              }
-              setOpen(false);
-            }}
+          <ConfirmSubmitButton
+            fields={{ intent, id }}
+            title="Confirm delete"
+            message={confirmMessage}
+            confirmLabel="Delete"
+            ariaLabel={`Delete ${itemLabel}`}
+            buttonClassName="flex w-full items-center gap-2 px-3 py-2 text-left text-label-md font-medium text-error transition-colors hover:bg-error/10"
           >
-            <input type="hidden" name="intent" value={intent} />
-            <input type="hidden" name="id" value={id} />
-            <button
-              type="submit"
-              role="menuitem"
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-label-md font-medium text-error transition-colors hover:bg-error/10"
-            >
-              <span className="material-symbols-outlined text-[18px]">delete</span>
-              Delete
-            </button>
-          </Form>
+            <span className="material-symbols-outlined text-[18px]">delete</span>
+            Delete
+          </ConfirmSubmitButton>
         </div>
       )}
     </div>
