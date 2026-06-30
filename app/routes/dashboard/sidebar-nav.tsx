@@ -52,6 +52,11 @@ const MAIN_NAV: NavItemConfig[] = [
     ],
   },
   {
+    to: "/dashboard/albums",
+    label: "Albums",
+    icon: "collections",
+  },
+  {
     to: "/dashboard/templates",
     label: "Templates",
     icon: "view_quilt",

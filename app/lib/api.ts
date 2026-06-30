@@ -127,6 +127,53 @@ export interface StudioMemberDto {
   role: number;
 }
 
+export interface SettingsUserDto {
+  id: string;
+  email: string;
+  displayName: string;
+  role: string;
+  plan: string;
+  emailVerified: boolean;
+  createdAt: string;
+}
+
+export interface UserPreferencesDto {
+  emailNotificationsEnabled: boolean;
+  productUpdatesEnabled: boolean;
+  weeklyDigestEnabled: boolean;
+  defaultEditorMode: "manual" | "ai" | string;
+}
+
+export interface PlanLimitsDto {
+  plan: string;
+  storageBytes: number;
+  projects: number;
+  teamSeats: number;
+  prioritySupport: boolean;
+}
+
+export interface UserSettingsDto {
+  user: SettingsUserDto;
+  preferences: UserPreferencesDto;
+  planLimits: PlanLimitsDto;
+}
+
+export interface UpdateProfileDto {
+  displayName: string;
+}
+
+export interface UpdatePreferencesDto {
+  emailNotificationsEnabled: boolean;
+  productUpdatesEnabled: boolean;
+  weeklyDigestEnabled: boolean;
+  defaultEditorMode: string;
+}
+
+export interface ChangePasswordDto {
+  currentPassword: string;
+  newPassword: string;
+}
+
 /** A unified Trash row (project or media) for the shared Trash view. */
 export interface TrashEntry {
   resource: ResourceKind;
@@ -167,7 +214,7 @@ export function toTrashEntries(
 export type ActiveWorkspace = { kind: "personal" } | { kind: "studio"; studioId: string };
 
 /** Mirrors `Media.Enums.AlbumKind` (integers on the wire). */
-export const AlbumKind = { Mixed: 0, Photo: 1, Video: 2, Audio: 3 } as const;
+export const AlbumKind = { Video: 0, Audio: 1, Photo: 2, Mixed: 3 } as const;
 
 /** Mirrors `Media.Dtos.AlbumDto`. */
 export interface AlbumDto {
