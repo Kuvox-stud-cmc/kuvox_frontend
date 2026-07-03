@@ -8,6 +8,7 @@ export function TeamMediaKindView({
   kind,
   title,
   subtitle,
+  studioId,
 }: {
   media: MediaDto[];
   error: string | null;
@@ -15,6 +16,7 @@ export function TeamMediaKindView({
   kind: number;
   title: string;
   subtitle: string;
+  studioId: string;
 }) {
   return (
     <MediaView
@@ -24,6 +26,7 @@ export function TeamMediaKindView({
       fixedKind={kind}
       title={title}
       subtitle={subtitle}
+      studioId={studioId}
     />
   );
 }

@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { MediaKind, type MediaDto, type Workspace } from "~/lib/api";
-import { ApiError, createMedia, listMedia, softDelete } from "~/lib/api.server";
+import { type MediaDto, type Workspace } from "~/lib/api";
+import { ApiError, listMedia, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -49,29 +49,8 @@ export async function teamMediaKindAction({ request, params }: ActionFunctionArg
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
-  const ws = studioWs(studioId);
 
   try {
-    if (intent === "create") {
-      const filename = String(formData.get("filename") ?? "").trim();
-      const kind = Number(formData.get("kind") ?? MediaKind.Video);
-      if (!filename) {
-        return { error: "Enter a filename to import." };
-      }
-      await createMedia(
-        accessToken,
-        ws,
-        {
-          kind,
-          filename,
-          storageKey: `studio/${studioId}/${crypto.randomUUID()}/${filename}`,
-          sizeBytes: 1,
-        },
-        reqLog,
-      );
-      return { ok: true, intent };
-    }
-
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {

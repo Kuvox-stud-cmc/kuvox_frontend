@@ -14,7 +14,7 @@ export function meta(_: Route.MetaArgs) {
 export const loader = createTeamMediaKindLoader(MediaKind.Audio);
 export const action = teamMediaKindAction;
 
-export default function TeamAudio({ loaderData, actionData }: Route.ComponentProps) {
+export default function TeamAudio({ loaderData, actionData, params }: Route.ComponentProps) {
   return (
     <TeamMediaKindView
       media={loaderData.media}
@@ -23,6 +23,7 @@ export default function TeamAudio({ loaderData, actionData }: Route.ComponentPro
       kind={MediaKind.Audio}
       title="Audio"
       subtitle="Audio assets owned by this Studio."
+      studioId={params.studioId}
     />
   );
 }

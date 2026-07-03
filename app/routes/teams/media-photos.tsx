@@ -14,7 +14,7 @@ export function meta(_: Route.MetaArgs) {
 export const loader = createTeamMediaKindLoader(MediaKind.Image);
 export const action = teamMediaKindAction;
 
-export default function TeamPhotos({ loaderData, actionData }: Route.ComponentProps) {
+export default function TeamPhotos({ loaderData, actionData, params }: Route.ComponentProps) {
   return (
     <TeamMediaKindView
       media={loaderData.media}
@@ -23,6 +23,7 @@ export default function TeamPhotos({ loaderData, actionData }: Route.ComponentPr
       kind={MediaKind.Image}
       title="Photos"
       subtitle="Photo assets owned by this Studio."
+      studioId={params.studioId}
     />
   );
 }

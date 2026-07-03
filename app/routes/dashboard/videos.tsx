@@ -1,25 +1,34 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 
 import {
   CardOverflowMenu,
   FilterButton,
-  FormActions,
   GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
-  StatusBadge,
   SortDropdown,
   ViewToggle,
 } from "~/components/dashboard/layout/DashboardPageLayout";
-import { EmptyState, ErrorBanner, Modal, primaryButtonClass } from "~/components/dashboard/section";
+import { EmptyState, ErrorBanner, primaryButtonClass } from "~/components/dashboard/section";
+import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
+import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
+import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
+import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
+import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 
-import { ApiError, listMedia, listMediaTrash, softDelete } from "~/lib/api.server";
+import { ApiError, albumsApi, listMedia, listMediaTrash, softDelete } from "~/lib/api.server";
 import { getSession } from "~/lib/session.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
-import { PERSONAL, type MediaDto, type MediaTrashItem } from "~/lib/api";
+import { AlbumKind, MediaKind, PERSONAL, type AlbumDto, type MediaDto, type MediaTrashItem } from "~/lib/api";
+import { useLiveMedia } from "~/lib/media-realtime";
+import {
+  isMediaInProgress,
+  resolveMediaPipeline,
+  type MediaPipeline,
+} from "~/lib/media-pipeline";
 import type { Route } from "./+types/videos";
 
 export function meta() {
@@ -31,18 +40,55 @@ export async function loader({ request }: Route.LoaderArgs) {
   const user = await requireUser(request, log);
   const reqLog = withUser(log, user);
   const session = await getSession(request);
-  const accessToken = session.get("accessToken")!;
+  const accessToken = session.get("accessToken");
+  if (!accessToken) {
+    return {
+      videos: [] as MediaDto[],
+      archived: [] as MediaTrashItem[],
+      albums: [] as AlbumDto[],
+      albumMediaCounts: {} as Record<string, number>,
+      error: "Your session expired. Please sign in again.",
+    };
+  }
 
   const url = new URL(request.url);
   const studioId = url.searchParams.get("studioId");
   const workspace = studioId ? { kind: "studio" as const, studioId } : PERSONAL;
 
-  const [videosRes, trashRes] = await Promise.all([
-    listMedia(accessToken, workspace, reqLog),
-    listMediaTrash(accessToken, workspace, reqLog),
-  ]);
+  try {
+    const [videosRes, trashRes, allAlbums] = await Promise.all([
+      listMedia(accessToken, workspace, reqLog),
+      listMediaTrash(accessToken, workspace, reqLog),
+      albumsApi.listAlbums(accessToken, reqLog),
+    ]);
+    const albums = allAlbums.filter((album) => album.kind === AlbumKind.Video && album.isDeleteAble);
+    const albumMediaCounts = Object.fromEntries(
+      await Promise.all(
+        albums.map(async (album) => {
+          const albumMedia = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);
+          return [album.id, albumMedia.items.filter((item) => item.kind === MediaKind.Video).length] as const;
+        }),
+      ),
+    );
 
-  return { videos: videosRes.items, archived: trashRes.items };
+    return {
+      videos: videosRes.items,
+      archived: trashRes.items,
+      albums,
+      albumMediaCounts,
+      error: null as string | null,
+    };
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : "Couldn't load your videos.";
+    reqLog.error({ err: error }, "failed to load videos");
+    return {
+      videos: [] as MediaDto[],
+      archived: [] as MediaTrashItem[],
+      albums: [] as AlbumDto[],
+      albumMediaCounts: {} as Record<string, number>,
+      error: message,
+    };
+  }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -75,51 +121,58 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-function formatDuration(sec: number | null): string {
+function formatDuration(value: number | string | null): string {
+  const sec = Number(value);
   if (!sec) return "—";
   const min = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-function videoStatusBadge(status: string) {
-  const normStatus = status.toLowerCase();
-  return {
-    ready: {
-      label: "Ready",
-      tone: "success" as const,
-    },
-    uploaded: {
-      label: "Uploaded",
-      tone: "primary" as const,
-    },
-    processing: {
-      label: "Processing",
-      tone: "warning" as const,
-      pulse: true,
-    },
-    failed: {
-      label: "Failed",
-      tone: "danger" as const,
-    },
-  }[normStatus] || {
-    label: status,
-    tone: "neutral" as const,
-  };
+function VideoPreviewFrame({
+  label,
+  onPreview,
+  className,
+  children,
+}: {
+  label: string;
+  onPreview: () => void;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPreview}
+      className={`group/preview relative block overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-container-low ${className}`}
+      aria-label={label}
+    >
+      {children}
+      <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover/preview:bg-black/20 group-focus-visible/preview:bg-black/20" />
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover/preview:opacity-100 group-focus-visible/preview:opacity-100">
+        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-surface-container-lowest/75 text-on-surface shadow-xl backdrop-blur-md">
+          <span className="material-symbols-outlined text-[22px]">play_arrow</span>
+        </span>
+      </span>
+    </button>
+  );
 }
-
-
 
 function VideoCard({
   video,
   index,
   listView,
+  pipeline,
+  onPreview,
 }: {
   video: MediaDto;
   index: number;
   listView: boolean;
+  pipeline?: MediaPipeline | null;
+  onPreview: (video: MediaDto) => void;
 }) {
-  const status = video.status.toLowerCase();
+  const pipelineState = resolveMediaPipeline(video, pipeline);
+  const status = pipelineState.stage === "failed" ? "failed" : video.status.toLowerCase();
   const res = video.width && video.height ? `${video.width}x${video.height}` : "—";
   const fpsStr = "—";
 
@@ -132,7 +185,11 @@ function VideoCard({
             : "border-outline-variant hover:border-primary/40"
           }`}
       >
-        <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
+        <VideoPreviewFrame
+          onPreview={() => onPreview(video)}
+          className="h-20 w-32 shrink-0 rounded-lg border border-outline-variant"
+          label={`Preview ${video.filename}`}
+        >
           {status === "failed" ? (
             <div className="flex h-full w-full items-center justify-center bg-error/5">
               <span className="material-symbols-outlined text-[24px] text-error">
@@ -152,9 +209,9 @@ function VideoCard({
               </span>
             </div>
           ) : (
-            <GradientThumbnail index={index} icon="play_circle" />
+            <MediaThumbnail media={video} index={index} icon="play_circle" />
           )}
-        </div>
+        </VideoPreviewFrame>
         <div className="min-w-0 flex-1">
           <h3
             className={`truncate text-body-sm font-bold ${status === "failed" ? "text-error" : "text-on-surface"}`}
@@ -177,7 +234,7 @@ function VideoCard({
             </>
           )}
         </div>
-        <StatusBadge {...videoStatusBadge(video.status)} />
+        <MediaPipelineStatus media={video} pipeline={pipeline} compact />
         <CardOverflowMenu id={video.id} itemLabel={video.filename} />
       </div>
     );
@@ -187,7 +244,11 @@ function VideoCard({
   if (status === "failed") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-error/40">
-        <div className="relative flex aspect-video items-center justify-center bg-error/5">
+        <VideoPreviewFrame
+          onPreview={() => onPreview(video)}
+          className="flex aspect-video w-full items-center justify-center bg-error/5"
+          label={`Preview ${video.filename}`}
+        >
           <div className="flex flex-col items-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full border-2 border-error">
               <span className="material-symbols-outlined text-[20px] font-bold text-error">
@@ -196,15 +257,15 @@ function VideoCard({
             </div>
           </div>
           <div className="absolute left-3 top-3">
-            <StatusBadge {...videoStatusBadge("failed")} />
+            <MediaPipelineStatus media={video} pipeline={pipeline} compact />
           </div>
-        </div>
+        </VideoPreviewFrame>
         <div className="p-4">
           <h3 className="truncate text-body-sm font-bold text-error">
             {video.filename}
           </h3>
           <p className="mt-1 text-label-md text-error/70">
-            Import failed.
+            {pipelineState.detail}
           </p>
           <div className="mt-3 flex items-center justify-end">
             <CardOverflowMenu id={video.id} itemLabel={video.filename} />
@@ -218,14 +279,18 @@ function VideoCard({
   if (status === "uploading" || status === "uploaded") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
-        <div className="relative flex aspect-video items-center justify-center bg-surface-container">
+        <VideoPreviewFrame
+          onPreview={() => onPreview(video)}
+          className="flex aspect-video w-full items-center justify-center bg-surface-container"
+          label={`Preview ${video.filename}`}
+        >
           <div className="w-full px-6">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-label-sm font-bold text-primary">
-                Uploading
+                {pipelineState.label}
               </span>
               <span className="text-label-sm text-primary">
-                100%
+                {pipelineState.step}/{pipelineState.stepCount}
               </span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high">
@@ -236,9 +301,9 @@ function VideoCard({
             </div>
           </div>
           <div className="absolute left-3 top-3">
-            <StatusBadge {...videoStatusBadge("uploading")} />
+            <MediaPipelineStatus media={video} pipeline={pipeline} compact />
           </div>
-        </div>
+        </VideoPreviewFrame>
         <div className="p-4">
           <div className="mb-2 flex items-start justify-between">
             <h3 className="truncate text-body-sm font-bold text-on-surface">
@@ -247,7 +312,7 @@ function VideoCard({
             <CardOverflowMenu id={video.id} itemLabel={video.filename} />
           </div>
           <p className="mb-3 text-label-md text-on-surface-variant">
-            {(video.sizeBytes / 1024 / 1024).toFixed(1)} MB
+            {pipelineState.detail}
           </p>
           <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
             <span>{res}</span>
@@ -262,20 +327,27 @@ function VideoCard({
   /* ── Grid view: Ready / Processing card ───────────────────────────────── */
   return (
     <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
-      <div className="relative aspect-video overflow-hidden">
-        <GradientThumbnail index={index} icon="play_circle" />
+      <VideoPreviewFrame
+        onPreview={() => onPreview(video)}
+        className="aspect-video w-full"
+        label={`Preview ${video.filename}`}
+      >
+        <MediaThumbnail media={video} index={index} icon="play_circle" />
         <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
 
         {/* Status badge */}
         <div className="absolute left-3 top-3">
-          <StatusBadge {...videoStatusBadge(video.status)} />
+          <MediaPipelineStatus media={video} pipeline={pipeline} compact />
         </div>
 
         {/* Processing overlay */}
         {status === "processing" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface/40">
             <span className="text-label-md font-bold text-on-surface">
-              Ready to edit
+              {pipelineState.label}
+            </span>
+            <span className="mt-1 max-w-56 text-center text-label-sm text-on-surface-variant">
+              {pipelineState.detail}
             </span>
           </div>
         )}
@@ -289,7 +361,7 @@ function VideoCard({
             {formatDuration(video.durationSeconds)}
           </span>
         )}
-      </div>
+      </VideoPreviewFrame>
 
       <div className="p-4">
         <div className="mb-2 flex items-start justify-between">
@@ -446,34 +518,49 @@ function ArchivedVideoCard({
 /* ── Main component ─────────────────────────────────────────────────────── */
 
 export default function Videos({ loaderData, actionData }: Route.ComponentProps) {
-  const { videos: apiVideos, archived: apiArchived } = loaderData;
+  const { videos: apiVideos, archived: apiArchived, albums, albumMediaCounts } = loaderData;
   const [searchParams] = useSearchParams();
+  const studioId = searchParams.get("studioId");
+  const initialVideos = useMemo(
+    () => apiVideos.filter((item) => item.kind === MediaKind.Video),
+    [apiVideos],
+  );
+  const live = useLiveMedia(initialVideos, { kind: MediaKind.Video });
   const pageView = searchParams.get("view");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<"latest" | "name">("latest");
   const [importOpen, setImportOpen] = useState(false);
+  const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
 
   const archivedRef = useRef<HTMLElement>(null);
+  const albumsRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (pageView === "archived" && archivedRef.current) {
       archivedRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    if (pageView === "albums" && albumsRef.current) {
+      albumsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }, [pageView]);
 
-  const videos = [...apiVideos].sort((a, b) => {
+  const videos = [...live.media].sort((a, b) => {
     if (sort === "name") return a.filename.localeCompare(b.filename);
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
-  const metrics = apiVideos.reduce(
+  const previewVideo = previewVideoId
+    ? videos.find((video) => video.id === previewVideoId) ?? null
+    : null;
+  const metrics = live.media.reduce(
     (acc, video) => {
-      const status = video.status.trim().toLowerCase();
+      const pipeline = resolveMediaPipeline(video, live.updatesById[video.id]?.pipeline);
+      const status = pipeline.stage;
 
-      if (["processing", "uploading", "uploaded"].includes(status)) {
+      if (isMediaInProgress(video) || (!pipeline.terminal && ["queued", "optimizing", "ingesting"].includes(status))) {
         acc.inProgress += 1;
       }
 
-      if (["ready", "complete", "completed"].includes(status)) {
+      if (status === "ready") {
         acc.completed += 1;
       }
 
@@ -484,7 +571,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
       return acc;
     },
     {
-      totalVideos: apiVideos.length,
+      totalVideos: live.media.length,
       inProgress: 0,
       archived: apiArchived.length,
       completed: 0,
@@ -514,6 +601,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
           Import Video
         </button>
       </PageHeader>
+      {loaderData.error && <ErrorBanner message={loaderData.error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
       {/* ── Hero Drop Zone ─────────────────────────────────────────────────── */}
@@ -635,6 +723,8 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
                 video={video}
                 index={i}
                 listView
+                pipeline={live.updatesById[video.id]?.pipeline}
+                onPreview={(nextVideo) => setPreviewVideoId(nextVideo.id)}
               />
             ))}
           </div>
@@ -646,6 +736,8 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
                 video={video}
                 index={i}
                 listView={false}
+                pipeline={live.updatesById[video.id]?.pipeline}
+                onPreview={(nextVideo) => setPreviewVideoId(nextVideo.id)}
               />
             ))}
             <CreateNewCard onClick={() => setImportOpen(true)} />
@@ -653,7 +745,29 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         )}
       </section>
 
-      {/* ── Archived Videos ────────────────────────────────────────────────── */}
+      {/* Albums */}
+      <section ref={albumsRef} style={{ scrollMarginTop: "6rem" }}>
+        <SectionHeader title="Albums" actionOnClick={() => {}} />
+        {albums.length === 0 ? (
+          <EmptyState
+            icon="video_library"
+            title="No video albums yet"
+            hint="Create video albums from the Albums page to organize projects."
+          />
+        ) : (
+          <AlbumGrid
+            albums={albums}
+            counts={albumMediaCounts}
+            mediaLabel="video"
+            icon="video_library"
+            emptyTitle="No video albums yet"
+            emptyHint="Create video albums from the Albums page to organize projects."
+            columns="wide"
+          />
+        )}
+      </section>
+
+      {/* Archived Videos */}
       <section ref={archivedRef} style={{ scrollMarginTop: "6rem" }}>
         <div className="mb-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -700,38 +814,19 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
       </section>
 
       {/* ── Import Modal ───────────────────────────────────────────────────── */}
-      <Modal
+      <MediaUploadModal
         open={importOpen}
         onClose={() => setImportOpen(false)}
         title="Import video"
-      >
-        <p className="mb-4 text-body-sm text-on-surface-variant">
-          Registers a video record now; real file upload to storage lands in a
-          later phase.
-        </p>
-        <div className="space-y-4">
-          <div>
-            <label
-              htmlFor="video-filename"
-              className="block text-label-md text-on-surface-variant"
-            >
-              Filename
-            </label>
-            <input
-              id="video-filename"
-              type="text"
-              placeholder="travel-vlog-final.mp4"
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface placeholder:text-on-surface-variant/40 focus:border-primary focus:outline-none"
-            />
-          </div>
-          <FormActions
-            onCancel={() => setImportOpen(false)}
-            onSubmit={() => setImportOpen(false)}
-            submitLabel="Import"
-            submitType="button"
-          />
-        </div>
-      </Modal>
+        fixedKind={MediaKind.Video}
+        studioId={studioId}
+        onUploaded={live.mergeMedia}
+      />
+      <MediaPreviewOverlay
+        media={previewVideo}
+        pipeline={previewVideo ? live.updatesById[previewVideo.id]?.pipeline : null}
+        onClose={() => setPreviewVideoId(null)}
+      />
     </section>
   );
 }

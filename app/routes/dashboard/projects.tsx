@@ -1,6 +1,5 @@
 import ProjectsDashboard from "./projects-view";
 import {
-  MediaKind,
   PERSONAL,
   ProjectKind,
   type MediaDto,
@@ -9,7 +8,6 @@ import {
 } from "~/lib/api";
 import {
   ApiError,
-  createMedia,
   createProject,
   listMedia,
   listProjects,
@@ -94,30 +92,6 @@ export async function action({ request }: Route.ActionArgs) {
         return { error: "Give your project a name." };
       }
       await createProject(accessToken, PERSONAL, { kind, name, description }, reqLog);
-      return { ok: true, intent };
-    }
-
-    if (intent === "importMedia") {
-      const filename = String(formData.get("filename") ?? "").trim();
-      const kind = Number(formData.get("kind") ?? MediaKind.Video);
-      const projectId = String(formData.get("projectId") ?? "") || null;
-      const sizeBytesRaw = Number(formData.get("sizeBytes") ?? 0);
-      const sizeBytes = Number.isFinite(sizeBytesRaw) && sizeBytesRaw > 0 ? sizeBytesRaw : 1;
-      if (!filename) {
-        return { error: "Give the media file a name." };
-      }
-      await createMedia(
-        accessToken,
-        PERSONAL,
-        {
-          kind,
-          filename,
-          storageKey: `media/${crypto.randomUUID()}/${filename}`,
-          sizeBytes,
-          projectId,
-        },
-        reqLog,
-      );
       return { ok: true, intent };
     }
 

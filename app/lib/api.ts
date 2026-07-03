@@ -1,6 +1,7 @@
 // Client-safe API contract: enums, label helpers, workspace types, and the DTO shapes the
 // backend returns. Pure data only — no `fetch`, no secrets — so route components may import
 // these by value. The server-only request helpers live in `api.server.ts`.
+import type { components } from "./api/generated";
 
 export type Workspace =
   | { kind: "personal" }
@@ -52,54 +53,16 @@ export interface PagedResult<T> {
 }
 
 /** Mirrors `Projects.Dtos.ProjectDto`. */
-export interface ProjectDto {
-  id: string;
-  ownerId: string;
-  ownerKind: number;
-  kind: number;
-  name: string;
-  description: string | null;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export type ProjectDto = components["schemas"]["ProjectDto"];
 
 /** Mirrors `Media.Dtos.MediaDto`. */
-export interface MediaDto {
-  id: string;
-  ownerId: string;
-  ownerKind: number;
-  kind: number;
-  projectId: string | null;
-  filename: string;
-  storageKey: string;
-  sizeBytes: number;
-  status: string;
-  durationSeconds: number | null;
-  width: number | null;
-  height: number | null;
-  codec: string | null;
-  createdAt: string;
-}
+export type MediaDto = components["schemas"]["MediaDto"];
 
 /** Mirrors `Projects.Dtos.ProjectTrashItemDto`. */
-export interface ProjectTrashItem {
-  id: string;
-  kind: number;
-  name: string;
-  description: string | null;
-  deletedAt: string;
-  purgesInDays: number;
-}
+export type ProjectTrashItem = components["schemas"]["ProjectTrashItemDto"];
 
 /** Mirrors `Media.Dtos.MediaTrashItemDto`. */
-export interface MediaTrashItem {
-  id: string;
-  kind: number;
-  filename: string;
-  deletedAt: string;
-  purgesInDays: number;
-}
+export type MediaTrashItem = components["schemas"]["MediaTrashItemDto"];
 
 /** Mirrors `Auth.Dtos.StudioDto`. */
 export interface StudioDto {
@@ -194,17 +157,7 @@ export interface StudioAuditLogEntryDto {
 
 export const NotificationStatus = { Unread: 0, Read: 1, Archived: 2, Deleted: 3 } as const;
 
-export interface NotificationDto {
-  id: string;
-  userId: string;
-  studioId: string | null;
-  type: number;
-  status: number;
-  message: string;
-  linkUrl: string | null;
-  createdAt: string;
-  readAt: string | null;
-}
+export type NotificationDto = components["schemas"]["NotificationDto"];
 
 export interface UnreadCountDto {
   count: number;
@@ -295,7 +248,7 @@ export function toTrashEntries(
     label: project.name,
     kindLabel: projectKindLabel(project.kind),
     icon: "movie",
-    purgesInDays: project.purgesInDays,
+    purgesInDays: Number(project.purgesInDays),
   }));
   for (const item of media) {
     entries.push({
@@ -304,7 +257,7 @@ export function toTrashEntries(
       label: item.filename,
       kindLabel: mediaKindLabel(item.kind),
       icon: "perm_media",
-      purgesInDays: item.purgesInDays,
+      purgesInDays: Number(item.purgesInDays),
     });
   }
   return entries;

@@ -14,7 +14,7 @@ export function meta(_: Route.MetaArgs) {
 export const loader = createTeamMediaKindLoader(MediaKind.Video);
 export const action = teamMediaKindAction;
 
-export default function TeamVideos({ loaderData, actionData }: Route.ComponentProps) {
+export default function TeamVideos({ loaderData, actionData, params }: Route.ComponentProps) {
   return (
     <TeamMediaKindView
       media={loaderData.media}
@@ -23,6 +23,7 @@ export default function TeamVideos({ loaderData, actionData }: Route.ComponentPr
       kind={MediaKind.Video}
       title="Videos"
       subtitle="Video assets owned by this Studio."
+      studioId={params.studioId}
     />
   );
 }

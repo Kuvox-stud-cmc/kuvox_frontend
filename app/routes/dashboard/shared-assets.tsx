@@ -168,7 +168,7 @@ function toSharedItems(projects: ProjectDto[], media: MediaDto[]): SharedItem[] 
       iconTone: mediaIconTone(item.kind),
       typeLabel: mediaKindLabel(item.kind),
       ownerId: item.ownerId,
-      sizeBytes: item.sizeBytes,
+      sizeBytes: Number(item.sizeBytes),
       createdAt: item.createdAt,
       mediaKind: item.kind,
     });
@@ -400,7 +400,7 @@ export default function Shared({ loaderData }: Route.ComponentProps) {
   }, [allItems]);
 
   // Storage
-  const totalBytes = media.reduce((sum, m) => sum + m.sizeBytes, 0);
+  const totalBytes = media.reduce((sum, m) => sum + Number(m.sizeBytes), 0);
 
   return (
     <section className="space-y-8">

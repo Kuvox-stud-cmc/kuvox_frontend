@@ -7,6 +7,7 @@ import {
     Modal,
     primaryButtonClass,
 } from "~/components/dashboard/section";
+import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import {
     CardOverflowMenu,
     FilterTabs,
@@ -18,14 +19,13 @@ import {
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 
 import {
-    MediaKind,
     ProjectKind,
-    mediaKindLabel,
     projectKindLabel,
     type MediaDto,
     type ProjectDto,
     type ProjectTrashItem,
 } from "~/lib/api";
+import { useLiveMedia } from "~/lib/media-realtime";
 
 /* ── Mock data ──────────────────────────────────────────────────────────── */
 
@@ -430,7 +430,7 @@ function getProjectMetrics(
     archivedProjects: ProjectTrashItem[],
     media: MediaDto[],
 ): DashboardMetrics {
-    const storageBytes = media.reduce((total, item) => total + item.sizeBytes, 0);
+    const storageBytes = media.reduce((total, item) => total + Number(item.sizeBytes), 0);
     return {
         total: projects.length,
         video: projects.filter((project) => project.kind === ProjectKind.Video).length,
@@ -459,13 +459,13 @@ export default function ProjectsDashboard({
     const actionData = useActionData<ActionData>();
     const navigation = useNavigation();
     const isSubmitting = navigation.state === "submitting";
-    const metrics = getProjectMetrics(projects, sharedProjects, archivedProjects, media);
+    const live = useLiveMedia(media);
+    const metrics = getProjectMetrics(projects, sharedProjects, archivedProjects, live.media);
     const tabs = buildTabs(metrics);
 
     useEffect(() => {
         if (!actionData?.ok) return;
         if (actionData.intent === "create") setCreateOpen(false);
-        if (actionData.intent === "importMedia") setImportOpen(false);
     }, [actionData]);
 
     const filteredProjects =
@@ -855,77 +855,12 @@ export default function ProjectsDashboard({
                     />
                 </Form>
             </Modal>
-            <Modal
+            <MediaUploadModal
                 open={importOpen}
                 onClose={() => setImportOpen(false)}
                 title="Import media"
-            >
-                <Form method="post" className="space-y-4">
-                    <input type="hidden" name="intent" value="importMedia" />
-                    <TextField
-                        name="filename"
-                        label="Filename"
-                        placeholder="campaign-clip.mp4"
-                        required
-                        autoFocus
-                    />
-                    <div>
-                        <label
-                            htmlFor="media-kind"
-                            className="block text-label-md text-on-surface-variant"
-                        >
-                            Kind
-                        </label>
-                        <select
-                            id="media-kind"
-                            name="kind"
-                            defaultValue={MediaKind.Video}
-                            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
-                        >
-                            <option value={MediaKind.Video}>{mediaKindLabel(MediaKind.Video)}</option>
-                            <option value={MediaKind.Image}>{mediaKindLabel(MediaKind.Image)}</option>
-                            <option value={MediaKind.Audio}>{mediaKindLabel(MediaKind.Audio)}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label
-                            htmlFor="media-project"
-                            className="block text-label-md text-on-surface-variant"
-                        >
-                            Project <span className="text-on-surface-variant">(optional)</span>
-                        </label>
-                        <select
-                            id="media-project"
-                            name="projectId"
-                            defaultValue=""
-                            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
-                        >
-                            <option value="">No project</option>
-                            {projects.map((project) => (
-                                <option key={project.id} value={project.id}>
-                                    {project.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <TextField
-                        name="sizeBytes"
-                        label="Size in bytes"
-                        type="number"
-                        min={1}
-                        defaultValue={1}
-                        required
-                    />
-                    <p className="text-label-sm text-on-surface-variant">
-                        This registers a media record. File upload to object storage is handled in a later phase.
-                    </p>
-                    <FormActions
-                        onCancel={() => setImportOpen(false)}
-                        submitLabel={isSubmitting ? "Importing..." : "Import"}
-                        isSubmitting={isSubmitting}
-                    />
-                </Form>
-            </Modal>
+                onUploaded={live.mergeMedia}
+            />
         </section>
     );
 }

@@ -74,10 +74,11 @@ export async function loader({ request }: Route.LoaderArgs): Promise<AlbumRouteD
   }
 
   try {
-    const [albums, mediaPage] = await Promise.all([
+    const [allAlbums, mediaPage] = await Promise.all([
       albumsApi.listAlbums(accessToken, reqLog),
       listMedia(accessToken, PERSONAL, reqLog),
     ]);
+    const albums = allAlbums.filter((album) => album.isDeleteAble);
     const albumMediaEntries = await Promise.all(
       albums.map(async (album) => {
         const page = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);

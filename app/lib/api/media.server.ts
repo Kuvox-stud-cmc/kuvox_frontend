@@ -9,16 +9,6 @@ export class MediaApi extends BaseApiModule {
     return this.list<MediaDto>(token, API_ROUTES.MEDIA, ws, log);
   }
 
-  createMedia(token: string, ws: Workspace, input: { kind: number; filename: string; storageKey: string; sizeBytes: number; projectId?: string | null }, log?: RequestLogger): Promise<MediaDto> {
-    return this.create(token, API_ROUTES.MEDIA, ws, {
-      kind: input.kind,
-      projectId: input.projectId ?? null,
-      filename: input.filename,
-      storageKey: input.storageKey,
-      sizeBytes: input.sizeBytes,
-    }, log);
-  }
-
   listSharedMedia(token: string, log?: RequestLogger): Promise<PagedResult<MediaDto>> {
     return this.get<PagedResult<MediaDto>>(token, `${API_ROUTES.MEDIA}/shared?pageSize=100`, log);
   }
@@ -30,8 +20,6 @@ export class MediaApi extends BaseApiModule {
 
 export const mediaApi = new MediaApi(apiClient);
 
-// Backward compatible exports
 export const listMedia = (t: string, w: Workspace, l?: RequestLogger) => mediaApi.listMedia(t, w, l);
-export const createMedia = (t: string, w: Workspace, i: { kind: number; filename: string; storageKey: string; sizeBytes: number; projectId?: string | null }, l?: RequestLogger) => mediaApi.createMedia(t, w, i, l);
 export const listSharedMedia = (t: string, l?: RequestLogger) => mediaApi.listSharedMedia(t, l);
 export const listMediaTrash = (t: string, w: Workspace, l?: RequestLogger) => mediaApi.listMediaTrash(t, w, l);

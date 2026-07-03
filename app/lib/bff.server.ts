@@ -35,7 +35,6 @@ export class BffFacade {
 
   // Media
   listMedia(ws: Workspace) { return mediaApi.listMedia(this.token, ws, this.log); }
-  createMedia(ws: Workspace, input: { kind: number; filename: string; storageKey: string; sizeBytes: number; projectId?: string | null }) { return mediaApi.createMedia(this.token, ws, input, this.log); }
   listSharedMedia() { return mediaApi.listSharedMedia(this.token, this.log); }
   listMediaTrash(ws: Workspace) { return mediaApi.listMediaTrash(this.token, ws, this.log); }
 

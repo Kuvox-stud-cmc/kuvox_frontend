@@ -4,7 +4,6 @@ import { Form, useNavigation, useSearchParams } from "react-router";
 import {
   CardOverflowMenu,
   FormActions,
-  GradientThumbnail,
   MetricCard,
   PageHeader,
   SectionHeader,
@@ -17,8 +16,15 @@ import {
   Modal,
   primaryButtonClass,
 } from "~/components/dashboard/section";
+import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
+import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
+import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
+import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
+import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
-import { ApiError, createMedia, listMedia, softDelete, albumsApi } from "~/lib/api.server";
+import { ApiError, listMedia, softDelete, albumsApi } from "~/lib/api.server";
+import { useLiveMedia } from "~/lib/media-realtime";
+import type { MediaPipeline } from "~/lib/media-pipeline";
 import { TextField, TextArea } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { requireUser } from "~/lib/auth.server";
@@ -39,17 +45,32 @@ export async function loader({ request }: Route.LoaderArgs) {
   const accessToken = session.get("accessToken");
 
   if (!accessToken) {
-    return { media: [] as MediaDto[], albums: [] as AlbumDto[], error: "Your session expired. Please sign in again." };
+    return {
+      media: [] as MediaDto[],
+      albums: [] as AlbumDto[],
+      albumMediaCounts: {} as Record<string, number>,
+      error: "Your session expired. Please sign in again.",
+    };
   }
 
   try {
     const page = await listMedia(accessToken, PERSONAL, reqLog);
-    const albums = await albumsApi.listAlbums(accessToken, reqLog);
-    return { media: page.items, albums, error: null as string | null };
+    const albums = (await albumsApi.listAlbums(accessToken, reqLog)).filter(
+      (album) => album.kind === AlbumKind.Photo && album.isDeleteAble,
+    );
+    const albumMediaCounts = Object.fromEntries(
+      await Promise.all(
+        albums.map(async (album) => {
+          const albumMedia = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);
+          return [album.id, albumMedia.items.filter((item) => item.kind === MediaKind.Image).length] as const;
+        }),
+      ),
+    );
+    return { media: page.items, albums, albumMediaCounts, error: null as string | null };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load your media.";
     reqLog.error({ err: error }, "failed to load media");
-    return { media: [] as MediaDto[], albums: [] as AlbumDto[], error: message };
+    return { media: [] as MediaDto[], albums: [] as AlbumDto[], albumMediaCounts: {} as Record<string, number>, error: message };
   }
 }
 
@@ -67,27 +88,6 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
-    if (intent === "create") {
-      const filename = String(formData.get("filename") ?? "").trim();
-      const kind = Number(formData.get("kind") ?? MediaKind.Image);
-      if (!filename) {
-        return { error: "Enter a filename to import." };
-      }
-      // Metadata/record only in Phase 2; real byte upload to object storage is later.
-      await createMedia(
-        accessToken,
-        PERSONAL,
-        {
-          kind,
-          filename,
-          storageKey: `raw/${filename}`,
-          sizeBytes: 0,
-        },
-        reqLog,
-      );
-      return { ok: true, intent };
-    }
-
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
@@ -125,8 +125,9 @@ export async function action({ request }: Route.ActionArgs) {
 
 
 
-function formatSize(bytes: number): string {
-  if (bytes <= 0) return "Pending";
+function formatSize(value: MediaDto["sizeBytes"]): string {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "Pending";
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
@@ -140,29 +141,51 @@ function formatDate(value: string): string {
 
 function photoLabel(photo: MediaDto): string {
   const dimensions = photo.width && photo.height ? `${photo.width} x ${photo.height}` : null;
-  return [photo.status, dimensions, formatSize(photo.sizeBytes)].filter(Boolean).join(" · ");
+  return [dimensions, formatSize(photo.sizeBytes)].filter(Boolean).join(" / ");
+}
+
+function countAddedThisMonth(items: MediaDto[]): number {
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  return items.filter((item) => {
+    const createdAt = new Date(item.createdAt);
+    return !Number.isNaN(createdAt.getTime()) && createdAt.getMonth() === month && createdAt.getFullYear() === year;
+  }).length;
 }
 
 function PhotoCard({
   photo,
   index,
   listView,
+  pipeline,
+  onPreview,
 }: {
   photo: MediaDto;
   index: number;
   listView: boolean;
+  pipeline?: MediaPipeline | null;
+  onPreview: (photo: MediaDto) => void;
 }) {
   if (listView) {
     return (
       <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
-        <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
-          <GradientThumbnail index={index} icon="image" />
-        </div>
+        <button
+          type="button"
+          onClick={() => onPreview(photo)}
+          className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-outline-variant"
+          aria-label={`Preview ${photo.filename}`}
+        >
+          <MediaThumbnail media={photo} index={index} icon="image" />
+        </button>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-body-md font-bold text-on-surface" title={photo.filename}>
             {photo.filename}
           </h3>
           <p className="mt-1 text-label-md text-on-surface-variant">{photoLabel(photo)}</p>
+          <div className="mt-2">
+            <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
+          </div>
         </div>
         <span className="hidden text-label-sm text-on-surface-variant sm:block">
           {formatDate(photo.createdAt)}
@@ -174,13 +197,23 @@ function PhotoCard({
 
   return (
     <div className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
-      <div className="relative aspect-[4/3] overflow-hidden">
-        <GradientThumbnail index={index} icon="image" />
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onPreview(photo)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onPreview(photo);
+          }
+        }}
+        className="relative aspect-[4/3] cursor-pointer overflow-hidden"
+        aria-label={`Preview ${photo.filename}`}
+      >
+        <MediaThumbnail media={photo} index={index} icon="image" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-        <div className="absolute left-3 top-3">
-          <span className="rounded-md bg-surface-container-lowest/70 px-2 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
-            {photo.width && photo.height ? "HD" : "IMG"}
-          </span>
+        <div className="absolute left-3 top-3 max-w-[calc(100%-5rem)]">
+          <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
         </div>
         <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
           <CardOverflowMenu
@@ -200,30 +233,6 @@ function PhotoCard({
   );
 }
 
-function AlbumCard({
-  album,
-  index,
-}: {
-  album: { name: string; count: number; icon: string };
-  index: number;
-}) {
-  return (
-    <div className="group cursor-pointer space-y-3">
-      <div className="aspect-square overflow-hidden rounded-xl border border-outline-variant transition-colors group-hover:border-primary/40">
-        <GradientThumbnail
-          index={index}
-          icon={album.icon}
-          iconClassName="text-[34px] text-on-surface-variant/35"
-        />
-      </div>
-      <div>
-        <h4 className="truncate text-label-md font-bold text-on-surface">{album.name}</h4>
-        <p className="text-label-sm text-on-surface-variant">{album.count} photos</p>
-      </div>
-    </div>
-  );
-}
-
 export default function Photos({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
@@ -233,6 +242,12 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
   const [albumModalOpen, setAlbumModalOpen] = useState(false);
   const [sort, setSort] = useState<"latest" | "name" | "size">("latest");
   const [layoutMode, setLayoutMode] = useState<"grid" | "list">("grid");
+  const [previewPhotoId, setPreviewPhotoId] = useState<string | null>(null);
+  const initialPhotos = useMemo(
+    () => loaderData.media.filter((item) => item.kind === MediaKind.Image),
+    [loaderData.media],
+  );
+  const live = useLiveMedia(initialPhotos, { kind: MediaKind.Image });
 
   const albumsRef = useRef<HTMLElement>(null);
   const favoritesRef = useRef<HTMLElement>(null);
@@ -248,23 +263,25 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
 
   useEffect(() => {
     if (actionData?.ok) {
-      if (actionData.intent === "create") setImportOpen(false);
       if (actionData.intent === "create-album") setAlbumModalOpen(false);
     }
   }, [actionData]);
 
   const photos = useMemo(() => {
-    const onlyPhotos = loaderData.media.filter((item) => item.kind === MediaKind.Image);
-    return [...onlyPhotos].sort((a, b) => {
+    return [...live.media].sort((a, b) => {
       if (sort === "name") return a.filename.localeCompare(b.filename);
-      if (sort === "size") return b.sizeBytes - a.sizeBytes;
+      if (sort === "size") return Number(b.sizeBytes) - Number(a.sizeBytes);
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [loaderData.media, sort]);
+  }, [live.media, sort]);
 
-  const storageBytes = photos.reduce((total, photo) => total + photo.sizeBytes, 0);
+  const storageBytes = photos.reduce((total, photo) => total + Number(photo.sizeBytes), 0);
   const storageGb = storageBytes / (1024 * 1024 * 1024);
   const photosWithDimensions = photos.filter((photo) => photo.width && photo.height).length;
+  const photosAddedThisMonth = countAddedThisMonth(photos);
+  const previewPhoto = previewPhotoId
+    ? photos.find((photo) => photo.id === previewPhotoId) ?? null
+    : null;
 
   return (
     <section className="space-y-10">
@@ -289,7 +306,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard icon="image" label="Total Photos" value={photos.length} detail="+12% this month" />
+        <MetricCard icon="image" label="Total Photos" value={photos.length} detail={`${photosAddedThisMonth} added this month`} />
         <MetricCard icon="favorite" label="Favorites" value="0" detail="Coming soon" tone="tertiary" />
         <MetricCard icon="folder" label="Albums" value={loaderData.albums.length} tone="secondary" />
         <MetricCard
@@ -340,7 +357,14 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
             }
           >
             {photos.slice(0, layoutMode === "grid" ? 12 : 10).map((photo, index) => (
-              <PhotoCard key={photo.id} photo={photo} index={index} listView={layoutMode === "list"} />
+              <PhotoCard
+                key={photo.id}
+                photo={photo}
+                index={index}
+                listView={layoutMode === "list"}
+                pipeline={live.updatesById[photo.id]?.pipeline}
+                onPreview={(nextPhoto) => setPreviewPhotoId(nextPhoto.id)}
+              />
             ))}
           </div>
         )}
@@ -370,19 +394,15 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
             }
           />
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {loaderData.albums.map((album, index) => (
-              <AlbumCard key={album.id} album={{ name: album.name, count: 0, icon: album.materialSymbol }} index={index} />
-            ))}
-            <button
-              type="button"
-              onClick={() => setAlbumModalOpen(true)}
-              className="flex aspect-square flex-col items-center justify-center rounded-xl border border-dashed border-outline-variant bg-surface-container-low text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-surface-container hover:text-on-surface"
-            >
-              <span className="material-symbols-outlined text-[28px]">add</span>
-              <span className="mt-2 text-label-md font-medium">Create Album</span>
-            </button>
-          </div>
+          <AlbumGrid
+            albums={loaderData.albums}
+            counts={loaderData.albumMediaCounts}
+            mediaLabel="photo"
+            icon="folder_open"
+            emptyTitle="No albums yet"
+            emptyHint="Create an album to start organizing your photos."
+            onCreate={() => setAlbumModalOpen(true)}
+          />
         )}
       </section>
 
@@ -395,26 +415,19 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
         />
       </section>
 
-      <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Import photo">
-        <p className="mb-4 text-body-sm text-on-surface-variant">
-          Registers a photo record now; real file upload to storage lands in a later phase.
-        </p>
-        <Form method="post" className="space-y-4">
-          <input type="hidden" name="intent" value="create" />
-          <input type="hidden" name="kind" value={MediaKind.Image} />
-          <TextField
-            name="filename"
-            label="Filename"
-            required
-            placeholder="mountain-view.jpg"
-          />
-          <FormActions
-            onCancel={() => setImportOpen(false)}
-            submitLabel={navigation.state === "submitting" ? "Importing..." : "Import"}
-            isSubmitting={navigation.state === "submitting"}
-          />
-        </Form>
-      </Modal>
+      <MediaUploadModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import photo"
+        fixedKind={MediaKind.Image}
+        onUploaded={live.mergeMedia}
+      />
+
+      <MediaPreviewOverlay
+        media={previewPhoto}
+        pipeline={previewPhoto ? live.updatesById[previewPhoto.id]?.pipeline : null}
+        onClose={() => setPreviewPhotoId(null)}
+      />
 
       <Modal open={albumModalOpen} onClose={() => setAlbumModalOpen(false)} title="Create Album">
         <Form method="post" className="space-y-4">

@@ -46,6 +46,7 @@ const MAIN_NAV: NavItemConfig[] = [
     icon: "music_note",
     children: [
       { to: "/dashboard/audio", label: "All Audio" },
+      { to: "/dashboard/audio?view=albums", label: "Albums" },
       { to: "/dashboard/audio?view=music", label: "Music" },
       { to: "/dashboard/audio?view=sfx", label: "SFX" },
       { to: "/dashboard/audio?view=voiceovers", label: "Voiceovers" },

@@ -35,8 +35,7 @@ function legacyMeta(_: Route.MetaArgs) {
 }
 
 async function legacyLoader({ request }: Route.LoaderArgs) {
-  const log = createRequestLogger(request);
-  await requireUser(request, log);
+  void request;
   return null;
 }
 

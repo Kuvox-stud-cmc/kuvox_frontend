@@ -49,6 +49,19 @@ development). Key variables:
 | `VITE_API_URL` | Base URL of the ASP.NET backend     | `http://localhost:5000`  |
 | `VITE_WS_URL`  | WebSocket URL for real-time updates | `ws://localhost:5000/ws` |
 
+## Media Processing
+
+Uploads are sent to the ASP.NET API, not directly to the AI service. The frontend
+renders the API's media pipeline fields: `Uploaded` appears as optimizing,
+optimized images/audio become `Ready`, and optimized videos move to `Processing`
+while the AI ingestion worker indexes them. Realtime updates arrive through the
+media hub, with polling/loaders acting as the fallback source of truth.
+
+If media appears stuck in optimizing, check the backend first: RabbitMQ queue
+`media.optimization.requested` should have a media optimization worker consumer,
+and the API's media recovery service should eventually requeue stale `Uploaded`
+rows. The frontend does not start workers or mutate pipeline state locally.
+
 ## Docker
 
 ```bash
