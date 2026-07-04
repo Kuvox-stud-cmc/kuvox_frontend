@@ -1,6 +1,6 @@
 import { ProjectsView } from "~/components/dashboard/workspace/projects-view";
-import { ProjectKind, type ProjectDto, type Workspace } from "~/lib/api";
-import { ApiError, createProject, listProjects, softDelete } from "~/lib/api.server";
+import { ProjectKind, canWriteStudioContent, type ProjectDto, type Workspace } from "~/lib/api";
+import { ApiError, createProject, listMyStudios, listProjects, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -25,13 +25,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   try {
-    const page = await listProjects(accessToken, studioWs(params.studioId), reqLog);
-    return { projects: page.items, error: null as string | null };
+    const [page, studios] = await Promise.all([
+      listProjects(accessToken, studioWs(params.studioId), reqLog),
+      listMyStudios(accessToken, reqLog),
+    ]);
+    const role = studios.find((studio) => studio.id === params.studioId)?.role;
+    return { projects: page.items, error: null as string | null, canWrite: role != null ? canWriteStudioContent(role) : false };
   } catch (error) {
     const message =
       error instanceof ApiError ? error.message : "Couldn't load team projects.";
     reqLog.error({ err: error, studioId: params.studioId }, "failed to load team projects");
-    return { projects: [] as ProjectDto[], error: message };
+    return { projects: [] as ProjectDto[], error: message, canWrite: false };
   }
 }
 
@@ -84,6 +88,7 @@ export default function TeamProjects({ loaderData, actionData }: Route.Component
       loadError={loaderData.error}
       actionData={actionData}
       subtitle="Projects owned by this team."
+      canWrite={loaderData.canWrite}
     />
   );
 }

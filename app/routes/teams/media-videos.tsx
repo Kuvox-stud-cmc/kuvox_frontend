@@ -24,6 +24,7 @@ export default function TeamVideos({ loaderData, actionData, params }: Route.Com
       title="Videos"
       subtitle="Video assets owned by this Studio."
       studioId={params.studioId}
+      canWrite={loaderData.canWrite ?? false}
     />
   );
 }

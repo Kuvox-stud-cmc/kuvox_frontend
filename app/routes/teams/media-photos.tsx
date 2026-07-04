@@ -24,6 +24,7 @@ export default function TeamPhotos({ loaderData, actionData, params }: Route.Com
       title="Photos"
       subtitle="Photo assets owned by this Studio."
       studioId={params.studioId}
+      canWrite={loaderData.canWrite ?? false}
     />
   );
 }

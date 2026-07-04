@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { type MediaDto, type Workspace } from "~/lib/api";
-import { ApiError, listMedia, softDelete } from "~/lib/api.server";
+import { canWriteStudioContent, type MediaDto, type Workspace } from "~/lib/api";
+import { albumsApi, ApiError, listMedia, listMyStudios, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -22,15 +22,20 @@ export function createTeamMediaKindLoader(kind: number) {
     }
 
     try {
-      const page = await listMedia(accessToken, studioWs(studioId), reqLog);
+      const [page, studios] = await Promise.all([
+        listMedia(accessToken, studioWs(studioId), reqLog),
+        listMyStudios(accessToken, reqLog),
+      ]);
+      const role = studios.find((studio) => studio.id === studioId)?.role;
       return {
         media: page.items.filter((item) => item.kind === kind),
         error: null as string | null,
+        canWrite: role != null ? canWriteStudioContent(role) : false,
       };
     } catch (error) {
       const message = error instanceof ApiError ? error.message : "Couldn't load Studio media.";
       reqLog.error({ err: error, studioId, kind }, "failed to load Studio media kind");
-      return { media: [] as MediaDto[], error: message };
+      return { media: [] as MediaDto[], error: message, canWrite: false };
     }
   };
 }
@@ -56,6 +61,20 @@ export async function teamMediaKindAction({ request, params }: ActionFunctionArg
       if (id) {
         await softDelete(accessToken, "media", id, reqLog);
       }
+      return { ok: true, intent };
+    }
+
+    if (intent === "assign-audio-category") {
+      const mediaId = String(formData.get("mediaId") ?? "");
+      const category = String(formData.get("category") ?? "");
+      if (!mediaId) {
+        return { error: "Missing uploaded audio file." };
+      }
+      if (!category) {
+        return { error: "Choose an audio type." };
+      }
+
+      await albumsApi.assignAudioCategory(accessToken, category, [mediaId], studioWs(studioId), reqLog);
       return { ok: true, intent };
     }
 

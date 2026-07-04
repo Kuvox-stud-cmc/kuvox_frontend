@@ -24,6 +24,7 @@ export default function TeamAudio({ loaderData, actionData, params }: Route.Comp
       title="Audio"
       subtitle="Audio assets owned by this Studio."
       studioId={params.studioId}
+      canWrite={loaderData.canWrite ?? false}
     />
   );
 }

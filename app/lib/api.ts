@@ -17,6 +17,9 @@ export const ProjectKind = { Video: 0, Image: 1 } as const;
 /** Mirrors `Media.Enums.MediaKind` (integers on the wire). */
 export const MediaKind = { Video: 0, Image: 1, Audio: 2 } as const;
 
+/** Mirrors workspace ownership enums that serialize as integers on the wire. */
+export const OwnerKind = { User: 0, Studio: 1 } as const;
+
 export function projectKindLabel(kind: number): string {
   return kind === ProjectKind.Image ? "Image" : "Video";
 }
@@ -83,6 +86,14 @@ export function studioRoleLabel(role: number): string {
 
 export function isStudioAdmin(role: number): boolean {
   return role === UserStudioRole.Owner || role === UserStudioRole.Admin;
+}
+
+export function canWriteStudioContent(role: number): boolean {
+  return (
+    role === UserStudioRole.Owner ||
+    role === UserStudioRole.Admin ||
+    role === UserStudioRole.Member
+  );
 }
 
 /** Mirrors `Auth.Dtos.StudioMemberDto`. */
@@ -291,6 +302,8 @@ export const AlbumKind = { Video: 0, Audio: 1, Photo: 2, Mixed: 3 } as const;
 /** Mirrors `Media.Dtos.AlbumDto`. */
 export interface AlbumDto {
   id: string;
+  ownerId: string;
+  ownerKind: number;
   name: string;
   description: string;
   kind: number;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigation } from "react-router";
+import { useNavigation, useRevalidator } from "react-router";
 
 import {
   CardGridSkeleton,
@@ -32,6 +32,12 @@ const KIND_ICON: Record<number, string> = {
   [MediaKind.Audio]: "music_note",
 };
 
+const AUDIO_CATEGORY_OPTIONS = [
+  { value: "music", label: "Music", description: "Songs and background tracks" },
+  { value: "sfx", label: "Sound Effects", description: "SFX, foley, and stingers" },
+  { value: "voiceovers", label: "Voiceovers", description: "Narration and spoken recordings" },
+];
+
 function formatSize(value: number | string): string {
   const bytes = Number(value);
   if (bytes <= 0) return "—";
@@ -48,6 +54,7 @@ export function MediaView({
   title = "Media",
   fixedKind,
   studioId,
+  canWrite = true,
 }: {
   media: MediaDto[];
   loadError: string | null;
@@ -56,8 +63,10 @@ export function MediaView({
   title?: string;
   fixedKind?: number;
   studioId?: string | null;
+  canWrite?: boolean;
 }) {
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
   const isLoading = navigation.state === "loading";
   const live = useLiveMedia(media, fixedKind !== undefined ? { kind: fixedKind } : {});
 
@@ -80,7 +89,7 @@ export function MediaView({
       <SectionHeader
         title={title}
         subtitle={subtitle}
-        action={
+        action={canWrite ? (
           <button
             type="button"
             onClick={() => setImportOpen(true)}
@@ -89,7 +98,7 @@ export function MediaView({
             <span className="material-symbols-outlined text-[18px]">upload</span>
             Import media
           </button>
-        }
+        ) : undefined}
       />
 
       {loadError && <ErrorBanner message={loadError} />}
@@ -122,7 +131,7 @@ export function MediaView({
           title={live.media.length === 0 ? "No media yet" : "No media match this filter"}
           hint={live.media.length === 0 ? "Import a file to build the library." : undefined}
           action={
-            live.media.length === 0 ? (
+            live.media.length === 0 && canWrite ? (
               <button
                 type="button"
                 onClick={() => setImportOpen(true)}
@@ -170,6 +179,7 @@ export function MediaView({
                     <span className="text-label-md text-on-surface-variant">
                       {formatSize(item.sizeBytes)}
                     </span>
+                    {canWrite ? (
                     <ConfirmSubmitButton
                       fields={{ intent: "delete", id: item.id }}
                       title="Move media to trash?"
@@ -184,6 +194,7 @@ export function MediaView({
                     >
                       <span className="material-symbols-outlined text-[20px]">delete</span>
                     </ConfirmSubmitButton>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -192,13 +203,31 @@ export function MediaView({
         </div>
       )}
 
+      {canWrite ? (
       <MediaUploadModal
         open={importOpen}
         onClose={() => setImportOpen(false)}
         fixedKind={fixedKind}
         studioId={studioId}
-        onUploaded={live.mergeMedia}
+        audioCategoryOptions={fixedKind === MediaKind.Audio ? AUDIO_CATEGORY_OPTIONS : undefined}
+        onUploaded={async (uploaded, context) => {
+          live.mergeMedia(uploaded);
+          if (fixedKind !== MediaKind.Audio) return;
+          if (!context.audioCategory) throw new Error("Choose an audio type.");
+
+          const formData = new FormData();
+          formData.append("intent", "assign-audio-category");
+          formData.append("mediaId", uploaded.id);
+          formData.append("category", context.audioCategory);
+          const response = await fetch("", { method: "POST", body: formData });
+          const body = await response.json().catch(() => null) as { error?: string } | null;
+          if (!response.ok || body?.error) {
+            throw new Error(body?.error || "Couldn't assign the audio type.");
+          }
+          revalidator.revalidate();
+        }}
       />
+      ) : null}
     </section>
   );
 }

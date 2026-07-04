@@ -111,6 +111,7 @@ export default [
       route("media/photos", `${routesFolder.TEAMS}/media-photos.tsx`),
       route("media/audio", `${routesFolder.TEAMS}/media-audio.tsx`),
       route("media/albums", `${routesFolder.TEAMS}/media-albums.tsx`),
+      route("media/albums/:albumId", `${routesFolder.TEAMS}/media-album-detail.tsx`),
       route("renders", `${routesFolder.TEAMS}/renders.tsx`),
       route("usage", `${routesFolder.TEAMS}/usage.tsx`),
       route("members", `${routesFolder.TEAMS}/members.tsx`),

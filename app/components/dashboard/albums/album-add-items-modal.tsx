@@ -27,6 +27,7 @@ interface AlbumAddItemsModalProps {
   album: AlbumDto;
   media: MediaDto[];
   isSubmitting: boolean;
+  studioId?: string | null;
   onClose: () => void;
 }
 
@@ -37,6 +38,7 @@ export function AlbumAddItemsModal({
   album,
   media,
   isSubmitting,
+  studioId,
   onClose,
 }: AlbumAddItemsModalProps) {
   const [tab, setTab] = useState<PickerTab>("library");
@@ -133,6 +135,7 @@ export function AlbumAddItemsModal({
             file: item.file,
             kind: item.kind,
             filename: item.filename,
+            studioId,
             onProgress: (progress) => updateUploadItem(item.id, { progress }),
           });
           updateUploadItem(item.id, { status: "uploaded", progress: 100, media: uploaded });

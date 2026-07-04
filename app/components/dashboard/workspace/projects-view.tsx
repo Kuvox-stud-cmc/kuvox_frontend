@@ -35,11 +35,13 @@ export function ProjectsView({
   loadError,
   actionData,
   subtitle,
+  canWrite = true,
 }: {
   projects: ProjectDto[];
   loadError: string | null;
   actionData?: WorkspaceActionData;
   subtitle?: string;
+  canWrite?: boolean;
 }) {
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
@@ -71,7 +73,7 @@ export function ProjectsView({
       <SectionHeader
         title="Projects"
         subtitle={subtitle}
-        action={
+        action={canWrite ? (
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
@@ -80,7 +82,7 @@ export function ProjectsView({
             <span className="material-symbols-outlined text-[18px]">add</span>
             New project
           </button>
-        }
+        ) : undefined}
       />
 
       {loadError && <ErrorBanner message={loadError} />}
@@ -111,7 +113,7 @@ export function ProjectsView({
           title={projects.length === 0 ? "No projects yet" : "No projects match this filter"}
           hint={projects.length === 0 ? "Create a project to start editing." : undefined}
           action={
-            projects.length === 0 ? (
+            projects.length === 0 && canWrite ? (
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
@@ -126,11 +128,12 @@ export function ProjectsView({
       ) : (
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map((project) => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectCard key={project.id} project={project} canWrite={canWrite} />
           ))}
         </div>
       )}
 
+      {canWrite ? (
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New project">
         <Form method="post" className="space-y-4">
           <input type="hidden" name="intent" value="create" />
@@ -190,11 +193,12 @@ export function ProjectsView({
           </div>
         </Form>
       </Modal>
+      ) : null}
     </section>
   );
 }
 
-function ProjectCard({ project }: { project: ProjectDto }) {
+function ProjectCard({ project, canWrite }: { project: ProjectDto; canWrite: boolean }) {
   const isVideo = project.kind === ProjectKind.Video;
   return (
     <div className="group flex flex-col justify-between rounded-xl border border-outline-variant bg-surface-container-low p-4 transition-colors hover:border-primary/40">
@@ -214,6 +218,7 @@ function ProjectCard({ project }: { project: ProjectDto }) {
       </Link>
       <div className="mt-4 flex items-center justify-between">
         <span className="text-label-md text-on-surface-variant">{project.status}</span>
+        {canWrite ? (
         <ConfirmSubmitButton
           fields={{ intent: "delete", id: project.id }}
           title="Move project to trash?"
@@ -228,6 +233,7 @@ function ProjectCard({ project }: { project: ProjectDto }) {
         >
           <span className="material-symbols-outlined text-[20px]">delete</span>
         </ConfirmSubmitButton>
+        ) : null}
       </div>
     </div>
   );

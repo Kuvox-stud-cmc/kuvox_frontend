@@ -9,6 +9,7 @@ export function TeamMediaKindView({
   title,
   subtitle,
   studioId,
+  canWrite,
 }: {
   media: MediaDto[];
   error: string | null;
@@ -17,6 +18,7 @@ export function TeamMediaKindView({
   title: string;
   subtitle: string;
   studioId: string;
+  canWrite: boolean;
 }) {
   return (
     <MediaView
@@ -27,6 +29,7 @@ export function TeamMediaKindView({
       title={title}
       subtitle={subtitle}
       studioId={studioId}
+      canWrite={canWrite}
     />
   );
 }

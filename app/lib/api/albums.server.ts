@@ -1,5 +1,5 @@
 import { BaseApiModule } from "./base.server";
-import type { Workspace, AlbumDto, CreateAlbumDto } from "../api";
+import { workspaceQuery, type Workspace, type AlbumDto, type CreateAlbumDto } from "../api";
 import type { RequestLogger } from "../logger.server";
 
 export class AlbumsApiModule extends BaseApiModule {
@@ -13,16 +13,34 @@ export class AlbumsApiModule extends BaseApiModule {
   /**
    * Lists all albums for the current user.
    */
-  async listAlbums(token: string, log?: RequestLogger, options?: { includeSystem?: boolean }): Promise<AlbumDto[]> {
-    const query = options?.includeSystem ? "?includeSystem=true" : "";
+  async listAlbums(
+    token: string,
+    wsOrLog?: Workspace | RequestLogger,
+    logOrOptions?: RequestLogger | { includeSystem?: boolean },
+    maybeOptions?: { includeSystem?: boolean },
+  ): Promise<AlbumDto[]> {
+    const hasWorkspace = isWorkspace(wsOrLog);
+    const ws = hasWorkspace ? wsOrLog : undefined;
+    const log = hasWorkspace ? logOrOptions as RequestLogger | undefined : wsOrLog as RequestLogger | undefined;
+    const options = hasWorkspace ? maybeOptions : logOrOptions as { includeSystem?: boolean } | undefined;
+    const query = ws
+      ? workspaceQuery(ws, options?.includeSystem ? { includeSystem: "true" } : undefined)
+      : options?.includeSystem ? "?includeSystem=true" : "";
     return this.get<AlbumDto[]>(token, `/api/albums${query}`, log);
   }
 
   /**
    * Deletes an album by ID.
    */
-  async deleteAlbum(token: string, id: string, log?: RequestLogger): Promise<void> {
-    return this.deleteVoid(token, `/api/albums/${id}`, log);
+  async deleteAlbum(
+    token: string,
+    id: string,
+    wsOrLog?: Workspace | RequestLogger,
+    maybeLog?: RequestLogger,
+  ): Promise<void> {
+    const ws = isWorkspace(wsOrLog) ? wsOrLog : undefined;
+    const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
+    return this.deleteVoid(token, `/api/albums/${id}${ws ? workspaceQuery(ws) : ""}`, log);
   }
 
   /**
@@ -40,22 +58,51 @@ export class AlbumsApiModule extends BaseApiModule {
   /**
    * Adds media items to an album.
    */
-  async addMedia(token: string, id: string, mediaIds: string[], log?: RequestLogger): Promise<void> {
-    return this.postVoid(token, `/api/albums/${id}/media`, { mediaIds }, log);
+  async addMedia(
+    token: string,
+    id: string,
+    mediaIds: string[],
+    wsOrLog?: Workspace | RequestLogger,
+    maybeLog?: RequestLogger,
+  ): Promise<void> {
+    const ws = isWorkspace(wsOrLog) ? wsOrLog : undefined;
+    const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
+    return this.postVoid(token, `/api/albums/${id}/media${ws ? workspaceQuery(ws) : ""}`, { mediaIds }, log);
   }
 
   /**
    * Assigns audio files to a reserved system category album.
    */
-  async assignAudioCategory(token: string, category: string, mediaIds: string[], log?: RequestLogger): Promise<void> {
-    return this.postVoid(token, `/api/albums/audio-categories/${encodeURIComponent(category)}/media`, { mediaIds }, log);
+  async assignAudioCategory(
+    token: string,
+    category: string,
+    mediaIds: string[],
+    wsOrLog?: Workspace | RequestLogger,
+    maybeLog?: RequestLogger,
+  ): Promise<void> {
+    const ws = isWorkspace(wsOrLog) ? wsOrLog : undefined;
+    const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
+    return this.postVoid(
+      token,
+      `/api/albums/audio-categories/${encodeURIComponent(category)}/media${ws ? workspaceQuery(ws) : ""}`,
+      { mediaIds },
+      log,
+    );
   }
 
   /**
    * Removes media items from an album.
    */
-  async removeMedia(token: string, id: string, mediaIds: string[], log?: RequestLogger): Promise<void> {
-    return this.client.requestVoid(`/api/albums/${id}/media`, { method: "DELETE", body: JSON.stringify({ mediaIds }) }, { auth: bearerAuth(token), log });
+  async removeMedia(
+    token: string,
+    id: string,
+    mediaIds: string[],
+    wsOrLog?: Workspace | RequestLogger,
+    maybeLog?: RequestLogger,
+  ): Promise<void> {
+    const ws = isWorkspace(wsOrLog) ? wsOrLog : undefined;
+    const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
+    return this.client.requestVoid(`/api/albums/${id}/media${ws ? workspaceQuery(ws) : ""}`, { method: "DELETE", body: JSON.stringify({ mediaIds }) }, { auth: bearerAuth(token), log });
   }
 
   /**
@@ -64,13 +111,24 @@ export class AlbumsApiModule extends BaseApiModule {
   async listAlbumMedia(
     token: string,
     id: string,
-    log?: RequestLogger,
-    options?: { includeSystem?: boolean },
+    wsOrLog?: Workspace | RequestLogger,
+    logOrOptions?: RequestLogger | { includeSystem?: boolean },
+    maybeOptions?: { includeSystem?: boolean },
   ): Promise<import("../api").PagedResult<import("../api").MediaDto>> {
-    const query = options?.includeSystem ? "?includeSystem=true" : "";
+    const hasWorkspace = isWorkspace(wsOrLog);
+    const ws = hasWorkspace ? wsOrLog : undefined;
+    const log = hasWorkspace ? logOrOptions as RequestLogger | undefined : wsOrLog as RequestLogger | undefined;
+    const options = hasWorkspace ? maybeOptions : logOrOptions as { includeSystem?: boolean } | undefined;
+    const query = ws
+      ? workspaceQuery(ws, options?.includeSystem ? { includeSystem: "true" } : undefined)
+      : options?.includeSystem ? "?includeSystem=true" : "";
     return this.get<import("../api").PagedResult<import("../api").MediaDto>>(token, `/api/albums/${id}/media${query}`, log);
   }
 }
 
 import { apiClient, bearerAuth } from "./api-client.server";
 export const albumsApi = new AlbumsApiModule(apiClient);
+
+function isWorkspace(value: unknown): value is Workspace {
+  return Boolean(value && typeof value === "object" && "kind" in value);
+}
