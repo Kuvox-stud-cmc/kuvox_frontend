@@ -1,28 +1,31 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router";
+import { Form, useNavigation, useSearchParams } from "react-router";
 
 import {
   CardOverflowMenu,
   FilterButton,
-  GradientThumbnail,
+  FormActions,
   MetricCard,
   PageHeader,
   SectionHeader,
   SortDropdown,
   ViewToggle,
 } from "~/components/dashboard/layout/DashboardPageLayout";
-import { EmptyState, ErrorBanner, primaryButtonClass } from "~/components/dashboard/section";
+import { EmptyState, ErrorBanner, Modal, primaryButtonClass } from "~/components/dashboard/section";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
+import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
+import { TextArea, TextField } from "~/components/dashboard/shared/form";
+import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 
-import { ApiError, albumsApi, listMedia, listMediaTrash, softDelete } from "~/lib/api.server";
+import { ApiError, albumsApi, listMedia, setMediaFavorite, softDelete } from "~/lib/api.server";
 import { getSession } from "~/lib/session.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
-import { AlbumKind, MediaKind, PERSONAL, type AlbumDto, type MediaDto, type MediaTrashItem } from "~/lib/api";
+import { AlbumKind, MediaKind, PERSONAL, type AlbumDto, type MediaDto } from "~/lib/api";
 import { useLiveMedia } from "~/lib/media-realtime";
 import {
   isMediaInProgress,
@@ -44,7 +47,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!accessToken) {
     return {
       videos: [] as MediaDto[],
-      archived: [] as MediaTrashItem[],
       albums: [] as AlbumDto[],
       albumMediaCounts: {} as Record<string, number>,
       error: "Your session expired. Please sign in again.",
@@ -56,12 +58,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const workspace = studioId ? { kind: "studio" as const, studioId } : PERSONAL;
 
   try {
-    const [videosRes, trashRes, allAlbums] = await Promise.all([
+    const [videosRes, allAlbums] = await Promise.all([
       listMedia(accessToken, workspace, reqLog),
-      listMediaTrash(accessToken, workspace, reqLog),
       albumsApi.listAlbums(accessToken, reqLog),
     ]);
-    const albums = allAlbums.filter((album) => album.kind === AlbumKind.Video && album.isDeleteAble);
+    const albums = allAlbums.filter((album) => album.kind === AlbumKind.Video && album.isDeleteAble === true);
     const albumMediaCounts = Object.fromEntries(
       await Promise.all(
         albums.map(async (album) => {
@@ -73,7 +74,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
     return {
       videos: videosRes.items,
-      archived: trashRes.items,
       albums,
       albumMediaCounts,
       error: null as string | null,
@@ -83,7 +83,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     reqLog.error({ err: error }, "failed to load videos");
     return {
       videos: [] as MediaDto[],
-      archived: [] as MediaTrashItem[],
       albums: [] as AlbumDto[],
       albumMediaCounts: {} as Record<string, number>,
       error: message,
@@ -110,6 +109,47 @@ export async function action({ request }: Route.ActionArgs) {
       if (id) {
         await softDelete(accessToken, "media", id, reqLog);
       }
+      return { ok: true, intent };
+    }
+
+    if (intent === "toggle-favorite") {
+      const id = String(formData.get("id") ?? "");
+      const isFavorite = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await setMediaFavorite(accessToken, id, isFavorite, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "toggle-album-favorite") {
+      const id = String(formData.get("id") ?? "");
+      const isFavorite = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await albumsApi.setFavorite(accessToken, id, isFavorite, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "create-album") {
+      const name = String(formData.get("name") ?? "").trim();
+      const description = String(formData.get("description") ?? "").trim();
+      const materialSymbol = String(formData.get("materialSymbol") ?? "video_library").trim();
+
+      if (!name) {
+        return { error: "Enter a name for the album." };
+      }
+
+      const url = new URL(request.url);
+      const studioId = url.searchParams.get("studioId");
+      const workspace = studioId ? { kind: "studio" as const, studioId } : PERSONAL;
+
+      await albumsApi.createAlbum(accessToken, workspace, {
+        name,
+        description,
+        kind: AlbumKind.Video,
+        materialSymbol,
+      }, reqLog);
+
       return { ok: true, intent };
     }
 
@@ -235,6 +275,15 @@ function VideoCard({
           )}
         </div>
         <MediaPipelineStatus media={video} pipeline={pipeline} compact />
+        <IconToggleButton
+          id={video.id}
+          active={video.isFavorite}
+          intent="toggle-favorite"
+          activeIcon="favorite"
+          inactiveIcon="favorite_border"
+          activeClassName="text-error"
+          label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
+        />
         <CardOverflowMenu id={video.id} itemLabel={video.filename} />
       </div>
     );
@@ -268,7 +317,18 @@ function VideoCard({
             {pipelineState.detail}
           </p>
           <div className="mt-3 flex items-center justify-end">
-            <CardOverflowMenu id={video.id} itemLabel={video.filename} />
+            <div className="flex items-center gap-1">
+              <IconToggleButton
+                id={video.id}
+                active={video.isFavorite}
+                intent="toggle-favorite"
+                activeIcon="favorite"
+                inactiveIcon="favorite_border"
+                activeClassName="text-error"
+                label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
+              />
+              <CardOverflowMenu id={video.id} itemLabel={video.filename} />
+            </div>
           </div>
         </div>
       </article>
@@ -314,10 +374,21 @@ function VideoCard({
           <p className="mb-3 text-label-md text-on-surface-variant">
             {pipelineState.detail}
           </p>
-          <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-            <span>{res}</span>
-            <span className="h-1 w-1 rounded-full bg-outline-variant" />
-            <span>{fpsStr}</span>
+          <div className="flex items-end justify-between gap-3">
+            <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
+              <span>{res}</span>
+              <span className="h-1 w-1 rounded-full bg-outline-variant" />
+              <span>{fpsStr}</span>
+            </div>
+            <IconToggleButton
+              id={video.id}
+              active={video.isFavorite}
+              intent="toggle-favorite"
+              activeIcon="favorite"
+              inactiveIcon="favorite_border"
+              activeClassName="text-error"
+              label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
+            />
           </div>
         </div>
       </article>
@@ -373,15 +444,26 @@ function VideoCard({
         <p className="mb-3 text-label-md text-on-surface-variant">
           {new Date(video.createdAt).toLocaleDateString()}
         </p>
-        <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-          <span className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">
-              videocam
+        <div className="flex items-end justify-between gap-3">
+          <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px]">
+                videocam
+              </span>
+              {res}
             </span>
-            {res}
-          </span>
-          <span className="h-1 w-1 rounded-full bg-outline-variant" />
-          <span>{fpsStr}</span>
+            <span className="h-1 w-1 rounded-full bg-outline-variant" />
+            <span>{fpsStr}</span>
+          </div>
+          <IconToggleButton
+            id={video.id}
+            active={video.isFavorite}
+            intent="toggle-favorite"
+            activeIcon="favorite"
+            inactiveIcon="favorite_border"
+            activeClassName="text-error"
+            label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
+          />
         </div>
       </div>
     </article>
@@ -410,115 +492,11 @@ function CreateNewCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-function ArchivedVideoCard({
-  video,
-  index,
-  listView,
-}: {
-  video: MediaTrashItem;
-  index: number;
-  listView: boolean;
-}) {
-  if (listView) {
-    return (
-      <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
-        <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
-          <GradientThumbnail
-            index={index}
-            icon="archive"
-            iconClassName="text-[24px] text-on-surface-variant/30"
-            className="opacity-50"
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-body-sm font-bold text-on-surface/70" title={video.filename}>
-            {video.filename}
-          </h3>
-          <p className="mt-1 text-label-md text-on-surface-variant">
-            Archived {new Date(video.deletedAt).toLocaleDateString()}
-          </p>
-        </div>
-        <span className="hidden rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant sm:inline-flex">
-          Purges in {video.purgesInDays} days
-        </span>
-        <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-          {/* Missing duration / resolution on trash items */}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-secondary/10 hover:text-secondary"
-            title="Restore"
-          >
-            <span className="material-symbols-outlined text-[18px]">unarchive</span>
-          </button>
-          <button
-            type="button"
-            className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
-            title="Delete permanently"
-          >
-            <span className="material-symbols-outlined text-[18px]">delete_forever</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
-      <div className="relative aspect-video overflow-hidden">
-        <GradientThumbnail index={index} icon="archive" className="opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
-        <div className="absolute left-3 top-3">
-          <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high/80 px-2 py-0.5 text-label-sm font-bold text-on-surface-variant backdrop-blur-md">
-            <span className="material-symbols-outlined text-[12px]">archive</span>
-            Archived
-          </span>
-        </div>
-        {/* Trash item no duration atm */}
-      </div>
-      <div className="p-4">
-        <div className="mb-2 flex items-start justify-between">
-          <h3 className="truncate text-body-sm font-bold text-on-surface/70">{video.filename}</h3>
-          <button
-            type="button"
-            className="shrink-0 text-on-surface-variant transition-colors hover:text-on-surface"
-          >
-            <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-          </button>
-        </div>
-        <p className="mb-2 text-label-md text-on-surface-variant">
-          Archived {new Date(video.deletedAt).toLocaleDateString()}
-        </p>
-        <p className="mb-3 text-label-sm text-on-surface-variant/60">Purges in {video.purgesInDays} days</p>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-            {/* Resolution missing in DTO */}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="rounded-lg px-2.5 py-1 text-label-sm font-medium text-secondary transition-colors hover:bg-secondary/10"
-            >
-              Restore
-            </button>
-            <button
-              type="button"
-              className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:text-error"
-            >
-              <span className="material-symbols-outlined text-[16px]">delete_forever</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 /* ── Main component ─────────────────────────────────────────────────────── */
 
 export default function Videos({ loaderData, actionData }: Route.ComponentProps) {
-  const { videos: apiVideos, archived: apiArchived, albums, albumMediaCounts } = loaderData;
+  const navigation = useNavigation();
+  const { videos: apiVideos, albums, albumMediaCounts } = loaderData;
   const [searchParams] = useSearchParams();
   const studioId = searchParams.get("studioId");
   const initialVideos = useMemo(
@@ -530,19 +508,22 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<"latest" | "name">("latest");
   const [importOpen, setImportOpen] = useState(false);
+  const [albumModalOpen, setAlbumModalOpen] = useState(false);
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
 
-  const archivedRef = useRef<HTMLElement>(null);
   const albumsRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (pageView === "archived" && archivedRef.current) {
-      archivedRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
     if (pageView === "albums" && albumsRef.current) {
       albumsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [pageView]);
+
+  useEffect(() => {
+    if (actionData?.ok && actionData.intent === "create-album") {
+      setAlbumModalOpen(false);
+    }
+  }, [actionData]);
 
   const videos = [...live.media].sort((a, b) => {
     if (sort === "name") return a.filename.localeCompare(b.filename);
@@ -551,6 +532,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
   const previewVideo = previewVideoId
     ? videos.find((video) => video.id === previewVideoId) ?? null
     : null;
+  const showAllRecent = pageView === "recent";
   const metrics = live.media.reduce(
     (acc, video) => {
       const pipeline = resolveMediaPipeline(video, live.updatesById[video.id]?.pipeline);
@@ -573,7 +555,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
     {
       totalVideos: live.media.length,
       inProgress: 0,
-      archived: apiArchived.length,
+      favorites: live.media.filter((video) => video.isFavorite).length,
       completed: 0,
       failed: 0,
     },
@@ -669,10 +651,9 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         />
 
         <MetricCard
-          icon="archive"
-          label="Archived"
-          value={metrics.archived}
-          detail="In trash"
+          icon="favorite"
+          label="Favorites"
+          value={metrics.favorites}
           tone="tertiary"
         />
 
@@ -695,7 +676,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
 
       {/* ── Recent Projects ────────────────────────────────────────────────── */}
       <section>
-        <SectionHeader title="Recent Projects" actionOnClick={() => {}} />
+        <SectionHeader title="Recent Projects" actionTo="/dashboard/videos?view=recent" />
 
         {videos.length === 0 ? (
           <EmptyState
@@ -717,7 +698,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
           />
         ) : view === "list" ? (
           <div className="space-y-3">
-            {videos.map((video, i) => (
+            {(showAllRecent ? videos : videos.slice(0, 4)).map((video, i) => (
               <VideoCard
                 key={video.id}
                 video={video}
@@ -730,7 +711,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {videos.map((video, i) => (
+            {(showAllRecent ? videos : videos.slice(0, 4)).map((video, i) => (
               <VideoCard
                 key={video.id}
                 video={video}
@@ -747,12 +728,21 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
 
       {/* Albums */}
       <section ref={albumsRef} style={{ scrollMarginTop: "6rem" }}>
-        <SectionHeader title="Albums" actionOnClick={() => {}} />
+        <SectionHeader
+          title="Albums"
+          actionTo="/dashboard/albums?view=video"
+        />
         {albums.length === 0 ? (
           <EmptyState
             icon="video_library"
             title="No video albums yet"
-            hint="Create video albums from the Albums page to organize projects."
+            hint="Create an album to start organizing your videos."
+            action={
+              <button type="button" onClick={() => setAlbumModalOpen(true)} className={primaryButtonClass()}>
+                <span className="material-symbols-outlined text-[18px]">add</span>
+                Create Album
+              </button>
+            }
           />
         ) : (
           <AlbumGrid
@@ -761,55 +751,12 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
             mediaLabel="video"
             icon="video_library"
             emptyTitle="No video albums yet"
-            emptyHint="Create video albums from the Albums page to organize projects."
+            emptyHint="Create an album to start organizing your videos."
             columns="wide"
+            onCreate={() => setAlbumModalOpen(true)}
+            limit={5}
+            getAlbumTo={(album) => `/dashboard/albums/${album.id}`}
           />
-        )}
-      </section>
-
-      {/* Archived Videos */}
-      <section ref={archivedRef} style={{ scrollMarginTop: "6rem" }}>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container-high">
-              <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
-                archive
-              </span>
-            </div>
-            <div>
-              <h2 className="text-headline-md font-bold text-on-surface">Archived</h2>
-              <p className="text-label-sm text-on-surface-variant">
-                {apiArchived.length} archived project{apiArchived.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
-          >
-            View All
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </button>
-        </div>
-
-        {apiArchived.length === 0 ? (
-          <EmptyState
-            icon="archive"
-            title="No archived videos"
-            hint="Archive videos you no longer need to keep your workspace clean."
-          />
-        ) : view === "list" ? (
-          <div className="space-y-3">
-            {apiArchived.map((video, i) => (
-              <ArchivedVideoCard key={video.id} video={video} index={i} listView />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {apiArchived.map((video, i) => (
-              <ArchivedVideoCard key={video.id} video={video} index={i} listView={false} />
-            ))}
-          </div>
         )}
       </section>
 
@@ -827,6 +774,36 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         pipeline={previewVideo ? live.updatesById[previewVideo.id]?.pipeline : null}
         onClose={() => setPreviewVideoId(null)}
       />
+      <Modal open={albumModalOpen} onClose={() => setAlbumModalOpen(false)} title="Create Video Album">
+        <Form method="post" className="space-y-4">
+          <input type="hidden" name="intent" value="create-album" />
+
+          <TextField
+            name="name"
+            label="Album Name"
+            placeholder="Launch videos"
+            required
+          />
+
+          <TextArea
+            name="description"
+            label="Description (Optional)"
+            placeholder="Video clips and edits for this collection"
+            rows={3}
+          />
+
+          <IconPicker
+            name="materialSymbol"
+            label="Album Icon"
+          />
+
+          <FormActions
+            onCancel={() => setAlbumModalOpen(false)}
+            submitLabel={navigation.state === "submitting" ? "Creating..." : "Create Album"}
+            isSubmitting={navigation.state === "submitting"}
+          />
+        </Form>
+      </Modal>
     </section>
   );
 }

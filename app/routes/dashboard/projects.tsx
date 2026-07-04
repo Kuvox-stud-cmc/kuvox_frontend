@@ -4,15 +4,14 @@ import {
   ProjectKind,
   type MediaDto,
   type ProjectDto,
-  type ProjectTrashItem,
 } from "~/lib/api";
 import {
   ApiError,
   createProject,
   listMedia,
   listProjects,
-  listProjectTrash,
   listSharedProjects,
+  setProjectStar,
   softDelete,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
@@ -36,20 +35,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     return {
       projects: [] as ProjectDto[],
       sharedProjects: [] as ProjectDto[],
-      archivedProjects: [] as ProjectTrashItem[],
       media: [] as MediaDto[],
       error: "Your session expired. Please sign in again.",
     };
   }
 
-  const [projects, sharedProjects, archivedProjects, media] = await Promise.allSettled([
+  const [projects, sharedProjects, media] = await Promise.allSettled([
     listProjects(accessToken, PERSONAL, reqLog),
     listSharedProjects(accessToken, reqLog),
-    listProjectTrash(accessToken, PERSONAL, reqLog),
     listMedia(accessToken, PERSONAL, reqLog),
   ]);
 
-  const anyFailed = [projects, sharedProjects, archivedProjects, media].some(
+  const anyFailed = [projects, sharedProjects, media].some(
     (result) => result.status === "rejected",
   );
 
@@ -61,10 +58,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     projects: projects.status === "fulfilled" ? projects.value.items : ([] as ProjectDto[]),
     sharedProjects:
       sharedProjects.status === "fulfilled" ? sharedProjects.value.items : ([] as ProjectDto[]),
-    archivedProjects:
-      archivedProjects.status === "fulfilled"
-        ? archivedProjects.value.items
-        : ([] as ProjectTrashItem[]),
     media: media.status === "fulfilled" ? media.value.items : ([] as MediaDto[]),
     error: anyFailed ? "Some projects dashboard data couldn't be loaded." : null,
   };
@@ -103,6 +96,15 @@ export async function action({ request }: Route.ActionArgs) {
       return { ok: true, intent };
     }
 
+    if (intent === "toggle-star") {
+      const id = String(formData.get("id") ?? "");
+      const isStarred = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await setProjectStar(accessToken, id, isStarred, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
     return { error: "Unknown action." };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Something went wrong.";
@@ -116,7 +118,6 @@ export default function Projects({ loaderData }: Route.ComponentProps) {
     <ProjectsDashboard
       projects={loaderData.projects}
       sharedProjects={loaderData.sharedProjects}
-      archivedProjects={loaderData.archivedProjects}
       media={loaderData.media}
       error={loaderData.error}
     />

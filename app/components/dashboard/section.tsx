@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Form } from "react-router";
 
 /** Section title + optional subtitle and a right-aligned action slot. */
@@ -177,8 +178,8 @@ export function Modal({
   children: ReactNode;
 }) {
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center p-4">
+  const modal = (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <button
         type="button"
         aria-label="Close dialog"
@@ -205,4 +206,6 @@ export function Modal({
       </div>
     </div>
   );
+
+  return typeof document === "undefined" ? modal : createPortal(modal, document.body);
 }

@@ -158,6 +158,10 @@ export class ApiClient {
     return this.requestVoid(path, { method: "POST", body: JSON.stringify(body) }, options);
   }
 
+  async put<T>(path: string, body: unknown, options?: RequestOptions): Promise<T> {
+    return this.request<T>(path, { method: "PUT", body: JSON.stringify(body) }, options);
+  }
+
   async patch<T>(path: string, body: unknown, options?: RequestOptions): Promise<T> {
     return this.request<T>(path, { method: "PATCH", body: JSON.stringify(body) }, options);
   }

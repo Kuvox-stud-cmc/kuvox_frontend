@@ -23,16 +23,15 @@ import {
     projectKindLabel,
     type MediaDto,
     type ProjectDto,
-    type ProjectTrashItem,
 } from "~/lib/api";
 import { useLiveMedia } from "~/lib/media-realtime";
+import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 
 /* ── Mock data ──────────────────────────────────────────────────────────── */
 
 interface ProjectsDashboardProps {
     projects: ProjectDto[];
     sharedProjects: ProjectDto[];
-    archivedProjects: ProjectTrashItem[];
     media: MediaDto[];
     error: string | null;
 }
@@ -50,7 +49,7 @@ interface DashboardMetrics {
     inProgress: number;
     completed: number;
     shared: number;
-    archived: number;
+    starred: number;
     storageLabel: string;
     mediaCount: number;
 }
@@ -149,14 +148,14 @@ const TEAM_GRADIENTS = [
     "from-secondary/25 via-surface-container-high to-tertiary/10",
 ];
 
-type TabFilter = "all" | "video" | "image" | "archived";
+type TabFilter = "all" | "video" | "image" | "starred";
 
 function buildTabs(metrics: DashboardMetrics): { id: TabFilter; label: string; count: number }[] {
     return [
         { id: "all", label: "All Projects", count: metrics.total },
         { id: "video", label: "Video", count: metrics.video },
         { id: "image", label: "Image", count: metrics.image },
-        { id: "archived", label: "Archived", count: metrics.archived },
+        { id: "starred", label: "Starred", count: metrics.starred },
     ];
 }
 
@@ -201,17 +200,19 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
                 </div>
 
                 <div className="p-4">
-                    <h5 className="mb-1 truncate pr-8 text-body-sm font-bold text-on-surface transition-colors group-hover:text-primary">
-                        {project.name}
-                    </h5>
+                    <div className="mb-1 flex items-center gap-3">
+                        <h5 className="min-w-0 flex-1 truncate text-body-sm font-bold text-on-surface transition-colors group-hover:text-primary">
+                            {project.name}
+                        </h5>
+                        <span className="shrink-0 truncate text-label-sm text-outline">{project.status}</span>
+                    </div>
                     <p className="mb-3 text-label-sm text-outline">
                         Updated {new Date(project.updatedAt).toLocaleDateString()}
                     </p>
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 pr-10">
                         <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm capitalize text-on-surface-variant">
                             {typeLabel}
                         </span>
-                        <span className="truncate text-label-sm text-outline">{project.status}</span>
                     </div>
                 </div>
             </Link>
@@ -220,6 +221,17 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
                     id={project.id}
                     itemLabel={project.name}
                     buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
+                />
+            </div>
+            <div className="absolute bottom-3 right-3">
+                <IconToggleButton
+                    id={project.id}
+                    active={project.isStarred}
+                    intent="toggle-star"
+                    activeIcon="star"
+                    inactiveIcon="star_border"
+                    activeClassName="text-yellow-500"
+                    label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
                 />
             </div>
         </div>
@@ -257,51 +269,16 @@ function ProjectListRow({ project, index }: { project: ProjectDto; index: number
                 </div>
                 <span className="text-label-sm text-outline">{project.status}</span>
             </Link>
+            <IconToggleButton
+                id={project.id}
+                active={project.isStarred}
+                intent="toggle-star"
+                activeIcon="star"
+                inactiveIcon="star_border"
+                activeClassName="text-yellow-500"
+                label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
+            />
             <CardOverflowMenu id={project.id} itemLabel={project.name} />
-        </div>
-    );
-}
-
-function ArchivedProjectCard({ project, index }: { project: ProjectTrashItem; index: number }) {
-    return (
-        <div className="bento-card overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low opacity-80">
-            <div className="relative aspect-video">
-                <GradientThumbnail index={index} icon="inventory_2" />
-            </div>
-            <div className="p-4">
-                <h5 className="mb-1 truncate text-body-sm font-bold text-on-surface">
-                    {project.name}
-                </h5>
-                <p className="text-label-sm text-outline">
-                    Deleted {new Date(project.deletedAt).toLocaleDateString()}
-                </p>
-                <p className="mt-2 text-label-sm text-on-surface-variant">
-                    Purges in {project.purgesInDays} days
-                </p>
-            </div>
-        </div>
-    );
-}
-
-function ArchivedProjectListRow({ project, index }: { project: ProjectTrashItem; index: number }) {
-    return (
-        <div className="group flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 opacity-80">
-            <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg">
-                <GradientThumbnail
-                    index={index}
-                    icon="inventory_2"
-                    iconClassName="text-[20px] text-on-surface-variant/20"
-                />
-            </div>
-            <div className="min-w-0 flex-1">
-                <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
-                <p className="mt-0.5 text-label-sm text-outline">
-                    Deleted {new Date(project.deletedAt).toLocaleDateString()}
-                </p>
-            </div>
-            <span className="hidden text-label-sm text-on-surface-variant sm:inline">
-                Purges in {project.purgesInDays} days
-            </span>
         </div>
     );
 }
@@ -427,7 +404,6 @@ function formatBytes(bytes: number): string {
 function getProjectMetrics(
     projects: ProjectDto[],
     sharedProjects: ProjectDto[],
-    archivedProjects: ProjectTrashItem[],
     media: MediaDto[],
 ): DashboardMetrics {
     const storageBytes = media.reduce((total, item) => total + Number(item.sizeBytes), 0);
@@ -438,7 +414,7 @@ function getProjectMetrics(
         inProgress: projects.filter((project) => normalizeStatus(project.status) === "inprogress").length,
         completed: projects.filter((project) => normalizeStatus(project.status) === "completed").length,
         shared: sharedProjects.length,
-        archived: archivedProjects.length,
+        starred: projects.filter((project) => project.isStarred).length,
         storageLabel: formatBytes(storageBytes),
         mediaCount: media.length,
     };
@@ -447,7 +423,6 @@ function getProjectMetrics(
 export default function ProjectsDashboard({
     projects,
     sharedProjects,
-    archivedProjects,
     media,
     error,
 }: ProjectsDashboardProps) {
@@ -460,7 +435,7 @@ export default function ProjectsDashboard({
     const navigation = useNavigation();
     const isSubmitting = navigation.state === "submitting";
     const live = useLiveMedia(media);
-    const metrics = getProjectMetrics(projects, sharedProjects, archivedProjects, live.media);
+    const metrics = getProjectMetrics(projects, sharedProjects, live.media);
     const tabs = buildTabs(metrics);
 
     useEffect(() => {
@@ -475,6 +450,8 @@ export default function ProjectsDashboard({
                 ? projects.filter((project) => project.kind === ProjectKind.Video)
                 : activeTab === "image"
                     ? projects.filter((project) => project.kind === ProjectKind.Image)
+                    : activeTab === "starred"
+                        ? projects.filter((project) => project.isStarred)
                     : [];
 
     const sortedProjects = [...filteredProjects].sort((a, b) => {
@@ -482,13 +459,7 @@ export default function ProjectsDashboard({
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
 
-    const sortedArchivedProjects = [...archivedProjects].sort((a, b) => {
-        if (sort === "name") return a.name.localeCompare(b.name);
-        return new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime();
-    });
-
-    const visibleCount =
-        activeTab === "archived" ? sortedArchivedProjects.length : sortedProjects.length;
+    const visibleCount = sortedProjects.length;
 
     return (
         <section className="space-y-8">
@@ -603,10 +574,10 @@ export default function ProjectsDashboard({
                 />
                 <MetricCard
                     variant="stacked"
-                    icon="inventory_2"
-                    label="Archived"
-                    value={metrics.archived}
-                    detail="In trash"
+                    icon="star"
+                    label="Starred"
+                    value={metrics.starred}
+                    detail="Marked important"
                     iconBgClassName="bg-tertiary/10"
                     iconClassName="text-tertiary"
                 />
@@ -661,19 +632,11 @@ export default function ProjectsDashboard({
 
                         {visibleCount === 0 ? (
                             <EmptyState
-                                icon={activeTab === "archived" ? "inventory_2" : "folder"}
-                                title={
-                                    activeTab === "archived"
-                                        ? "No archived projects"
-                                        : "No projects yet"
-                                }
-                                hint={
-                                    activeTab === "archived"
-                                        ? "Deleted projects will appear here until they are purged."
-                                        : "Create a project to start editing."
-                                }
+                                icon={activeTab === "starred" ? "star_border" : "folder"}
+                                title={activeTab === "starred" ? "No starred projects" : "No projects yet"}
+                                hint={activeTab === "starred" ? "Star projects to find them quickly here." : "Create a project to start editing."}
                                 action={
-                                    activeTab === "archived" ? undefined : (
+                                    activeTab === "starred" ? undefined : (
                                         <button
                                             type="button"
                                             onClick={() => setCreateOpen(true)}
@@ -685,18 +648,6 @@ export default function ProjectsDashboard({
                                     )
                                 }
                             />
-                        ) : activeTab === "archived" && view === "list" ? (
-                            <div className="space-y-3">
-                                {sortedArchivedProjects.map((project, i) => (
-                                    <ArchivedProjectListRow key={project.id} project={project} index={i} />
-                                ))}
-                            </div>
-                        ) : activeTab === "archived" ? (
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                {sortedArchivedProjects.map((project, i) => (
-                                    <ArchivedProjectCard key={project.id} project={project} index={i} />
-                                ))}
-                            </div>
                         ) : view === "list" ? (
                             <div className="space-y-3">
                                 {sortedProjects.map((project, i) => (

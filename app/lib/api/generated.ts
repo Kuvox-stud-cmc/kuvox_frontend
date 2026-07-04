@@ -2710,6 +2710,7 @@ export interface components {
             kind: components["schemas"]["AlbumKind"];
             materialSymbol: string;
             isDeleteAble: boolean;
+            isFavorite: boolean;
         };
         AlbumKind: number;
         AuthTokenDto: {
@@ -2790,6 +2791,7 @@ export interface components {
             frameRate: null | number | string;
             /** Format: date-time */
             createdAt: string;
+            isFavorite: boolean;
             pipeline: components["schemas"]["MediaPipelineDto"];
         };
         MediaPipelineDto: {
@@ -2925,6 +2927,7 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            isStarred: boolean;
         };
         ProjectKind: number;
         ProjectRole: number;

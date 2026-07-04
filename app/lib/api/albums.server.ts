@@ -13,8 +13,9 @@ export class AlbumsApiModule extends BaseApiModule {
   /**
    * Lists all albums for the current user.
    */
-  async listAlbums(token: string, log?: RequestLogger): Promise<AlbumDto[]> {
-    return this.get<AlbumDto[]>(token, "/api/albums", log);
+  async listAlbums(token: string, log?: RequestLogger, options?: { includeSystem?: boolean }): Promise<AlbumDto[]> {
+    const query = options?.includeSystem ? "?includeSystem=true" : "";
+    return this.get<AlbumDto[]>(token, `/api/albums${query}`, log);
   }
 
   /**
@@ -25,10 +26,29 @@ export class AlbumsApiModule extends BaseApiModule {
   }
 
   /**
+   * Sets the current user's favorite flag for an album.
+   */
+  async setFavorite(token: string, id: string, isFavorite: boolean, log?: RequestLogger): Promise<AlbumDto> {
+    return this.put<{ isFavorite: boolean }, AlbumDto>(
+      token,
+      `/api/albums/${id}/favorite`,
+      { isFavorite },
+      log,
+    );
+  }
+
+  /**
    * Adds media items to an album.
    */
   async addMedia(token: string, id: string, mediaIds: string[], log?: RequestLogger): Promise<void> {
     return this.postVoid(token, `/api/albums/${id}/media`, { mediaIds }, log);
+  }
+
+  /**
+   * Assigns audio files to a reserved system category album.
+   */
+  async assignAudioCategory(token: string, category: string, mediaIds: string[], log?: RequestLogger): Promise<void> {
+    return this.postVoid(token, `/api/albums/audio-categories/${encodeURIComponent(category)}/media`, { mediaIds }, log);
   }
 
   /**
@@ -41,8 +61,14 @@ export class AlbumsApiModule extends BaseApiModule {
   /**
    * Lists media items for an album.
    */
-  async listAlbumMedia(token: string, id: string, log?: RequestLogger): Promise<import("../api").PagedResult<import("../api").MediaDto>> {
-    return this.get<import("../api").PagedResult<import("../api").MediaDto>>(token, `/api/albums/${id}/media`, log);
+  async listAlbumMedia(
+    token: string,
+    id: string,
+    log?: RequestLogger,
+    options?: { includeSystem?: boolean },
+  ): Promise<import("../api").PagedResult<import("../api").MediaDto>> {
+    const query = options?.includeSystem ? "?includeSystem=true" : "";
+    return this.get<import("../api").PagedResult<import("../api").MediaDto>>(token, `/api/albums/${id}/media${query}`, log);
   }
 }
 

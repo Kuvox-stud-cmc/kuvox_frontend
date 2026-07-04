@@ -277,6 +277,7 @@ export interface AlbumDto {
   kind: number;
   materialSymbol: string;
   isDeleteAble: boolean;
+  isFavorite: boolean;
 }
 
 /** Mirrors `Media.Dtos.CreateAlbumDto`. */

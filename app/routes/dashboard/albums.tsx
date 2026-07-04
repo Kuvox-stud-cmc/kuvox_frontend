@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Form, useNavigation, useSearchParams } from "react-router";
+import { Form, Link, useNavigation, useSearchParams } from "react-router";
 
 import {
   CardOverflowMenu,
@@ -11,16 +11,16 @@ import {
   StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import {
-  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   Modal,
   primaryButtonClass,
 } from "~/components/dashboard/section";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
+import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
-import { AlbumKind, MediaKind, PERSONAL, type AlbumDto, type MediaDto } from "~/lib/api";
-import { albumsApi, ApiError, listMedia } from "~/lib/api.server";
+import { AlbumKind, PERSONAL, type AlbumDto } from "~/lib/api";
+import { albumsApi, ApiError } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -31,8 +31,7 @@ type AlbumView = "all" | "mixed" | "photo" | "video" | "audio" | "shared" | "fav
 
 interface AlbumRouteData {
   albums: AlbumDto[];
-  media: MediaDto[];
-  albumMedia: Record<string, MediaDto[]>;
+  albumMediaCounts: Record<string, number>;
   error: string | null;
 }
 
@@ -67,35 +66,30 @@ export async function loader({ request }: Route.LoaderArgs): Promise<AlbumRouteD
   if (!accessToken) {
     return {
       albums: [],
-      media: [],
-      albumMedia: {},
+      albumMediaCounts: {},
       error: "Your session expired. Please sign in again.",
     };
   }
 
   try {
-    const [allAlbums, mediaPage] = await Promise.all([
-      albumsApi.listAlbums(accessToken, reqLog),
-      listMedia(accessToken, PERSONAL, reqLog),
-    ]);
-    const albums = allAlbums.filter((album) => album.isDeleteAble);
+    const allAlbums = await albumsApi.listAlbums(accessToken, reqLog);
+    const albums = allAlbums.filter((album) => album.isDeleteAble === true && !isReservedAudioCategoryAlbum(album));
     const albumMediaEntries = await Promise.all(
       albums.map(async (album) => {
         const page = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);
-        return [album.id, page.items] as const;
+        return [album.id, page.items.length] as const;
       }),
     );
 
     return {
       albums,
-      media: mediaPage.items,
-      albumMedia: Object.fromEntries(albumMediaEntries),
+      albumMediaCounts: Object.fromEntries(albumMediaEntries),
       error: null,
     };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load your albums.";
     reqLog.error({ err: error }, "failed to load albums");
-    return { albums: [], media: [], albumMedia: {}, error: message };
+    return { albums: [], albumMediaCounts: {}, error: message };
   }
 }
 
@@ -128,6 +122,10 @@ export async function action({ request }: Route.ActionArgs) {
         return { error: "Choose a valid album type." };
       }
 
+      if (kind === AlbumKind.Audio && audioCategoryKeyForAlbum(name)) {
+        return { error: "That audio category name is reserved." };
+      }
+
       await albumsApi.createAlbum(
         accessToken,
         PERSONAL,
@@ -147,28 +145,14 @@ export async function action({ request }: Route.ActionArgs) {
       return { ok: true, intent };
     }
 
-    if (intent === "add-media") {
-      const albumId = String(formData.get("albumId") ?? "");
-      const mediaIds = formData.getAll("mediaIds").map((id) => String(id));
-      if (!albumId) {
+    if (intent === "toggle-album-favorite") {
+      const id = String(formData.get("id") ?? "");
+      const isFavorite = String(formData.get("value") ?? "") === "true";
+      if (!id) {
         return { error: "Choose an album." };
       }
-      if (mediaIds.length === 0) {
-        return { error: "Select at least one media item." };
-      }
 
-      await albumsApi.addMedia(accessToken, albumId, mediaIds, reqLog);
-      return { ok: true, intent };
-    }
-
-    if (intent === "remove-media") {
-      const albumId = String(formData.get("albumId") ?? "");
-      const mediaId = String(formData.get("mediaId") ?? "");
-      if (!albumId || !mediaId) {
-        return { error: "Choose a media item to remove." };
-      }
-
-      await albumsApi.removeMedia(accessToken, albumId, [mediaId], reqLog);
+      await albumsApi.setFavorite(accessToken, id, isFavorite, reqLog);
       return { ok: true, intent };
     }
 
@@ -184,15 +168,12 @@ export default function Albums({ loaderData, actionData }: Route.ComponentProps)
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [createOpen, setCreateOpen] = useState(false);
-  const [addMediaOpen, setAddMediaOpen] = useState(false);
-  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
   const isSubmitting = navigation.state === "submitting";
   const currentView = normalizeView(searchParams.get("view"));
 
   useEffect(() => {
     if (actionData?.ok) {
       if (actionData.intent === "create-album") setCreateOpen(false);
-      if (actionData.intent === "add-media") setAddMediaOpen(false);
     }
   }, [actionData]);
 
@@ -204,7 +185,7 @@ export default function Albums({ loaderData, actionData }: Route.ComponentProps)
       video: loaderData.albums.filter((album) => album.kind === AlbumKind.Video).length,
       audio: loaderData.albums.filter((album) => album.kind === AlbumKind.Audio).length,
       shared: 0,
-      favorites: 0,
+      favorites: loaderData.albums.filter((album) => album.isFavorite).length,
     }),
     [loaderData.albums],
   );
@@ -216,18 +197,8 @@ export default function Albums({ loaderData, actionData }: Route.ComponentProps)
     () => filterAlbums(loaderData.albums, currentView),
     [currentView, loaderData.albums],
   );
-  const selectedAlbum =
-    loaderData.albums.find((album) => album.id === selectedAlbumId) ?? filteredAlbums[0] ?? null;
-  const selectedAlbumMedia = selectedAlbum ? loaderData.albumMedia[selectedAlbum.id] ?? [] : [];
-  const compatibleMedia = selectedAlbum
-    ? loaderData.media.filter(
-        (media) =>
-          acceptsMediaKind(selectedAlbum.kind, media.kind) &&
-          !selectedAlbumMedia.some((item) => item.id === media.id),
-      )
-    : [];
-  const totalAlbumItems = Object.values(loaderData.albumMedia).reduce(
-    (total, items) => total + items.length,
+  const totalAlbumItems = Object.values(loaderData.albumMediaCounts).reduce(
+    (total, count) => total + count,
     0,
   );
 
@@ -276,11 +247,11 @@ export default function Albums({ loaderData, actionData }: Route.ComponentProps)
         variant="boxed"
       />
 
-      {currentView === "shared" || currentView === "favorites" ? (
+      {currentView === "shared" ? (
         <EmptyState
-          icon={currentView === "shared" ? "share" : "favorite_border"}
-          title={currentView === "shared" ? "Shared albums are not available yet" : "Favorite albums are not available yet"}
-          hint="The backend album response does not expose this state yet."
+          icon="share"
+          title="Shared albums are not available yet"
+          hint="Shared album management is not available on this page yet."
         />
       ) : filteredAlbums.length === 0 ? (
         <EmptyState
@@ -295,25 +266,15 @@ export default function Albums({ loaderData, actionData }: Route.ComponentProps)
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="grid content-start grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-            {filteredAlbums.map((album, index) => (
-              <AlbumCard
-                key={album.id}
-                album={album}
-                count={loaderData.albumMedia[album.id]?.length ?? 0}
-                index={index}
-                selected={album.id === selectedAlbum?.id}
-                onSelect={() => setSelectedAlbumId(album.id)}
-              />
-            ))}
-          </div>
-
-          <AlbumDetail
-            album={selectedAlbum}
-            media={selectedAlbumMedia}
-            onAddMedia={() => setAddMediaOpen(true)}
-          />
+        <div className="grid content-start grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {filteredAlbums.map((album, index) => (
+            <AlbumCard
+              key={album.id}
+              album={album}
+              count={loaderData.albumMediaCounts[album.id] ?? 0}
+              index={index}
+            />
+          ))}
         </div>
       )}
 
@@ -350,54 +311,6 @@ export default function Albums({ loaderData, actionData }: Route.ComponentProps)
         </Form>
       </Modal>
 
-      <Modal
-        open={addMediaOpen && Boolean(selectedAlbum)}
-        onClose={() => setAddMediaOpen(false)}
-        title={selectedAlbum ? `Add media to ${selectedAlbum.name}` : "Add media"}
-      >
-        {selectedAlbum ? (
-          <Form method="post" className="space-y-4">
-            <input type="hidden" name="intent" value="add-media" />
-            <input type="hidden" name="albumId" value={selectedAlbum.id} />
-            {compatibleMedia.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-outline-variant p-4 text-center text-body-sm text-on-surface-variant">
-                No compatible media is available to add.
-              </div>
-            ) : (
-              <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                {compatibleMedia.map((media) => (
-                  <label
-                    key={media.id}
-                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40"
-                  >
-                    <input
-                      type="checkbox"
-                      name="mediaIds"
-                      value={media.id}
-                      className="h-4 w-4 accent-primary"
-                    />
-                    <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
-                      {mediaKindIcon(media.kind)}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-body-sm font-medium text-on-surface">
-                      {media.filename}
-                    </span>
-                    <span className="text-label-sm text-on-surface-variant">
-                      {mediaKindLabel(media.kind)}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-            <FormActions
-              onCancel={() => setAddMediaOpen(false)}
-              submitLabel={isSubmitting ? "Adding..." : "Add selected"}
-              isSubmitting={isSubmitting}
-              disabled={compatibleMedia.length === 0}
-            />
-          </Form>
-        ) : null}
-      </Modal>
     </section>
   );
 }
@@ -406,22 +319,14 @@ function AlbumCard({
   album,
   count,
   index,
-  selected,
-  onSelect,
 }: {
   album: AlbumDto;
   count: number;
   index: number;
-  selected: boolean;
-  onSelect: () => void;
 }) {
   return (
-    <article
-      className={`group overflow-hidden rounded-xl border bg-surface-container-low transition-colors ${
-        selected ? "border-primary/70" : "border-outline-variant hover:border-primary/40"
-      }`}
-    >
-      <button type="button" onClick={onSelect} className="block w-full text-left">
+    <article className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
+      <Link to={`/dashboard/albums/${album.id}`} className="block w-full text-left">
         <div className="relative aspect-video overflow-hidden border-b border-outline-variant">
           <GradientThumbnail
             index={index}
@@ -431,15 +336,10 @@ function AlbumCard({
           <div className="absolute left-3 top-3">
             <StatusBadge label={albumKindLabel(album.kind)} tone={albumKindTone(album.kind)} />
           </div>
-          {!album.isDeleteAble ? (
-            <div className="absolute right-3 top-3 rounded-lg bg-surface-container-lowest/70 px-2 py-1 backdrop-blur-md">
-              <span className="material-symbols-outlined text-[16px] text-on-surface-variant">lock</span>
-            </div>
-          ) : null}
         </div>
-      </button>
+      </Link>
       <div className="flex items-start gap-3 p-4">
-        <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
+        <Link to={`/dashboard/albums/${album.id}`} className="min-w-0 flex-1 text-left">
           <h3 className="truncate text-body-md font-bold text-on-surface" title={album.name}>
             {album.name}
           </h3>
@@ -449,107 +349,26 @@ function AlbumCard({
           <p className="mt-3 text-label-sm font-semibold uppercase tracking-[0.08em] text-on-surface-variant">
             {count} item{count === 1 ? "" : "s"}
           </p>
-        </button>
-        {album.isDeleteAble ? (
-          <CardOverflowMenu
-            id={album.id}
-            itemLabel={album.name}
-            intent="delete-album"
-            confirmMessage="Delete this album permanently? Media files will remain in your library."
-          />
-        ) : null}
-      </div>
-    </article>
-  );
-}
-
-function AlbumDetail({
-  album,
-  media,
-  onAddMedia,
-}: {
-  album: AlbumDto | null;
-  media: MediaDto[];
-  onAddMedia: () => void;
-}) {
-  if (!album) {
-    return null;
-  }
-
-  return (
-    <aside className="sticky top-6 h-fit rounded-xl border border-outline-variant bg-surface-container-low p-4">
-      <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-primary">
-          <span className="material-symbols-outlined text-[24px]">
-            {album.materialSymbol || albumKindIcon(album.kind)}
-          </span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-headline-sm font-bold text-on-surface">{album.name}</h2>
-          <p className="mt-1 text-body-sm text-on-surface-variant">
-            {album.description || "No description provided."}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <StatusBadge label={albumKindLabel(album.kind)} tone={albumKindTone(album.kind)} />
-        <StatusBadge
-          label={album.isDeleteAble ? "User album" : "System album"}
-          tone={album.isDeleteAble ? "neutral" : "warning"}
+        </Link>
+        <IconToggleButton
+          id={album.id}
+          active={album.isFavorite}
+          intent="toggle-album-favorite"
+          activeIcon="favorite"
+          inactiveIcon="favorite_border"
+          activeClassName="text-error"
+          label={`${album.isFavorite ? "Remove from" : "Add to"} favorites`}
+        />
+        <CardOverflowMenu
+          id={album.id}
+          itemLabel={album.name}
+          intent="delete-album"
+          confirmTitle="Delete album"
+          confirmMessage="Delete this album permanently? Media files will remain in your library."
+          confirmLabel="Delete album"
         />
       </div>
-
-      <div className="mt-5 flex items-center justify-between">
-        <h3 className="text-label-md font-bold uppercase tracking-[0.08em] text-on-surface-variant">
-          Media
-        </h3>
-        <button type="button" onClick={onAddMedia} className={primaryButtonClass("px-3 py-1.5")}>
-          <span className="material-symbols-outlined text-[16px]">add</span>
-          Add
-        </button>
-      </div>
-
-      {media.length === 0 ? (
-        <div className="mt-3 rounded-lg border border-dashed border-outline-variant p-4 text-center text-body-sm text-on-surface-variant">
-          No media in this album yet.
-        </div>
-      ) : (
-        <div className="mt-3 space-y-2">
-          {media.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container p-2"
-            >
-              <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
-                {mediaKindIcon(item.kind)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-label-md font-semibold text-on-surface" title={item.filename}>
-                  {item.filename}
-                </p>
-                <p className="text-label-sm text-on-surface-variant">{mediaKindLabel(item.kind)}</p>
-              </div>
-              <ConfirmSubmitButton
-                fields={{ intent: "remove-media", albumId: album.id, mediaId: item.id }}
-                title="Remove media from album?"
-                message={
-                  <>
-                    Remove <span className="font-medium text-on-surface">{item.filename}</span> from{" "}
-                    <span className="font-medium text-on-surface">{album.name}</span>?
-                  </>
-                }
-                confirmLabel="Remove media"
-                ariaLabel={`Remove ${item.filename} from ${album.name}`}
-                buttonClassName="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </ConfirmSubmitButton>
-            </div>
-          ))}
-        </div>
-      )}
-    </aside>
+    </article>
   );
 }
 
@@ -572,16 +391,25 @@ function filterAlbums(albums: AlbumDto[], view: AlbumView) {
   if (view === "photo") return albums.filter((album) => album.kind === AlbumKind.Photo);
   if (view === "video") return albums.filter((album) => album.kind === AlbumKind.Video);
   if (view === "audio") return albums.filter((album) => album.kind === AlbumKind.Audio);
-  if (view === "shared" || view === "favorites") return [];
+  if (view === "favorites") return albums.filter((album) => album.isFavorite);
+  if (view === "shared") return [];
   return albums;
 }
 
-function acceptsMediaKind(albumKind: number, mediaKind: number) {
-  if (albumKind === AlbumKind.Mixed) return true;
-  if (albumKind === AlbumKind.Photo) return mediaKind === MediaKind.Image;
-  if (albumKind === AlbumKind.Video) return mediaKind === MediaKind.Video;
-  if (albumKind === AlbumKind.Audio) return mediaKind === MediaKind.Audio;
-  return false;
+function normalizeAudioAlbumName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function audioCategoryKeyForAlbum(name: string): "music" | "sfx" | "voiceovers" | null {
+  const normalized = normalizeAudioAlbumName(name);
+  if (normalized === "music") return "music";
+  if (normalized === "soundeffects" || normalized === "soundeffect" || normalized === "sfx") return "sfx";
+  if (normalized === "voiceover" || normalized === "voiceovers") return "voiceovers";
+  return null;
+}
+
+function isReservedAudioCategoryAlbum(album: AlbumDto): boolean {
+  return album.kind === AlbumKind.Audio && audioCategoryKeyForAlbum(album.name) !== null;
 }
 
 function albumKindLabel(kind: number) {
@@ -603,16 +431,4 @@ function albumKindTone(kind: number) {
   if (kind === AlbumKind.Video) return "primary" as const;
   if (kind === AlbumKind.Audio) return "success" as const;
   return "neutral" as const;
-}
-
-function mediaKindIcon(kind: number) {
-  if (kind === MediaKind.Image) return "image";
-  if (kind === MediaKind.Audio) return "graphic_eq";
-  return "movie";
-}
-
-function mediaKindLabel(kind: number) {
-  if (kind === MediaKind.Image) return "Photo";
-  if (kind === MediaKind.Audio) return "Audio";
-  return "Video";
 }

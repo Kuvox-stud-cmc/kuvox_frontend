@@ -202,7 +202,7 @@ function mergeMedia(current: MediaDto[], next: MediaDto): MediaDto[] {
   const index = current.findIndex((item) => item.id === next.id);
   if (index === -1) return [next, ...current];
   const copy = [...current];
-  copy[index] = next;
+  copy[index] = { ...next, isFavorite: current[index].isFavorite || next.isFavorite };
   return copy;
 }
 
@@ -225,6 +225,7 @@ function mediaSignature(items: MediaDto[]): string {
         item.codec,
         item.frameRate,
         item.createdAt,
+        item.isFavorite,
         item.pipeline?.stage,
         item.pipeline?.label,
         item.pipeline?.detail,

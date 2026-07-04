@@ -1,34 +1,73 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { useSearchParams, useLoaderData } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation, useRevalidator, useSearchParams } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
-import { ApiError, listMedia, softDelete, albumsApi } from "~/lib/api.server";
+import { ApiError, listMedia, setMediaFavorite, softDelete, albumsApi } from "~/lib/api.server";
 import { useLiveMedia } from "~/lib/media-realtime";
 import type { MediaPipeline } from "~/lib/media-pipeline";
 import { createRequestLogger } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
+import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 import { resolveMediaObjectSource } from "~/components/dashboard/shared/MediaPreviewOverlay";
 
 import {
   CardOverflowMenu,
+  FormActions,
   MetricCard,
   PageHeader,
   SectionHeader,
   SortDropdown,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import {
-  EmptyState,
   ErrorBanner,
+  Modal,
   primaryButtonClass,
 } from "~/components/dashboard/section";
+import { TextArea, TextField } from "~/components/dashboard/shared/form";
+import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 
 const AUDIO_PAGE_SIZE = 10;
 type AudioCategoryKey = "music" | "sfx" | "voiceovers";
+
+const AUDIO_CATEGORY_CONFIG: Record<
+  AudioCategoryKey,
+  { label: string; albumName: string; icon: string; description: string }
+> = {
+  music: {
+    label: "Music",
+    albumName: "Music",
+    icon: "music_note",
+    description: "Songs and background tracks",
+  },
+  sfx: {
+    label: "Sound Effects",
+    albumName: "Sound Effects",
+    icon: "graphic_eq",
+    description: "SFX, foley, and stingers",
+  },
+  voiceovers: {
+    label: "Voiceovers",
+    albumName: "Voiceovers",
+    icon: "mic",
+    description: "Narration and spoken recordings",
+  },
+};
+
+const AUDIO_CATEGORY_OPTIONS = (Object.entries(AUDIO_CATEGORY_CONFIG) as Array<
+  [AudioCategoryKey, (typeof AUDIO_CATEGORY_CONFIG)[AudioCategoryKey]]
+>).map(([value, config]) => ({
+  value,
+  label: config.label,
+  description: config.description,
+}));
+
+function isAudioCategoryKey(value: string): value is AudioCategoryKey {
+  return value in AUDIO_CATEGORY_CONFIG;
+}
 
 function normalizeAudioAlbumName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -92,25 +131,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const page = await listMedia(accessToken, PERSONAL, reqLog);
     const audioMedia = page.items.filter(m => m.kind === MediaKind.Audio);
     
-    const allAlbums = await albumsApi.listAlbums(accessToken, reqLog);
-    const audioAlbums = allAlbums.filter(a => a.kind === AlbumKind.Audio && a.isDeleteAble);
+    const allAlbums = await albumsApi.listAlbums(accessToken, reqLog, { includeSystem: true });
+    const allAudioAlbums = allAlbums.filter((album) => album.kind === AlbumKind.Audio);
+    const audioAlbums = allAudioAlbums.filter(
+      (album) => album.isDeleteAble === true && audioCategoryKeyForAlbum(album.name) === null,
+    );
+    const systemCategoryAlbums = allAudioAlbums.filter(
+      (album) => album.isDeleteAble !== true && audioCategoryKeyForAlbum(album.name) !== null,
+    );
 
     const albumMedia: Record<AudioCategoryKey, MediaDto[]> = {
       music: [],
       sfx: [],
       voiceovers: [],
     };
-    const albumEntries = await Promise.all(
-      audioAlbums.map(async (album) => {
-        const am = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);
+    const categoryEntries = await Promise.all(
+      systemCategoryAlbums.map(async (album) => {
+        const am = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog, { includeSystem: true });
         const items = am.items.filter((item) => item.kind === MediaKind.Audio);
         const category = audioCategoryKeyForAlbum(album.name);
         return { album, category, items };
       }),
     );
+    const albumMediaEntries = await Promise.all(
+      audioAlbums.map(async (album) => {
+        const am = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);
+        return [album.id, am.items.filter((item) => item.kind === MediaKind.Audio).length] as const;
+      }),
+    );
     const albumMediaCounts: Record<string, number> = {};
-    for (const entry of albumEntries) {
-      albumMediaCounts[entry.album.id] = entry.items.length;
+    for (const [albumId, count] of albumMediaEntries) {
+      albumMediaCounts[albumId] = count;
+    }
+    for (const entry of categoryEntries) {
       if (entry.category) {
         albumMedia[entry.category].push(...entry.items);
       }
@@ -136,7 +189,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!accessToken) return { error: "Not signed in" };
 
   const formData = await request.formData();
-  const intent = formData.get("intent");
+  const intent = String(formData.get("intent") ?? "");
   const reqLog = createRequestLogger(request).child({ component: "AudioAction" });
 
   try {
@@ -145,6 +198,58 @@ export async function action({ request }: ActionFunctionArgs) {
       if (id) {
         await softDelete(accessToken, "media", id, reqLog);
       }
+      return { ok: true, intent };
+    }
+
+    if (intent === "toggle-favorite") {
+      const id = String(formData.get("id") ?? "");
+      const isFavorite = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await setMediaFavorite(accessToken, id, isFavorite, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "toggle-album-favorite") {
+      const id = String(formData.get("id") ?? "");
+      const isFavorite = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await albumsApi.setFavorite(accessToken, id, isFavorite, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "assign-audio-category") {
+      const mediaId = String(formData.get("mediaId") ?? "");
+      const category = String(formData.get("category") ?? "");
+
+      if (!mediaId) {
+        return { error: "Missing uploaded audio file." };
+      }
+      if (!isAudioCategoryKey(category)) {
+        return { error: "Choose an audio type." };
+      }
+
+      await albumsApi.assignAudioCategory(accessToken, category, [mediaId], reqLog);
+      return { ok: true, intent };
+    }
+
+    if (intent === "create-album") {
+      const name = String(formData.get("name") ?? "").trim();
+      const description = String(formData.get("description") ?? "").trim();
+      const materialSymbol = String(formData.get("materialSymbol") ?? "album").trim();
+
+      if (!name) {
+        return { error: "Enter a name for the album." };
+      }
+
+      await albumsApi.createAlbum(accessToken, PERSONAL, {
+        name,
+        description,
+        kind: AlbumKind.Audio,
+        materialSymbol,
+      }, reqLog);
+
       return { ok: true, intent };
     }
 
@@ -366,97 +471,184 @@ function WaveformVisualizer({
   );
 }
 
-function AudioCardGrid({
+function AudioTable({
   tracks,
-  emptyIcon,
-  emptyTitle,
-  emptyHint,
-  albumIcon,
   pipelinesById,
-  onPreview,
   onPlay,
+  currentPage,
+  onPageChange,
+  emptyMessage,
 }: {
   tracks: MediaDto[];
-  emptyIcon: string;
-  emptyTitle: string;
-  emptyHint: string;
-  albumIcon: string;
   pipelinesById?: Record<string, MediaPipeline | null | undefined>;
-  onPreview: (track: MediaDto) => void;
   onPlay: (track: MediaDto) => void;
+  currentPage: number;
+  onPageChange: (page: number) => void;
+  emptyMessage: string;
 }) {
-  if (tracks.length === 0) {
-    return (
-      <EmptyState icon={emptyIcon} title={emptyTitle} hint={emptyHint} />
-    );
-  }
+  const pageCount = Math.max(1, Math.ceil(tracks.length / AUDIO_PAGE_SIZE));
+  const safePage = Math.min(Math.max(currentPage, 1), pageCount);
+  const pageStartIndex = (safePage - 1) * AUDIO_PAGE_SIZE;
+  const pagedTracks = tracks.slice(pageStartIndex, pageStartIndex + AUDIO_PAGE_SIZE);
+  const showingStart = tracks.length === 0 ? 0 : pageStartIndex + 1;
+  const showingEnd = Math.min(pageStartIndex + AUDIO_PAGE_SIZE, tracks.length);
+  const pageItems = paginationPages(safePage, pageCount);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {tracks.map((track, i) => (
-        <div
-          key={track.id}
-          onClick={() => onPreview(track)}
-          className="bento-card group cursor-pointer overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low"
-        >
-          {/* Cover placeholder */}
-          <div className="relative aspect-[2/1]">
-            <MediaThumbnail media={track} index={i} icon={albumIcon} />
-            {/* Duration badge */}
-            <span className="absolute bottom-2 right-2 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 font-mono text-label-sm font-bold text-on-surface backdrop-blur-md">
-              {formatTrackDuration(track.durationSeconds)}
-            </span>
-            <div className="absolute left-2 top-2 max-w-[calc(100%-1rem)]">
-              <MediaPipelineStatus
-                media={track}
-                pipeline={pipelinesById?.[track.id]}
-                compact
-              />
-            </div>
-            {/* Play overlay */}
-            <div className="absolute inset-0 flex items-center justify-center bg-surface/40 opacity-0 transition-opacity group-hover:opacity-100">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onPlay(track);
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg"
-                aria-label={`Preview ${track.filename}`}
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  play_arrow
-                </span>
-              </button>
-            </div>
-          </div>
-          {/* Info */}
-          <div className="p-4">
-            <div className="mb-2 flex items-start justify-between">
-              <h4 className="truncate text-body-sm font-bold text-on-surface">
-                {track.filename}
-              </h4>
-              <CardOverflowMenu id={track.id} itemLabel={track.filename} />
-            </div>
-            <p className="mb-3 text-label-md text-on-surface-variant">
-              {track.codec || "Audio"}
-            </p>
-            <div className="mb-3">
-              <MediaPipelineStatus
-                media={track}
-                pipeline={pipelinesById?.[track.id]}
-                showDetail={false}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <FormatBadge format={track.codec ? track.codec.toUpperCase() : "MP3"} />
-              <span className="text-label-sm text-on-surface-variant">
+    <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
+      <table className="w-full text-left text-body-sm">
+        <thead>
+          <tr className="border-b border-outline-variant bg-surface-container">
+            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
+              Name
+            </th>
+            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
+              Type
+            </th>
+            <th className="px-4 py-3 text-center text-label-md font-medium text-on-surface-variant">
+              Duration
+            </th>
+            <th className="px-4 py-3 text-center text-label-md font-medium text-on-surface-variant">
+              Size
+            </th>
+            <th className="hidden px-4 py-3 text-label-md font-medium text-on-surface-variant lg:table-cell">
+              Date Added
+            </th>
+            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
+              Status
+            </th>
+            <th className="px-4 py-3 text-right text-label-md font-medium text-on-surface-variant">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-outline-variant/50">
+          {tracks.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-8 text-center text-on-surface-variant">
+                {emptyMessage}
+              </td>
+            </tr>
+          ) : pagedTracks.map((track) => (
+            <tr
+              key={track.id}
+              className="group transition-colors hover:bg-surface-container"
+            >
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <span className="material-symbols-outlined text-[20px]">
+                      audio_file
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-on-surface">
+                      {track.filename}
+                    </p>
+                    <p className="text-label-sm text-on-surface-variant">
+                      Audio
+                    </p>
+                  </div>
+                  <MiniWaveform />
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <FormatBadge format={track.codec ? track.codec.toUpperCase() : "MP3"} />
+              </td>
+              <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
+                {formatTrackDuration(track.durationSeconds)}
+              </td>
+              <td className="px-4 py-3 text-center text-on-surface-variant">
                 {formatTrackSize(track.sizeBytes)}
+              </td>
+              <td className="hidden px-4 py-3 text-on-surface-variant lg:table-cell">
+                {new Date(track.createdAt).toLocaleDateString()}
+              </td>
+              <td className="px-4 py-3">
+                <MediaPipelineStatus
+                  media={track}
+                  pipeline={pipelinesById?.[track.id]}
+                  compact
+                />
+              </td>
+              <td className="px-4 py-3 text-right">
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onPlay(track)}
+                    className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+                    aria-label={`Preview ${track.filename}`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      play_circle
+                    </span>
+                  </button>
+                  <IconToggleButton
+                    id={track.id}
+                    active={track.isFavorite}
+                    intent="toggle-favorite"
+                    activeIcon="favorite"
+                    inactiveIcon="favorite_border"
+                    activeClassName="text-error"
+                    label={`${track.isFavorite ? "Remove from" : "Add to"} favorites`}
+                  />
+                  <CardOverflowMenu id={track.id} itemLabel={track.filename} />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="flex items-center justify-between border-t border-outline-variant px-4 py-3">
+        <p className="text-label-sm text-on-surface-variant">
+          Showing {showingStart} to {showingEnd} of {tracks.length} results
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={safePage <= 1}
+            onClick={() => onPageChange(safePage - 1)}
+            className="rounded p-1 text-on-surface-variant transition-colors hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Previous page"
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              chevron_left
+            </span>
+          </button>
+          {pageItems.map((item, index) =>
+            item === "ellipsis" ? (
+              <span key={`ellipsis-${index}`} className="px-1 text-label-sm text-on-surface-variant">
+                ...
               </span>
-            </div>
-          </div>
+            ) : (
+              <button
+                key={item}
+                type="button"
+                onClick={() => onPageChange(item)}
+                className={
+                  item === safePage
+                    ? "flex h-7 w-7 items-center justify-center rounded bg-primary text-label-sm font-bold text-on-primary"
+                    : "flex h-7 w-7 items-center justify-center rounded text-label-sm text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                }
+              >
+                {item}
+              </button>
+            ),
+          )}
+          <button
+            type="button"
+            disabled={safePage >= pageCount}
+            onClick={() => onPageChange(safePage + 1)}
+            className="rounded p-1 text-on-surface-variant transition-colors hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Next page"
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              chevron_right
+            </span>
+          </button>
         </div>
-      ))}
+      </div>
     </div>
   );
 }
@@ -467,9 +659,13 @@ export default function Audio() {
   const [searchParams, setSearchParams] = useSearchParams();
   const view = searchParams.get("view");
   const loaderData = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const revalidator = useRevalidator();
 
   const [sort, setSort] = useState<"latest" | "duration" | "size">("latest");
   const [importOpen, setImportOpen] = useState(false);
+  const [albumModalOpen, setAlbumModalOpen] = useState(false);
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const pendingSeekRef = useRef<PendingAudioSeek | null>(null);
@@ -492,6 +688,7 @@ export default function Audio() {
   // Scroll to the section matching the `?view` param
   useEffect(() => {
     const refMap: Record<string, React.RefObject<HTMLElement | null>> = {
+      all: sectionAllRef,
       albums: sectionAlbumsRef,
       music: sectionMusicRef,
       sfx: sectionSfxRef,
@@ -503,6 +700,12 @@ export default function Audio() {
     }
   }, [view]);
 
+  useEffect(() => {
+    if (actionData?.ok && actionData.intent === "create-album") {
+      setAlbumModalOpen(false);
+    }
+  }, [actionData]);
+
   const allTracks = useMemo(() => {
     return [...live.media].sort((a, b) => {
       if (sort === "duration") return Number(b.durationSeconds || 0) - Number(a.durationSeconds || 0);
@@ -510,17 +713,6 @@ export default function Audio() {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [live.media, sort]);
-  const pageCount = Math.max(1, Math.ceil(allTracks.length / AUDIO_PAGE_SIZE));
-  const currentPage = clampPage(searchParams.get("page"), pageCount);
-  const pageStartIndex = (currentPage - 1) * AUDIO_PAGE_SIZE;
-  const pagedTracks = allTracks.slice(pageStartIndex, pageStartIndex + AUDIO_PAGE_SIZE);
-  const showingStart = allTracks.length === 0 ? 0 : pageStartIndex + 1;
-  const showingEnd = Math.min(pageStartIndex + AUDIO_PAGE_SIZE, allTracks.length);
-  const pageItems = paginationPages(currentPage, pageCount);
-  const latestTracksById = useMemo(
-    () => new Map(allTracks.map((track) => [track.id, track])),
-    [allTracks],
-  );
   const pipelinesById = useMemo(
     () =>
       Object.fromEntries(
@@ -528,45 +720,70 @@ export default function Audio() {
       ) as Record<string, MediaPipeline | null>,
     [live.updatesById],
   );
-  useEffect(() => {
-    const pageParam = searchParams.get("page");
-    if (pageParam && pageParam !== String(currentPage)) {
-      const next = new URLSearchParams(searchParams);
-      if (currentPage === 1) {
-        next.delete("page");
-      } else {
-        next.set("page", String(currentPage));
-      }
-      setSearchParams(next, { replace: true });
-    }
-  }, [currentPage, searchParams, setSearchParams]);
+  const pageFor = (param: string, tracks: MediaDto[]) =>
+    clampPage(searchParams.get(param), Math.max(1, Math.ceil(tracks.length / AUDIO_PAGE_SIZE)));
 
-  const setAudioPage = (page: number) => {
+  const setAudioPage = (param: string, page: number, tracks: MediaDto[]) => {
+    const pageCount = Math.max(1, Math.ceil(tracks.length / AUDIO_PAGE_SIZE));
     const targetPage = Math.min(Math.max(page, 1), pageCount);
     const next = new URLSearchParams(searchParams);
     if (targetPage === 1) {
-      next.delete("page");
+      next.delete(param);
     } else {
-      next.set("page", String(targetPage));
+      next.set(param, String(targetPage));
     }
     setSearchParams(next);
   };
 
-  const musicTracks = (loaderData?.albumMedia?.music || []).map(
-    (track) => latestTracksById.get(track.id) ?? track,
+  const musicTrackIds = useMemo(
+    () => new Set((loaderData?.albumMedia?.music || []).map((track) => track.id)),
+    [loaderData?.albumMedia?.music],
   );
-  const sfxTracks = (loaderData?.albumMedia?.sfx || []).map(
-    (track) => latestTracksById.get(track.id) ?? track,
+  const sfxTrackIds = useMemo(
+    () => new Set((loaderData?.albumMedia?.sfx || []).map((track) => track.id)),
+    [loaderData?.albumMedia?.sfx],
   );
-  const voiceoverTracks = (loaderData?.albumMedia?.voiceovers || []).map(
-    (track) => latestTracksById.get(track.id) ?? track,
+  const voiceoverTrackIds = useMemo(
+    () => new Set((loaderData?.albumMedia?.voiceovers || []).map((track) => track.id)),
+    [loaderData?.albumMedia?.voiceovers],
   );
+  const musicTracks = allTracks.filter((track) => musicTrackIds.has(track.id));
+  const sfxTracks = allTracks.filter((track) => sfxTrackIds.has(track.id));
+  const voiceoverTracks = allTracks.filter((track) => voiceoverTrackIds.has(track.id));
 
   const totalDuration = allTracks.reduce((acc, curr) => acc + Number(curr.durationSeconds || 0), 0);
   const durationHours = (totalDuration / 3600).toFixed(1);
   const storageUsed = allTracks.reduce((acc, curr) => acc + Number(curr.sizeBytes), 0);
   const storageUsedGb = (storageUsed / (1024 * 1024 * 1024)).toFixed(2);
   const albumCount = loaderData?.albums?.length || 0;
+
+  const handleUploadedAudio = async (
+    media: MediaDto,
+    context: { audioCategory?: string },
+  ) => {
+    live.mergeMedia(media);
+
+    if (!context.audioCategory) {
+      throw new Error("Choose an audio type.");
+    }
+
+    const formData = new FormData();
+    formData.append("intent", "assign-audio-category");
+    formData.append("mediaId", media.id);
+    formData.append("category", context.audioCategory);
+
+    const response = await fetch("", {
+      method: "POST",
+      body: formData,
+    });
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+
+    if (!response.ok || body?.error) {
+      throw new Error(body?.error || "Couldn't assign the audio type.");
+    }
+
+    revalidator.revalidate();
+  };
   
   const activeTrack = activeTrackId
     ? allTracks.find((track) => track.id === activeTrackId) ?? null
@@ -692,12 +909,6 @@ export default function Audio() {
     }
   };
 
-  const previewTrack = (track: MediaDto) => {
-    setPendingAutoplayTrackId(null);
-    clearPendingSeek();
-    setActiveTrackId(track.id);
-  };
-
   const playTrack = (track: MediaDto) => {
     setActiveTrackId(track.id);
     if (resolveMediaObjectSource(track, ["canonical"])) {
@@ -763,7 +974,12 @@ export default function Audio() {
           value={sort}
           onChange={(v) => {
             setSort(v as typeof sort);
-            setAudioPage(1);
+            const next = new URLSearchParams(searchParams);
+            next.delete("page");
+            next.delete("musicPage");
+            next.delete("sfxPage");
+            next.delete("voiceoversPage");
+            setSearchParams(next);
           }}
           options={[
             { label: "Latest Added", value: "latest" },
@@ -782,6 +998,7 @@ export default function Audio() {
       </PageHeader>
 
       {loaderData.error && <ErrorBanner message={loaderData.error} />}
+      {actionData?.error && <ErrorBanner message={actionData.error} />}
 
       {/* ── Stats Grid ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -813,20 +1030,20 @@ export default function Audio() {
       </div>
 
       {/* ── Quick Preview (Featured Player) ─────────────────────────────────── */}
-      <section className="overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-6">
+      <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-headline-md font-bold text-on-surface">
             Quick Preview
           </h2>
-          <button
-            type="button"
+          <Link
+            to="/dashboard/audio?view=all"
             className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
           >
             View All
             <span className="material-symbols-outlined text-[16px]">
               arrow_forward
             </span>
-          </button>
+          </Link>
         </div>
 
         <div className="space-y-5">
@@ -986,154 +1203,14 @@ export default function Audio() {
         style={{ scrollMarginTop: "6rem" }}
       >
         <SectionHeader title="All Audio" count={`${allTracks.length} files`} />
-
-        <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
-          <table className="w-full text-left text-body-sm">
-            <thead>
-              <tr className="border-b border-outline-variant bg-surface-container">
-                <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
-                  Name
-                </th>
-                <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
-                  Type
-                </th>
-                <th className="px-4 py-3 text-center text-label-md font-medium text-on-surface-variant">
-                  Duration
-                </th>
-                <th className="px-4 py-3 text-center text-label-md font-medium text-on-surface-variant">
-                  Size
-                </th>
-                <th className="hidden px-4 py-3 text-label-md font-medium text-on-surface-variant lg:table-cell">
-                  Date Added
-                </th>
-                <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-right text-label-md font-medium text-on-surface-variant">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/50">
-              {allTracks.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-on-surface-variant">
-                    No audio tracks available.
-                  </td>
-                </tr>
-              ) : pagedTracks.map((track) => (
-                <tr
-                  key={track.id}
-                  className="group transition-colors hover:bg-surface-container"
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-                      >
-                        <span className="material-symbols-outlined text-[20px]">
-                          audio_file
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-on-surface">
-                          {track.filename}
-                        </p>
-                        <p className="text-label-sm text-on-surface-variant">
-                          Audio
-                        </p>
-                      </div>
-                      <MiniWaveform />
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <FormatBadge format={track.codec ? track.codec.toUpperCase() : "MP3"} />
-                  </td>
-                  <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
-                    {formatTrackDuration(track.durationSeconds)}
-                  </td>
-                  <td className="px-4 py-3 text-center text-on-surface-variant">
-                    {formatTrackSize(track.sizeBytes)}
-                  </td>
-                  <td className="hidden px-4 py-3 text-on-surface-variant lg:table-cell">
-                    {new Date(track.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <MediaPipelineStatus
-                      media={track}
-                      pipeline={pipelinesById[track.id]}
-                      compact
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => playTrack(track)}
-                        className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-                        aria-label={`Preview ${track.filename}`}
-                      >
-                        <span className="material-symbols-outlined text-[18px]">
-                          play_circle
-                        </span>
-                      </button>
-                      <CardOverflowMenu id={track.id} itemLabel={track.filename} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between border-t border-outline-variant px-4 py-3">
-            <p className="text-label-sm text-on-surface-variant">
-              Showing {showingStart} to {showingEnd} of {allTracks.length} results
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={currentPage <= 1}
-                onClick={() => setAudioPage(currentPage - 1)}
-                className="rounded p-1 text-on-surface-variant transition-colors hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <span className="material-symbols-outlined text-[18px]">
-                  chevron_left
-                </span>
-              </button>
-              {pageItems.map((item, index) =>
-                item === "ellipsis" ? (
-                  <span key={`ellipsis-${index}`} className="px-1 text-label-sm text-on-surface-variant">
-                    ...
-                  </span>
-                ) : (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setAudioPage(item)}
-                    className={
-                      item === currentPage
-                        ? "flex h-7 w-7 items-center justify-center rounded bg-primary text-label-sm font-bold text-on-primary"
-                        : "flex h-7 w-7 items-center justify-center rounded text-label-sm text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                    }
-                  >
-                    {item}
-                  </button>
-                ),
-              )}
-              <button
-                type="button"
-                disabled={currentPage >= pageCount}
-                onClick={() => setAudioPage(currentPage + 1)}
-                className="rounded p-1 text-on-surface-variant transition-colors hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <span className="material-symbols-outlined text-[18px]">
-                  chevron_right
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <AudioTable
+          tracks={allTracks}
+          pipelinesById={pipelinesById}
+          onPlay={playTrack}
+          currentPage={pageFor("page", allTracks)}
+          onPageChange={(page) => setAudioPage("page", page, allTracks)}
+          emptyMessage="No audio tracks available."
+        />
       </section>
 
       <section
@@ -1141,15 +1218,22 @@ export default function Audio() {
         ref={sectionAlbumsRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <SectionHeader title="Albums" count={albumCount} />
+        <SectionHeader
+          title="Albums"
+          count={albumCount}
+          actionTo="/dashboard/albums?view=audio"
+        />
         <AlbumGrid
           albums={loaderData?.albums || []}
           counts={loaderData?.albumMediaCounts || {}}
           mediaLabel="track"
           icon="album"
           emptyTitle="No audio albums yet"
-          emptyHint="Create audio albums from the Albums page to organize tracks."
+          emptyHint="Create an album to start organizing your audio tracks."
           columns="wide"
+          onCreate={() => setAlbumModalOpen(true)}
+          limit={5}
+          getAlbumTo={(album) => `/dashboard/albums/${album.id}`}
         />
       </section>
 
@@ -1159,16 +1243,14 @@ export default function Audio() {
         ref={sectionMusicRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <SectionHeader title="Music" count={musicTracks.length} actionOnClick={() => {}} />
-        <AudioCardGrid
+        <SectionHeader title="Music" count={musicTracks.length} />
+        <AudioTable
           tracks={musicTracks}
-          emptyIcon="music_note"
-          emptyTitle="No music tracks"
-          emptyHint="Import music files to build your collection."
-          albumIcon="music_note"
           pipelinesById={pipelinesById}
-          onPreview={previewTrack}
           onPlay={playTrack}
+          currentPage={pageFor("musicPage", musicTracks)}
+          onPageChange={(page) => setAudioPage("musicPage", page, musicTracks)}
+          emptyMessage="No music tracks available."
         />
       </section>
 
@@ -1178,16 +1260,14 @@ export default function Audio() {
         ref={sectionSfxRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <SectionHeader title="Sound Effects" count={sfxTracks.length} actionOnClick={() => {}} />
-        <AudioCardGrid
+        <SectionHeader title="Sound Effects" count={sfxTracks.length} />
+        <AudioTable
           tracks={sfxTracks}
-          emptyIcon="graphic_eq"
-          emptyTitle="No sound effects"
-          emptyHint="Add sound effects to your library."
-          albumIcon="graphic_eq"
           pipelinesById={pipelinesById}
-          onPreview={previewTrack}
           onPlay={playTrack}
+          currentPage={pageFor("sfxPage", sfxTracks)}
+          onPageChange={(page) => setAudioPage("sfxPage", page, sfxTracks)}
+          emptyMessage="No sound effects available."
         />
       </section>
 
@@ -1197,16 +1277,14 @@ export default function Audio() {
         ref={sectionVoiceoversRef}
         style={{ scrollMarginTop: "6rem" }}
       >
-        <SectionHeader title="Voiceovers" count={voiceoverTracks.length} actionOnClick={() => {}} />
-        <AudioCardGrid
+        <SectionHeader title="Voiceovers" count={voiceoverTracks.length} />
+        <AudioTable
           tracks={voiceoverTracks}
-          emptyIcon="mic"
-          emptyTitle="No voiceovers"
-          emptyHint="Record or import voiceovers to get started."
-          albumIcon="mic"
           pipelinesById={pipelinesById}
-          onPreview={previewTrack}
           onPlay={playTrack}
+          currentPage={pageFor("voiceoversPage", voiceoverTracks)}
+          onPageChange={(page) => setAudioPage("voiceoversPage", page, voiceoverTracks)}
+          emptyMessage="No voiceovers available."
         />
       </section>
 
@@ -1216,8 +1294,39 @@ export default function Audio() {
         onClose={() => setImportOpen(false)}
         title="Import audio"
         fixedKind={MediaKind.Audio}
-        onUploaded={live.mergeMedia}
+        audioCategoryOptions={AUDIO_CATEGORY_OPTIONS}
+        onUploaded={handleUploadedAudio}
       />
+      <Modal open={albumModalOpen} onClose={() => setAlbumModalOpen(false)} title="Create Audio Album">
+        <Form method="post" className="space-y-4">
+          <input type="hidden" name="intent" value="create-album" />
+
+          <TextField
+            name="name"
+            label="Album Name"
+            placeholder="Podcast edits"
+            required
+          />
+
+          <TextArea
+            name="description"
+            label="Description (Optional)"
+            placeholder="Audio tracks and mixes for this collection"
+            rows={3}
+          />
+
+          <IconPicker
+            name="materialSymbol"
+            label="Album Icon"
+          />
+
+          <FormActions
+            onCancel={() => setAlbumModalOpen(false)}
+            submitLabel={navigation.state === "submitting" ? "Creating..." : "Create Album"}
+            isSubmitting={navigation.state === "submitting"}
+          />
+        </Form>
+      </Modal>
     </section>
   );
 }

@@ -24,6 +24,15 @@ export class ProjectsApi extends BaseApiModule {
   listProjectTrash(token: string, ws: Workspace, log?: RequestLogger): Promise<PagedResult<ProjectTrashItem>> {
     return this.list<ProjectTrashItem>(token, `${API_ROUTES.PROJECTS}/trash`, ws, log);
   }
+
+  setStar(token: string, id: string, isStarred: boolean, log?: RequestLogger): Promise<ProjectDto> {
+    return this.put<{ isStarred: boolean }, ProjectDto>(
+      token,
+      `${API_ROUTES.PROJECTS}/${id}/star`,
+      { isStarred },
+      log,
+    );
+  }
 }
 
 export const projectsApi = new ProjectsApi(apiClient);
@@ -33,3 +42,4 @@ export const listProjects = (t: string, w: Workspace, l?: RequestLogger) => proj
 export const createProject = (t: string, w: Workspace, i: { kind: number; name: string; description?: string | null }, l?: RequestLogger) => projectsApi.createProject(t, w, i, l);
 export const listSharedProjects = (t: string, l?: RequestLogger) => projectsApi.listSharedProjects(t, l);
 export const listProjectTrash = (t: string, w: Workspace, l?: RequestLogger) => projectsApi.listProjectTrash(t, w, l);
+export const setProjectStar = (t: string, id: string, v: boolean, l?: RequestLogger) => projectsApi.setStar(t, id, v, l);

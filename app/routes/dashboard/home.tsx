@@ -7,6 +7,7 @@ import {
   QuickActionCard,
   StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
+import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 import { ErrorBanner } from "~/components/dashboard/section";
 import { PERSONAL, ProjectKind, projectKindLabel, type ProjectDto } from "~/lib/api";
 import {
@@ -17,6 +18,7 @@ import {
   listProjectTrash,
   listSharedMedia,
   listSharedProjects,
+  setProjectStar,
   softDelete,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
@@ -59,11 +61,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     ]);
 
   const recent = projects.status === "fulfilled" ? projects.value.items.slice(0, 6) : [];
-  const anyFailed = [projects, media, sharedProjects, sharedMedia, projectTrash, mediaTrash].some(
+  const coreFailed = [projects, media].some(
     (result) => result.status === "rejected",
   );
-  if (anyFailed) {
-    reqLog.warn("some dashboard data failed to load");
+
+  const optionalResults = [
+    ["sharedProjects", sharedProjects],
+    ["sharedMedia", sharedMedia],
+    ["projectTrash", projectTrash],
+    ["mediaTrash", mediaTrash],
+  ] as const;
+  const failedOptional = optionalResults.filter(([, result]) => result.status === "rejected");
+  if (coreFailed || failedOptional.length > 0) {
+    reqLog.warn(
+      {
+        failedOptional: failedOptional.map(([name]) => name),
+        coreFailed,
+      },
+      "some dashboard home data failed to load",
+    );
   }
 
   return {
@@ -75,7 +91,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       trash: count(projectTrash) + count(mediaTrash),
     },
     recent,
-    error: anyFailed ? "Some dashboard data couldn't be loaded." : null,
+    error: coreFailed ? "Some dashboard data couldn't be loaded." : null,
   };
 }
 
@@ -97,6 +113,15 @@ export async function action({ request }: Route.ActionArgs) {
       const id = String(formData.get("id") ?? "");
       if (id) {
         await softDelete(accessToken, "projects", id, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "toggle-star") {
+      const id = String(formData.get("id") ?? "");
+      const isStarred = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await setProjectStar(accessToken, id, isStarred, reqLog);
       }
       return { ok: true, intent };
     }
@@ -214,6 +239,17 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
           </div>
         </div>
       </Link>
+      <div className="absolute bottom-3 right-3">
+        <IconToggleButton
+          id={project.id}
+          active={project.isStarred}
+          intent="toggle-star"
+          activeIcon="star"
+          inactiveIcon="star_border"
+          activeClassName="text-yellow-500"
+          label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
+        />
+      </div>
 
       <div className="p-4">
         <div className="mb-4 flex items-start justify-between gap-3">
@@ -227,7 +263,7 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
           </Link>
           <CardOverflowMenu id={project.id} itemLabel={project.name} />
         </div>
-        <div className="flex items-center gap-2 text-label-sm text-on-surface-variant">
+        <div className="flex items-center gap-2 pr-10 text-label-sm text-on-surface-variant">
           <span className="material-symbols-outlined text-[14px]">
             {project.kind === ProjectKind.Image ? "image" : "movie"}
           </span>

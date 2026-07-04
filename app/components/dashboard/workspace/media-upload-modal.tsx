@@ -20,6 +20,7 @@ export function MediaUploadModal({
   fixedKind,
   studioId,
   title = "Import media",
+  audioCategoryOptions,
   onUploaded,
 }: {
   open: boolean;
@@ -27,9 +28,15 @@ export function MediaUploadModal({
   fixedKind?: number;
   studioId?: string | null;
   title?: string;
-  onUploaded: (media: MediaDto) => void;
+  audioCategoryOptions?: Array<{
+    value: string;
+    label: string;
+    description?: string;
+  }>;
+  onUploaded: (media: MediaDto, context: { audioCategory?: string }) => void | Promise<void>;
 }) {
   const [kind, setKind] = useState(fixedKind ?? MediaKind.Video);
+  const [audioCategory, setAudioCategory] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [filename, setFilename] = useState("");
   const [progress, setProgress] = useState(0);
@@ -45,11 +52,18 @@ export function MediaUploadModal({
       setSubmitting(false);
       setError(null);
       setKind(fixedKind ?? MediaKind.Video);
+      setAudioCategory("");
     }
   }, [fixedKind, open]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const requiresAudioCategory = kind === MediaKind.Audio && Boolean(audioCategoryOptions?.length);
+    if (requiresAudioCategory && !audioCategory) {
+      setError("Choose an audio type.");
+      return;
+    }
+
     if (!file) {
       setError("Choose a file to import.");
       return;
@@ -67,7 +81,7 @@ export function MediaUploadModal({
         studioId,
         onProgress: setProgress,
       });
-      onUploaded(uploaded);
+      await onUploaded(uploaded, { audioCategory: audioCategory || undefined });
       onClose();
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
@@ -100,6 +114,30 @@ export function MediaUploadModal({
               <option value={MediaKind.Video}>{mediaKindLabel(MediaKind.Video)}</option>
               <option value={MediaKind.Image}>{mediaKindLabel(MediaKind.Image)}</option>
               <option value={MediaKind.Audio}>{mediaKindLabel(MediaKind.Audio)}</option>
+            </select>
+          </div>
+        ) : null}
+
+        {kind === MediaKind.Audio && audioCategoryOptions?.length ? (
+          <div>
+            <label htmlFor="audio-category" className="block text-label-md text-on-surface-variant">
+              Audio type
+            </label>
+            <select
+              id="audio-category"
+              value={audioCategory}
+              onChange={(event) => setAudioCategory(event.currentTarget.value)}
+              disabled={submitting}
+              required
+              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+            >
+              <option value="">Choose audio type</option>
+              {audioCategoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                  {option.description ? ` - ${option.description}` : ""}
+                </option>
+              ))}
             </select>
           </div>
         ) : null}

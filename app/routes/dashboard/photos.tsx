@@ -21,8 +21,9 @@ import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail
 import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
+import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
-import { ApiError, listMedia, softDelete, albumsApi } from "~/lib/api.server";
+import { ApiError, listMedia, setMediaFavorite, softDelete, albumsApi } from "~/lib/api.server";
 import { useLiveMedia } from "~/lib/media-realtime";
 import type { MediaPipeline } from "~/lib/media-pipeline";
 import { TextField, TextArea } from "~/components/dashboard/shared/form";
@@ -56,7 +57,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   try {
     const page = await listMedia(accessToken, PERSONAL, reqLog);
     const albums = (await albumsApi.listAlbums(accessToken, reqLog)).filter(
-      (album) => album.kind === AlbumKind.Photo && album.isDeleteAble,
+      (album) => album.kind === AlbumKind.Photo && album.isDeleteAble === true,
     );
     const albumMediaCounts = Object.fromEntries(
       await Promise.all(
@@ -92,6 +93,24 @@ export async function action({ request }: Route.ActionArgs) {
       const id = String(formData.get("id") ?? "");
       if (id) {
         await softDelete(accessToken, "media", id, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "toggle-favorite") {
+      const id = String(formData.get("id") ?? "");
+      const isFavorite = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await setMediaFavorite(accessToken, id, isFavorite, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "toggle-album-favorite") {
+      const id = String(formData.get("id") ?? "");
+      const isFavorite = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await albumsApi.setFavorite(accessToken, id, isFavorite, reqLog);
       }
       return { ok: true, intent };
     }
@@ -184,13 +203,22 @@ function PhotoCard({
           </h3>
           <p className="mt-1 text-label-md text-on-surface-variant">{photoLabel(photo)}</p>
           <div className="mt-2">
-            <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
-          </div>
-        </div>
+        <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
+      </div>
+    </div>
+        <IconToggleButton
+          id={photo.id}
+          active={photo.isFavorite}
+          intent="toggle-favorite"
+          activeIcon="favorite"
+          inactiveIcon="favorite_border"
+          activeClassName="text-error"
+          label={`${photo.isFavorite ? "Remove from" : "Add to"} favorites`}
+        />
         <span className="hidden text-label-sm text-on-surface-variant sm:block">
           {formatDate(photo.createdAt)}
         </span>
-        <CardOverflowMenu id={photo.id} itemLabel={photo.filename} />
+        <CardOverflowMenu id={photo.id} itemLabel={photo.filename} placement="top" />
       </div>
     );
   }
@@ -215,14 +243,26 @@ function PhotoCard({
         <div className="absolute left-3 top-3 max-w-[calc(100%-5rem)]">
           <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
         </div>
-        <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
-          <CardOverflowMenu
-            id={photo.id}
-            itemLabel={photo.filename}
-            buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
-          />
+        <div className="absolute bottom-3 right-3 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="flex items-center gap-1">
+            <IconToggleButton
+              id={photo.id}
+              active={photo.isFavorite}
+              intent="toggle-favorite"
+              activeIcon="favorite"
+              inactiveIcon="favorite_border"
+              activeClassName="text-error"
+              label={`${photo.isFavorite ? "Remove from" : "Add to"} favorites`}
+            />
+            <CardOverflowMenu
+              id={photo.id}
+              itemLabel={photo.filename}
+              placement="top"
+              buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
+            />
+          </div>
         </div>
-        <div className="absolute bottom-3 left-3 right-3 translate-y-2 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100">
+        <div className="absolute bottom-3 left-3 right-24 translate-y-2 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100">
           <h3 className="truncate text-label-md font-bold text-white" title={photo.filename}>
             {photo.filename}
           </h3>
@@ -279,6 +319,8 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
   const storageGb = storageBytes / (1024 * 1024 * 1024);
   const photosWithDimensions = photos.filter((photo) => photo.width && photo.height).length;
   const photosAddedThisMonth = countAddedThisMonth(photos);
+  const favoritePhotos = photos.filter((photo) => photo.isFavorite);
+  const showAllRecent = pageView === "recent";
   const previewPhoto = previewPhotoId
     ? photos.find((photo) => photo.id === previewPhotoId) ?? null
     : null;
@@ -307,7 +349,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard icon="image" label="Total Photos" value={photos.length} detail={`${photosAddedThisMonth} added this month`} />
-        <MetricCard icon="favorite" label="Favorites" value="0" detail="Coming soon" tone="tertiary" />
+        <MetricCard icon="favorite" label="Favorites" value={favoritePhotos.length} tone="tertiary" />
         <MetricCard icon="folder" label="Albums" value={loaderData.albums.length} tone="secondary" />
         <MetricCard
           icon="cloud"
@@ -325,7 +367,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       </div>
 
       <section>
-        <SectionHeader title="Recent Photos" actionOnClick={() => {}} />
+        <SectionHeader title="Recent Photos" actionTo="/dashboard/photos?view=recent" />
 
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -356,7 +398,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
                 : "space-y-3"
             }
           >
-            {photos.slice(0, layoutMode === "grid" ? 12 : 10).map((photo, index) => (
+            {(showAllRecent ? photos : photos.slice(0, 4)).map((photo, index) => (
               <PhotoCard
                 key={photo.id}
                 photo={photo}
@@ -371,7 +413,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       </section>
 
       <section ref={albumsRef} style={{ scrollMarginTop: "6rem" }}>
-        <SectionHeader title="Albums" actionOnClick={() => {}} />
+        <SectionHeader title="Albums" actionTo="/dashboard/albums?view=photo" />
         {isLoading ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {Array.from({ length: 6 }).map((_, index) => (
@@ -402,17 +444,40 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
             emptyTitle="No albums yet"
             emptyHint="Create an album to start organizing your photos."
             onCreate={() => setAlbumModalOpen(true)}
+            limit={5}
+            getAlbumTo={(album) => `/dashboard/albums/${album.id}`}
           />
         )}
       </section>
 
       <section ref={favoritesRef} style={{ scrollMarginTop: "6rem" }}>
         <SectionHeader title="Favorites" />
-        <EmptyState
-          icon="favorite_border"
-          title="No favorite photos yet"
-          hint="Mark photos as favorites to find them quickly here."
-        />
+        {favoritePhotos.length === 0 ? (
+          <EmptyState
+            icon="favorite_border"
+            title="No favorite photos yet"
+            hint="Mark photos as favorites to find them quickly here."
+          />
+        ) : (
+          <div
+            className={
+              layoutMode === "grid"
+                ? "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+                : "space-y-3"
+            }
+          >
+            {favoritePhotos.map((photo, index) => (
+              <PhotoCard
+                key={photo.id}
+                photo={photo}
+                index={index}
+                listView={layoutMode === "list"}
+                pipeline={live.updatesById[photo.id]?.pipeline}
+                onPreview={(nextPhoto) => setPreviewPhotoId(nextPhoto.id)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <MediaUploadModal

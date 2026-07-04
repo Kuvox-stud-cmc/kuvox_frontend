@@ -37,7 +37,6 @@ const MAIN_NAV: NavItemConfig[] = [
     children: [
       { to: "/dashboard/videos", label: "All Videos" },
       { to: "/dashboard/videos?view=projects", label: "Recent Projects" },
-      { to: "/dashboard/videos?view=archived", label: "Archived" },
     ],
   },
   {

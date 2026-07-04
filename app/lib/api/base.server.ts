@@ -22,6 +22,10 @@ export abstract class BaseApiModule {
     return this.client.postVoid(path, body, { auth: bearerAuth(token), log });
   }
 
+  protected put<TIn, TOut>(token: string, path: string, body: TIn, log?: RequestLogger): Promise<TOut> {
+    return this.client.put<TOut>(path, body, { auth: bearerAuth(token), log });
+  }
+
   protected patch<TIn, TOut>(token: string, path: string, body: TIn, log?: RequestLogger): Promise<TOut> {
     return this.client.patch<TOut>(path, body, { auth: bearerAuth(token), log });
   }

@@ -87,6 +87,7 @@ export default [
       route("videos", `${routesFolder.DASHBOARD}/videos.tsx`),
       route("audio", `${routesFolder.DASHBOARD}/audio.tsx`),
       route("albums", `${routesFolder.DASHBOARD}/albums.tsx`),
+      route("albums/:albumId", `${routesFolder.DASHBOARD}/album-detail.tsx`),
       route("templates", `${routesFolder.DASHBOARD}/templates.tsx`),
       route("ai-tools", `${routesFolder.DASHBOARD}/ai-tools.tsx`),
       route("projects", `${routesFolder.DASHBOARD}/projects.tsx`),
