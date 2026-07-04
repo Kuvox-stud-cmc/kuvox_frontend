@@ -353,9 +353,9 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
         <MetricCard icon="folder" label="Albums" value={loaderData.albums.length} tone="secondary" />
         <MetricCard
           icon="cloud"
-          label="Storage Used"
+          label="Loaded Photo Storage"
           value={`${storageGb.toFixed(storageGb >= 10 ? 0 : 1)} GB`}
-          detail="Personal library"
+          detail="Current page summary"
         />
         <MetricCard
           icon="auto_fix_high"

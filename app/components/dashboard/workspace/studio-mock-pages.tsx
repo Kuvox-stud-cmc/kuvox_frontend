@@ -183,8 +183,8 @@ const settingRows = {
     ["Weekly studio digest", "Enabled"],
   ],
   storage: [
-    ["Storage used", "128 GB of 1 TB"],
-    ["Largest media bucket", "Videos"],
+    ["Studio storage quota", "500 GB pooled"],
+    ["Storage add-ons", "$5 per 100 GB/month"],
     ["Retention policy", "Trash purges after 7 days"],
   ],
 };
@@ -292,17 +292,17 @@ export function StudioUsagePage() {
       subtitle="Mock usage overview for the Studio plan. Project and media counts are API-backed on the Home page."
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <MetricCard icon="storage" label="Storage" value="128 GB" detail="1 TB quota" />
+        <MetricCard icon="storage" label="Storage quota" value="500 GB" detail="Pooled workspace" />
         <MetricCard icon="movie" label="Render minutes" value="420" detail="2,000 quota" tone="secondary" />
         <MetricCard icon="group" label="Seats" value="6" detail="10 quota" tone="tertiary" />
       </div>
       <div className="rounded-2xl border border-outline-variant bg-surface-container-low p-6">
         <div className="mb-2 flex items-center justify-between text-label-md text-on-surface-variant">
-          <span>Storage used</span>
-          <span>12.8%</span>
+          <span>Storage usage</span>
+          <span>Shown in Studio storage settings</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-surface-container-high">
-          <div className="h-full w-[12.8%] rounded-full bg-primary" />
+          <div className="h-full w-0 rounded-full bg-primary" />
         </div>
       </div>
     </StudioPageShell>

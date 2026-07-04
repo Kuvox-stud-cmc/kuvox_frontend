@@ -588,7 +588,7 @@ export default function ProjectsDashboard({
                         </div>
                     </div>
                     <p className="mb-1 truncate text-[14px] font-medium uppercase tracking-wider text-on-surface-variant">
-                        Storage Used
+                        Loaded Media Storage
                     </p>
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <span className="text-headline-md font-bold leading-none text-on-surface">

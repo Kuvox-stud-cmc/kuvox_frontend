@@ -1,5 +1,5 @@
 import { API_ROUTES } from "~/const/api-routes";
-import { workspaceQuery, type Workspace, type MediaDto, type MediaTrashItem, type PagedResult } from "../api";
+import { workspaceQuery, type Workspace, type MediaDto, type MediaStorageUsageDto, type MediaTrashItem, type PagedResult } from "../api";
 import { BaseApiModule } from "./base.server";
 import type { RequestLogger } from "../logger.server";
 import { apiClient } from "./api-client.server";
@@ -39,6 +39,10 @@ export class MediaApi extends BaseApiModule {
     return this.get<PagedResult<MediaDto>>(token, `${API_ROUTES.MEDIA}/shared?pageSize=100`, log);
   }
 
+  getStorageUsage(token: string, log?: RequestLogger): Promise<MediaStorageUsageDto> {
+    return this.get<MediaStorageUsageDto>(token, `${API_ROUTES.MEDIA}/storage-usage`, log);
+  }
+
   listMediaTrash(token: string, ws: Workspace, log?: RequestLogger): Promise<PagedResult<MediaTrashItem>> {
     return this.list<MediaTrashItem>(token, `${API_ROUTES.MEDIA}/trash`, ws, log);
   }
@@ -58,5 +62,6 @@ export const mediaApi = new MediaApi(apiClient);
 export const listMedia = (t: string, w: Workspace, l?: RequestLogger) => mediaApi.listMedia(t, w, l);
 export const listAllMedia = (t: string, w: Workspace, l?: RequestLogger) => mediaApi.listAllMedia(t, w, l);
 export const listSharedMedia = (t: string, l?: RequestLogger) => mediaApi.listSharedMedia(t, l);
+export const getStorageUsage = (t: string, l?: RequestLogger) => mediaApi.getStorageUsage(t, l);
 export const listMediaTrash = (t: string, w: Workspace, l?: RequestLogger) => mediaApi.listMediaTrash(t, w, l);
 export const setMediaFavorite = (t: string, id: string, v: boolean, l?: RequestLogger) => mediaApi.setFavorite(t, id, v, l);

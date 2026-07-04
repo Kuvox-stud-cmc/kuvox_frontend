@@ -23,6 +23,7 @@ const PLAN_DETAILS: Record<
     price: "$0",
     period: "/mo",
     features: [
+      "5 GB personal storage",
       "Basic video editing",
       "Short videos (up to 5 min)",
       "Limited AI commands",
@@ -34,6 +35,7 @@ const PLAN_DETAILS: Record<
     price: "$29",
     period: "/mo",
     features: [
+      "100 GB personal storage",
       "Longer videos (up to 30 min)",
       "Deep AI structural analysis",
       "Generous AI command volume",
@@ -46,7 +48,8 @@ const PLAN_DETAILS: Record<
     price: "$99",
     period: "/mo",
     features: [
-      "Unlimited video length",
+      "500 GB pooled workspace storage",
+      "Long-form team projects",
       "Highest AI limits",
       "Top priority processing",
       "Team collaboration tools",

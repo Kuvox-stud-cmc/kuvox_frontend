@@ -82,7 +82,7 @@ const FAQ_CATEGORIES: FaqCategory[] = [
       {
         question: "What plans are available?",
         answer:
-          "Kuvox offers a Free tier (5 GB storage, 30 AI credits/month), a Pro plan ($19/month — 100 GB storage, 500 credits), a Team plan ($49/seat/month — unlimited storage, 2000 credits), and Enterprise (custom pricing). All paid plans include priority cloud rendering and advanced AI features.",
+          "Kuvox offers Free (5 GB storage), Creator (100 GB storage), and Studio (500 GB pooled workspace storage) plans. Extra storage can be added in 100 GB blocks.",
       },
       {
         question: "Can I cancel or change my plan anytime?",
@@ -92,7 +92,7 @@ const FAQ_CATEGORIES: FaqCategory[] = [
       {
         question: "Do you offer student or educator discounts?",
         answer:
-          "Yes! Students and educators get 50% off Pro and Team plans. Verify your academic status through our partner SheerID at /pricing/student-verification. The discount applies for the duration of your enrollment.",
+          "Yes! Students and educators can receive discounts on Creator and Studio plans. Verify your academic status through our partner SheerID at /pricing/student-verification. The discount applies for the duration of your enrollment.",
       },
     ],
   },

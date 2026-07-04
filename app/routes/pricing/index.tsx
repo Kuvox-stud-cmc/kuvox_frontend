@@ -25,6 +25,7 @@ const PLANS = [
     ctaStyle: "outlined" as const,
     highlighted: false,
     features: [
+      "5 GB personal storage",
       "Basic video editing",
       "Short videos (up to 5 min)",
       "Limited AI commands",
@@ -40,6 +41,7 @@ const PLANS = [
     highlighted: true,
     badge: "Most Popular",
     features: [
+      "100 GB personal storage",
       "Longer videos (up to 30 min)",
       "Deep AI structural analysis",
       "Generous AI command volume",
@@ -55,7 +57,8 @@ const PLANS = [
     ctaStyle: "outlined" as const,
     highlighted: false,
     features: [
-      "Unlimited video length",
+      "500 GB pooled workspace storage",
+      "Long-form team projects",
       "Highest AI limits",
       "Top priority processing",
       "Team collaboration tools",
@@ -64,9 +67,10 @@ const PLANS = [
 ] as const;
 
 const COMPARISON_ROWS = [
-  { feature: "Max Video Length", free: "5 Minutes", creator: "30 Minutes", studio: "Unlimited" },
+  { feature: "Storage", free: "5 GB", creator: "100 GB", studio: "500 GB pooled" },
+  { feature: "Max Video Length", free: "5 Minutes", creator: "30 Minutes", studio: "Long-form" },
   { feature: "AI Analysis Depth", free: "Basic Objects", creator: "Deep Semantic", studio: "Full Contextual" },
-  { feature: "AI Command Volume", free: "100 / month", creator: "1,000 / month", studio: "Unlimited" },
+  { feature: "AI Command Volume", free: "100 / month", creator: "1,000 / month", studio: "2,000 / month" },
   { feature: "Processing Priority", free: "Standard Queue", creator: "Accelerated", studio: "Dedicated Instance" },
   { feature: "Resolution Export", free: "1080p", creator: "4K", studio: "8K+" },
 ] as const;

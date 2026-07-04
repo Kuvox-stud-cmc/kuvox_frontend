@@ -4,8 +4,8 @@ import { Link, NavLink, Outlet, redirect } from "react-router";
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
 import { ErrorBanner } from "~/components/dashboard/section";
 import { HeaderBar } from "~/routes/dashboard/header-bar";
-import { studioRoleLabel, type StudioDto } from "~/lib/api";
-import { getStudioClaims, listMyStudios } from "~/lib/api.server";
+import type { StudioDto, StudioUsageSummaryDto } from "~/lib/api";
+import { getStudioClaims, getUsageSummary, listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -38,7 +38,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // joined since the token was minted needs a refresh before its content loads.
   const tokenHasClaim = getStudioClaims(accessToken).some((c) => c.studioId === studioId);
 
-  return { user, studios, studio, role: studio.role, tokenStale: !tokenHasClaim };
+  let usage: StudioUsageSummaryDto | null = null;
+  try {
+    usage = await getUsageSummary(accessToken, studioId, reqLog);
+  } catch (error) {
+    reqLog.warn({ err: error, studioId }, "failed to load studio usage for shell");
+  }
+
+  return { user, studios, studio, tokenStale: !tokenHasClaim, usage };
 }
 
 interface StudioNavItem {
@@ -99,8 +106,9 @@ const studioNavSections = (studioId: string): StudioNavSection[] => [
 
 /** Team (Studio) workspace shell — mirrors the dashboard shell, scoped to one studio. */
 export default function TeamLayout({ loaderData }: Route.ComponentProps) {
-  const { user, studios, studio, role, tokenStale } = loaderData;
+  const { user, studios, studio, tokenStale, usage } = loaderData;
   const studioList: StudioDto[] = studios;
+  const storagePercent = usage ? percent(usage.storageBytesUsed, usage.storageBytesQuota) : 0;
   const [collapsed, setCollapsed] = useState(false);
   const toggleCollapsed = useCallback(() => {
     setCollapsed((value) => !value);
@@ -210,11 +218,15 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
                 Studio Storage
               </div>
               <div className="mb-1.5 h-1.5 overflow-hidden rounded-full bg-surface-container-high">
-                <div className="h-full w-[12.8%] rounded-full bg-primary transition-all" />
+                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${storagePercent}%` }} />
               </div>
               <div className="mb-3 flex justify-between text-label-sm text-on-surface-variant">
-                <span>128 GB of 1 TB used</span>
-                <span>12.8%</span>
+                <span>
+                  {usage
+                    ? `${formatBytes(usage.storageBytesUsed)} of ${formatBytes(usage.storageBytesQuota)} used`
+                    : "Usage unavailable"}
+                </span>
+                <span>{usage ? `${storagePercent}%` : "-"}</span>
               </div>
             </>
           )}
@@ -231,4 +243,17 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
       </div>
     </div>
   );
+}
+
+function percent(used: number, quota: number) {
+  if (quota <= 0) return 0;
+  return Math.min(100, Math.round((used / quota) * 100));
+}
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(1)} TB`;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(0)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
 }

@@ -1016,9 +1016,10 @@ export default function Audio() {
         />
         <MetricCard
           icon="cloud"
-          label="Storage Used"
+          label="Loaded Audio Storage"
           value={storageUsedGb}
           suffix="GB"
+          detail="Current page summary"
         />
         <MetricCard
           icon="album"

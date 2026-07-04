@@ -143,6 +143,25 @@ export interface StudioUsageSummaryDto {
   storageBytesQuota: number;
 }
 
+export interface MediaStorageObjectBreakdownDto {
+  rawBytes: number;
+  canonicalBytes: number;
+  proxyBytes: number;
+  thumbnailBytes: number;
+}
+
+export interface MediaStorageUsageDto {
+  plan: string;
+  storageBytesUsed: number;
+  storageBytesQuota: number;
+  storagePercent: number;
+  mediaCount: number;
+  activeBytesUsed: number;
+  trashBytesUsed: number;
+  objectBreakdown: MediaStorageObjectBreakdownDto;
+  trashObjectBreakdown: MediaStorageObjectBreakdownDto;
+}
+
 export interface StudioAuditLogEntryDto {
   id: string;
   actorUserId: string | null;

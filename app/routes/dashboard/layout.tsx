@@ -4,8 +4,8 @@ import { Link, Outlet } from "react-router";
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
 import { HeaderBar } from "~/routes/dashboard/header-bar";
 import { SidebarNav } from "~/routes/dashboard/sidebar-nav";
-import type { StudioDto } from "~/lib/api";
-import { listMyStudios } from "~/lib/api.server";
+import type { MediaStorageUsageDto, StudioDto } from "~/lib/api";
+import { getStorageUsage, listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -29,23 +29,37 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // The studios list is kept for future workspace-switcher integration.
   let studios: StudioDto[] = [];
+  let storageUsage: MediaStorageUsageDto | null = null;
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   if (accessToken) {
-    try {
-      studios = await listMyStudios(accessToken, reqLog);
-    } catch (error) {
-      reqLog.warn({ err: error }, "failed to load studios for switcher");
-      studios = [];
+    const [studiosResult, storageResult] = await Promise.allSettled([
+      listMyStudios(accessToken, reqLog),
+      getStorageUsage(accessToken, reqLog),
+    ] as const);
+
+    if (studiosResult.status === "fulfilled") {
+      studios = studiosResult.value;
+    } else {
+      reqLog.warn({ err: studiosResult.reason }, "failed to load studios for switcher");
+    }
+
+    if (storageResult.status === "fulfilled") {
+      storageUsage = storageResult.value;
+    } else {
+      reqLog.warn({ err: storageResult.reason }, "failed to load storage usage for shell");
     }
   }
 
-  return { user, studios };
+  return { user, studios, storageUsage };
 }
 
 /** Authenticated app shell with a premium sidebar, top header bar, and scrollable main area. */
 export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
-  const { user, studios } = loaderData;
+  const { user, studios, storageUsage } = loaderData;
+  const storagePercent = storageUsage
+    ? Math.min(100, Math.max(0, Number(storageUsage.storagePercent)))
+    : 0;
 
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
@@ -222,9 +236,13 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
       <div className="border-t border-outline-variant/50 p-5">
         {collapsed ? (
           <Link
-            to="/pricing"
+            to="/settings/quota"
             className="flex h-10 w-10 mx-auto items-center justify-center rounded-xl text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
-            title="Storage · 128 GB of 1 TB"
+            title={
+              storageUsage
+                ? `Storage - ${formatBytes(storageUsage.storageBytesUsed)} of ${formatBytes(storageUsage.storageBytesQuota)}`
+                : "Storage"
+            }
           >
             <span className="material-symbols-outlined text-[20px]">
               cloud
@@ -241,21 +259,25 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
             <div className="mb-1.5 h-1.5 overflow-hidden rounded-full bg-surface-container-high">
               <div
                 className="h-full rounded-full bg-primary transition-all"
-                style={{ width: "12.8%" }}
+                style={{ width: `${storagePercent}%` }}
               />
             </div>
             <div className="mb-3 flex justify-between text-label-sm text-on-surface-variant">
-              <span>128 GB of 1 TB used</span>
-              <span>12.8%</span>
+              <span>
+                {storageUsage
+                  ? `${formatBytes(storageUsage.storageBytesUsed)} of ${formatBytes(storageUsage.storageBytesQuota)} used`
+                  : "Usage unavailable"}
+              </span>
+              <span>{storageUsage ? `${storagePercent.toFixed(storagePercent % 1 === 0 ? 0 : 1)}%` : "-"}</span>
             </div>
             <Link
-              to="/pricing"
+              to="/settings/quota"
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant px-3 py-2 text-label-md font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
             >
               <span className="material-symbols-outlined text-[14px]">
-                arrow_upward
+                query_stats
               </span>
-              Upgrade Plan
+              Usage Details
             </Link>
           </>
         )}
@@ -338,4 +360,12 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
     </div>
   );
+}
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(1)} TB`;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(0)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
 }
