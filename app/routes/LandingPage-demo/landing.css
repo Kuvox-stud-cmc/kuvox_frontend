@@ -1,0 +1,337 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Landing Page Demo — Scoped Styles
+   All custom classes scoped under .landing-demo to avoid conflicts
+   with the rest of the application (e.g. the existing .glass-card).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Wrapper scope & CSS custom properties ────────────────────────────────── */
+.landing-demo {
+  --warm-white: #FAFAF8;
+  --cream: #F5F2ED;
+  --soft-gold: #C9A962;
+  --natural-oak: #A68B5B;
+  --electric-blue: #0066FF;
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-blur: 30px;
+  --font-display: 'Instrument Serif', serif;
+  --font-body: 'Inter', sans-serif;
+
+  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
+  background-color: #1a1612;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Glass navigation ─────────────────────────────────────────────────────── */
+.landing-demo .glass-nav {
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  background: rgba(12, 10, 8, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ── Glass card ───────────────────────────────────────────────────────────── */
+.landing-demo .glass-card {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}
+
+/* ── Typography ───────────────────────────────────────────────────────────── */
+.landing-demo .heading-xl {
+  font-size: clamp(48px, 8vw, 96px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.landing-demo .heading-lg {
+  font-size: clamp(36px, 5vw, 64px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.landing-demo .heading-md {
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.landing-demo .body-lg {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.landing-demo .body-md {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.landing-demo .whats-new-track {
+  scrollbar-width: none;
+}
+
+.landing-demo .whats-new-track::-webkit-scrollbar {
+  display: none;
+}
+
+.landing-demo .post-museum-stage {
+  background: #0c0c0e;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.3);
+}
+
+.landing-demo .post-museum-stage::before {
+  content: '';
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  left: 50%;
+  width: 64px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateX(-50%);
+}
+
+.landing-demo .feature-ai-mask {
+  animation: feature-mask-morph 6s ease-in-out infinite alternate;
+}
+
+.landing-demo .ai-flow-orb {
+  animation: ai-flow 2.4s cubic-bezier(0.76, 0, 0.24, 1) infinite;
+  box-shadow: 0 0 14px rgba(99, 217, 168, 0.7);
+}
+
+.landing-demo .ai-scan-line {
+  animation: ai-scan 4s cubic-bezier(0.76, 0, 0.24, 1) infinite;
+  box-shadow: 0 0 16px rgba(99, 217, 168, 0.45);
+}
+
+@keyframes feature-mask-morph {
+  from { transform: translateX(0) rotate(-3deg) scale(0.94); }
+  to { transform: translateX(18px) rotate(4deg) scale(1.04); }
+}
+
+@keyframes ai-flow {
+  0% { left: 0; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: calc(100% - 10px); opacity: 0; }
+}
+
+@keyframes ai-scan {
+  0%, 15% { transform: translateY(0); opacity: 0; }
+  25% { opacity: 1; }
+  75% { opacity: 1; }
+  90%, 100% { transform: translateY(390px); opacity: 0; }
+}
+
+/* ── Feature text highlights ──────────────────────────────────────────────── */
+.landing-demo .feature-highlight {
+  background: linear-gradient(135deg, var(--soft-gold), var(--natural-oak));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.landing-demo .feature-highlight-ai {
+  background: linear-gradient(135deg, var(--electric-blue), #00A3FF);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.landing-demo .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px 28px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.landing-demo .btn-primary:hover {
+  background: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.landing-demo .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  font-size: 14px;
+  padding: 12px 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s;
+  backdrop-filter: blur(12px);
+}
+
+.landing-demo .btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Scroll section ───────────────────────────────────────────────────────── */
+.landing-demo .scroll-section {
+  min-height: 100vh;
+  position: relative;
+}
+
+/* ── Spinner keyframe (for hero loading) ──────────────────────────────────── */
+@keyframes landing-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Cinematic video CTA */
+.landing-demo .final-cinematic-heading {
+  font-family: var(--font-display);
+  text-wrap: balance;
+  text-shadow: 0 2px 32px rgba(0, 0, 0, 0.18);
+}
+
+.landing-demo .liquid-glass {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.01);
+  background-blend-mode: luminosity;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.landing-demo .liquid-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.4px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.15) 80%,
+    rgba(255, 255, 255, 0.45) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.landing-demo .final-glass-button {
+  min-width: 180px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 300ms ease;
+}
+
+.landing-demo .final-glass-button:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  transform: scale(1.03);
+}
+
+.landing-demo .final-glass-button:active {
+  transform: scale(0.98);
+}
+
+.landing-demo .final-glass-button-muted {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.landing-demo .final-cta-before-enter {
+  opacity: 0;
+  transform: translateY(24px);
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landing-demo .animate-fade-rise {
+  animation: fade-rise 0.8s ease-out both;
+}
+
+.landing-demo .animate-fade-rise-delay {
+  animation: fade-rise 0.8s ease-out 0.2s both;
+}
+
+.landing-demo .animate-fade-rise-delay-2 {
+  animation: fade-rise 0.8s ease-out 0.4s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-demo .feature-ai-mask,
+  .landing-demo .ai-flow-orb,
+  .landing-demo .ai-scan-line {
+    animation: none;
+  }
+
+  .landing-demo .whats-new-track {
+    scroll-behavior: auto;
+  }
+
+  .landing-demo .whats-new-track img {
+    transition: none;
+  }
+
+  .landing-demo .animate-fade-rise,
+  .landing-demo .animate-fade-rise-delay,
+  .landing-demo .animate-fade-rise-delay-2 {
+    animation: none;
+  }
+
+  .landing-demo .final-cta-before-enter {
+    opacity: 1;
+    transform: none;
+  }
+
+  .landing-demo .final-glass-button {
+    transition: none;
+  }
+}
