@@ -17,6 +17,7 @@ import {
     QuickActionCard,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
+import { AccessDialog, ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 
 import {
     ProjectKind,
@@ -34,6 +35,13 @@ interface ProjectsDashboardProps {
     sharedProjects: ProjectDto[];
     media: MediaDto[];
     error: string | null;
+    basePath?: string;
+    studioId?: string;
+    canWrite?: boolean;
+    canManageAccess?: boolean;
+    workspaceKind?: "personal" | "studio";
+    title?: string;
+    subtitle?: string;
 }
 
 interface ActionData {
@@ -182,13 +190,31 @@ function AvatarStack({ collaborators }: { collaborators: string[] }) {
     );
 }
 
-function ProjectCard({ project, index }: { project: ProjectDto; index: number }) {
+function projectHref(project: ProjectDto, basePath: string) {
+    return project.kind === ProjectKind.Video ? `/editor/${project.id}` : basePath;
+}
+
+function ProjectCard({
+    project,
+    index,
+    basePath,
+    canWrite,
+    canManageAccess,
+    workspaceKind,
+}: {
+    project: ProjectDto;
+    index: number;
+    basePath: string;
+    canWrite: boolean;
+    canManageAccess: boolean;
+    workspaceKind: "personal" | "studio";
+}) {
     const typeLabel = projectKindLabel(project.kind).toLowerCase();
     const typeIcon = {
         video: "movie",
         image: "image",
     }[typeLabel] || "movie";
-    const href = project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
+    const href = projectHref(project, basePath);
 
     return (
         <div className="bento-card group relative overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50">
@@ -217,11 +243,31 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
                 </div>
             </Link>
             <div className="absolute right-3 top-3">
-                <CardOverflowMenu
-                    id={project.id}
-                    itemLabel={project.name}
-                    buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
-                />
+                <div className="flex items-center gap-1">
+                {workspaceKind === "studio" ? (
+                    <AccessDialog
+                        resourceType="project"
+                        resourceId={project.id}
+                        resourceName={project.name}
+                        canManageAccess={canManageAccess}
+                        buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
+                    />
+                ) : (
+                    <ShareDialog
+                        resourceType="project"
+                        resourceId={project.id}
+                        resourceName={project.name}
+                        buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
+                    />
+                )}
+                {canWrite ? (
+                    <CardOverflowMenu
+                        id={project.id}
+                        itemLabel={project.name}
+                        buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
+                    />
+                ) : null}
+                </div>
             </div>
             <div className="absolute bottom-3 right-3">
                 <IconToggleButton
@@ -238,13 +284,27 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
     );
 }
 
-function ProjectListRow({ project, index }: { project: ProjectDto; index: number }) {
+function ProjectListRow({
+    project,
+    index,
+    basePath,
+    canWrite,
+    canManageAccess,
+    workspaceKind,
+}: {
+    project: ProjectDto;
+    index: number;
+    basePath: string;
+    canWrite: boolean;
+    canManageAccess: boolean;
+    workspaceKind: "personal" | "studio";
+}) {
     const typeLabel = projectKindLabel(project.kind).toLowerCase();
     const typeIcon = {
         video: "movie",
         image: "image",
     }[typeLabel] || "movie";
-    const href = project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
+    const href = projectHref(project, basePath);
 
     return (
         <div className="group flex items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40">
@@ -278,7 +338,12 @@ function ProjectListRow({ project, index }: { project: ProjectDto; index: number
                 activeClassName="text-yellow-500"
                 label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
             />
-            <CardOverflowMenu id={project.id} itemLabel={project.name} />
+            {workspaceKind === "studio" ? (
+                <AccessDialog resourceType="project" resourceId={project.id} resourceName={project.name} canManageAccess={canManageAccess} />
+            ) : (
+                <ShareDialog resourceType="project" resourceId={project.id} resourceName={project.name} />
+            )}
+            {canWrite ? <CardOverflowMenu id={project.id} itemLabel={project.name} /> : null}
         </div>
     );
 }
@@ -425,6 +490,13 @@ export default function ProjectsDashboard({
     sharedProjects,
     media,
     error,
+    basePath = "/dashboard/projects",
+    studioId,
+    canWrite = true,
+    canManageAccess = false,
+    workspaceKind = studioId ? "studio" : "personal",
+    title = "Projects",
+    subtitle = "Manage all your projects and collaborate with your team.",
 }: ProjectsDashboardProps) {
     const [view, setView] = useState<"grid" | "list">("grid");
     const [sort, setSort] = useState<"latest" | "name">("latest");
@@ -437,6 +509,9 @@ export default function ProjectsDashboard({
     const live = useLiveMedia(media);
     const metrics = getProjectMetrics(projects, sharedProjects, live.media);
     const tabs = buildTabs(metrics);
+    const workspaceRoot = basePath.replace(/\/projects$/, "");
+    const aiToolsPath = workspaceRoot.startsWith("/teams/") ? "/dashboard/ai-tools" : `${workspaceRoot}/ai-tools`;
+    const albumsPath = workspaceRoot.startsWith("/teams/") ? `${workspaceRoot}/media/albums` : "/dashboard/albums";
 
     useEffect(() => {
         if (!actionData?.ok) return;
@@ -468,9 +543,9 @@ export default function ProjectsDashboard({
             {/* ── Page Header + Toolbar ──────────────────────────────────────────── */}
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                    <h1 className="text-headline-lg font-bold text-on-surface">Projects</h1>
+                    <h1 className="text-headline-lg font-bold text-on-surface">{title}</h1>
                     <p className="mt-1 text-body-sm text-on-surface-variant">
-                        Manage all your projects and collaborate with your team.
+                        {subtitle}
                     </p>
                 </div>
 
@@ -523,14 +598,16 @@ export default function ProjectsDashboard({
                     </div>
 
                     {/* New Project CTA */}
-                    <button
-                        type="button"
-                        onClick={() => setCreateOpen(true)}
-                        className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-body-sm font-bold text-on-primary shadow-lg shadow-primary/10 transition-all hover:opacity-90"
-                    >
-                        <span className="material-symbols-outlined text-[18px]">add</span>
-                        New Project
-                    </button>
+                    {canWrite ? (
+                        <button
+                            type="button"
+                            onClick={() => setCreateOpen(true)}
+                            className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-body-sm font-bold text-on-primary shadow-lg shadow-primary/10 transition-all hover:opacity-90"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">add</span>
+                            New Project
+                        </button>
+                    ) : null}
                 </div>
             </div>
 
@@ -622,7 +699,7 @@ export default function ProjectsDashboard({
                         <div className="mb-4 flex items-center justify-between">
                             <h2 className="text-headline-md font-bold text-on-surface">Recent Projects</h2>
                             <Link
-                                to="/dashboard/projects"
+                                to={basePath}
                                 className="flex items-center gap-1 text-label-md font-bold text-primary transition-colors hover:text-primary-fixed"
                             >
                                 {visibleCount} item{visibleCount === 1 ? "" : "s"}
@@ -636,7 +713,7 @@ export default function ProjectsDashboard({
                                 title={activeTab === "starred" ? "No starred projects" : "No projects yet"}
                                 hint={activeTab === "starred" ? "Star projects to find them quickly here." : "Create a project to start editing."}
                                 action={
-                                    activeTab === "starred" ? undefined : (
+                                    activeTab === "starred" || !canWrite ? undefined : (
                                         <button
                                             type="button"
                                             onClick={() => setCreateOpen(true)}
@@ -651,13 +728,13 @@ export default function ProjectsDashboard({
                         ) : view === "list" ? (
                             <div className="space-y-3">
                                 {sortedProjects.map((project, i) => (
-                                    <ProjectListRow key={project.id} project={project} index={i} />
+                                    <ProjectListRow key={project.id} project={project} index={i} basePath={basePath} canWrite={canWrite} canManageAccess={canManageAccess} workspaceKind={workspaceKind} />
                                 ))}
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                 {sortedProjects.map((project, i) => (
-                                    <ProjectCard key={project.id} project={project} index={i} />
+                                    <ProjectCard key={project.id} project={project} index={i} basePath={basePath} canWrite={canWrite} canManageAccess={canManageAccess} workspaceKind={workspaceKind} />
                                 ))}
                             </div>
                         )}
@@ -669,30 +746,34 @@ export default function ProjectsDashboard({
                         <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-6">
                             <h3 className="mb-6 text-headline-md font-bold text-on-surface">Quick Actions</h3>
                             <div className="grid grid-cols-2 gap-3">
-                                <QuickActionCard
-                                    icon="cloud_upload"
-                                    title="Import Media"
-                                    description="Upload photos, videos, audio"
-                                    onClick={() => setImportOpen(true)}
-                                />
-                                <QuickActionCard
-                                    icon="add_box"
-                                    title="Create Project"
-                                    description="Start a new project"
-                                    onClick={() => setCreateOpen(true)}
-                                />
+                                {canWrite ? (
+                                    <>
+                                        <QuickActionCard
+                                            icon="cloud_upload"
+                                            title="Import Media"
+                                            description="Upload photos, videos, audio"
+                                            onClick={() => setImportOpen(true)}
+                                        />
+                                        <QuickActionCard
+                                            icon="add_box"
+                                            title="Create Project"
+                                            description="Start a new project"
+                                            onClick={() => setCreateOpen(true)}
+                                        />
+                                    </>
+                                ) : null}
                                 <QuickActionCard
                                     icon="collections"
                                     title="Create Album"
                                     description="Organize media assets"
-                                    to="/dashboard/albums"
+                                    to={albumsPath}
                                 />
                                 <QuickActionCard
                                     icon="auto_awesome"
                                     title="AI Assistant"
                                     description="Get AI suggestions"
                                     onClick={() => {
-                                        window.location.href = "/dashboard/ai-tools";
+                                        window.location.href = aiToolsPath;
                                     }}
                                 />
                             </div>
@@ -763,7 +844,7 @@ export default function ProjectsDashboard({
 
             {/* ── New Project Modal ──────────────────────────────────────────────── */}
             <Modal
-                open={createOpen}
+                open={createOpen && canWrite}
                 onClose={() => setCreateOpen(false)}
                 title="New project"
             >
@@ -807,9 +888,10 @@ export default function ProjectsDashboard({
                 </Form>
             </Modal>
             <MediaUploadModal
-                open={importOpen}
+                open={importOpen && canWrite}
                 onClose={() => setImportOpen(false)}
                 title="Import media"
+                studioId={studioId}
                 onUploaded={live.mergeMedia}
             />
         </section>

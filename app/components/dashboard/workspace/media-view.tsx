@@ -13,6 +13,7 @@ import {
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
+import { AccessDialog, ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { MediaKind, mediaKindLabel, type MediaDto } from "~/lib/api";
 import { useLiveMedia } from "~/lib/media-realtime";
 import { resolveMediaPipeline } from "~/lib/media-pipeline";
@@ -55,6 +56,8 @@ export function MediaView({
   fixedKind,
   studioId,
   canWrite = true,
+  canManageAccess = false,
+  workspaceKind = studioId ? "studio" : "personal",
 }: {
   media: MediaDto[];
   loadError: string | null;
@@ -64,6 +67,8 @@ export function MediaView({
   fixedKind?: number;
   studioId?: string | null;
   canWrite?: boolean;
+  canManageAccess?: boolean;
+  workspaceKind?: "personal" | "studio";
 }) {
   const navigation = useNavigation();
   const revalidator = useRevalidator();
@@ -179,22 +184,29 @@ export function MediaView({
                     <span className="text-label-md text-on-surface-variant">
                       {formatSize(item.sizeBytes)}
                     </span>
-                    {canWrite ? (
-                    <ConfirmSubmitButton
-                      fields={{ intent: "delete", id: item.id }}
-                      title="Move media to trash?"
-                      message={
-                        <>
-                          Move <span className="font-medium text-on-surface">{item.filename}</span> to trash?
-                        </>
-                      }
-                      confirmLabel="Move to trash"
-                      ariaLabel={`Move ${item.filename} to Trash`}
-                      buttonClassName="rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100 disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">delete</span>
-                    </ConfirmSubmitButton>
-                    ) : null}
+                    <div className="flex items-center gap-1">
+                      {workspaceKind === "studio" ? (
+                        <AccessDialog resourceType="media" resourceId={item.id} resourceName={item.filename} canManageAccess={canManageAccess} />
+                      ) : (
+                        <ShareDialog resourceType="media" resourceId={item.id} resourceName={item.filename} />
+                      )}
+                      {canWrite ? (
+                      <ConfirmSubmitButton
+                        fields={{ intent: "delete", id: item.id }}
+                        title="Move media to trash?"
+                        message={
+                          <>
+                            Move <span className="font-medium text-on-surface">{item.filename}</span> to trash?
+                          </>
+                        }
+                        confirmLabel="Move to trash"
+                        ariaLabel={`Move ${item.filename} to Trash`}
+                        buttonClassName="rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100 disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                      </ConfirmSubmitButton>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>

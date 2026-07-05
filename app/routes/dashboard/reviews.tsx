@@ -1,212 +1,226 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, Form } from "react-router";
 
 import {
-  FilterTabs,
   MetricCard,
   PageHeader,
   SectionHeader,
   StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
-import { primaryButtonClass } from "~/components/dashboard/section";
+import { EmptyState, ErrorBanner, primaryButtonClass } from "~/components/dashboard/section";
+import {
+  TaskIssueKind,
+  TaskIssueStatus,
+  isTaskOpen,
+  taskKindLabel,
+  taskStatusLabel,
+  type StudioDto,
+  type TaskIssueDto,
+} from "~/lib/api";
+import { ApiError, listAssignedTasks, listMyStudios } from "~/lib/api.server";
+import { requireUser } from "~/lib/auth.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { getSession } from "~/lib/session.server";
+
+import type { Route } from "./+types/reviews";
 
 export function meta() {
   return [{ title: "Reviews · Kuvox" }];
 }
 
-/* ── Mock data ──────────────────────────────────────────────────────────── */
+export async function loader({ request }: Route.LoaderArgs) {
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+  const url = new URL(request.url);
+  const filters = buildFilters(url.searchParams);
 
-type ReviewStatus =
-  | "waiting_approval"
-  | "changes_requested"
-  | "waiting_review"
-  | "approved";
+  if (!accessToken) {
+    return {
+      items: [] as TaskIssueDto[],
+      studios: [] as StudioDto[],
+      filters,
+      error: "Your session expired. Please sign in again." as string | null,
+    };
+  }
 
-interface MockReview {
-  id: string;
-  title: string;
-  reviewer: string;
-  submittedAgo: string;
-  status: ReviewStatus;
-  comments: number;
+  try {
+    const [items, studios] = await Promise.all([
+      listAssignedTasks(accessToken, filters, reqLog),
+      listMyStudios(accessToken, reqLog),
+    ]);
+    return { items, studios, filters, error: null as string | null };
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : "Couldn't load tasks and reviews.";
+    reqLog.error({ err: error }, "failed to load assigned tasks");
+    return { items: [] as TaskIssueDto[], studios: [] as StudioDto[], filters, error: message };
+  }
 }
 
-const MOCK_REVIEWS: MockReview[] = [
-  {
-    id: "r1",
-    title: "Travel Vlog",
-    reviewer: "Sarah Chen",
-    submittedAgo: "2 hours ago",
-    status: "waiting_approval",
-    comments: 2,
-  },
-  {
-    id: "r2",
-    title: "Product Promo",
-    reviewer: "John Smith",
-    submittedAgo: "Yesterday",
-    status: "changes_requested",
-    comments: 5,
-  },
-  {
-    id: "r3",
-    title: "Instagram Reel",
-    reviewer: "Emma Davis",
-    submittedAgo: "3 days ago",
-    status: "waiting_review",
-    comments: 0,
-  },
-  {
-    id: "r4",
-    title: "Brand Story Cut",
-    reviewer: "Alex Rivera",
-    submittedAgo: "4 days ago",
-    status: "approved",
-    comments: 1,
-  },
-  {
-    id: "r5",
-    title: "Podcast Trailer",
-    reviewer: "Mia Thompson",
-    submittedAgo: "1 week ago",
-    status: "waiting_approval",
-    comments: 3,
-  },
-];
+function buildFilters(search: URLSearchParams) {
+  const due = search.get("due") ?? "";
+  return {
+    kind: search.get("kind") ?? "",
+    status: search.get("status") ?? "",
+    studioId: search.get("studioId") ?? "",
+    milestoneId: search.get("milestoneId") ?? "",
+    due,
+    dueBefore: due === "week" ? nextDays(7) : due === "today" ? nextDays(1) : "",
+  };
+}
 
-const STATUS_CONFIG: Record<
-  ReviewStatus,
-  { label: string; tone: Parameters<typeof StatusBadge>[0]["tone"] }
-> = {
-  waiting_approval: {
-    label: "Waiting Approval",
-    tone: "warning",
-  },
-  changes_requested: {
-    label: "Changes Requested",
-    tone: "danger",
-  },
-  waiting_review: {
-    label: "Waiting Review",
-    tone: "primary",
-  },
-  approved: {
-    label: "Approved",
-    tone: "success",
-  },
-};
+function nextDays(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
 
-const FILTER_OPTIONS = [
-  { label: "All", value: "all" as const },
-  { label: "Pending", value: "pending" as const },
-  { label: "Changes", value: "changes_requested" as const },
-  { label: "Approved", value: "approved" as const },
-];
-
-/* ── Sub-components ─────────────────────────────────────────────────────── */
-
-
-
-function ReviewRow({ review }: { review: MockReview }) {
-  const statusConfig = STATUS_CONFIG[review.status];
+export default function Reviews({ loaderData }: Route.ComponentProps) {
+  const { items, studios, filters, error } = loaderData;
+  const open = items.filter((item) => isTaskOpen(item.status));
+  const reviews = items.filter((item) => item.kind === TaskIssueKind.Review);
+  const changes = items.filter((item) => item.status === TaskIssueStatus.ChangesRequested);
 
   return (
-    <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-4 transition-colors hover:border-primary/30">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-label-md font-bold text-on-surface-variant">
-        {review.title.charAt(0)}
-      </div>
-      <div className="min-w-0 flex-1">
-        <h3 className="truncate text-body-sm font-bold text-on-surface">{review.title}</h3>
-        <p className="mt-0.5 text-label-md text-on-surface-variant">
-          By {review.reviewer} · {review.submittedAgo}
-        </p>
-      </div>
-      <div className="hidden items-center gap-2 text-label-sm text-on-surface-variant sm:flex">
-        <span className="material-symbols-outlined text-[16px]">chat</span>
-        {review.comments}
-      </div>
-      <StatusBadge
-        label={statusConfig.label}
-        tone={statusConfig.tone}
-        dotPosition="end"
-        className="px-2.5 py-1"
-      />
-      <button
-        type="button"
-        className="shrink-0 rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-on-surface group-hover:opacity-100"
+    <section className="space-y-8">
+      <PageHeader
+        title="Tasks & Reviews"
+        subtitle="Assigned work across every team you belong to."
       >
-        <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-      </button>
-    </div>
-  );
-}
-
-/* ── Main component ─────────────────────────────────────────────────────── */
-
-export default function Reviews() {
-  const [filter, setFilter] = useState<(typeof FILTER_OPTIONS)[number]["value"]>("all");
-
-  const pendingCount = MOCK_REVIEWS.filter(
-    (r) => r.status !== "approved",
-  ).length;
-
-  const filtered = useMemo(() => {
-    if (filter === "all") return MOCK_REVIEWS;
-    if (filter === "pending") {
-      return MOCK_REVIEWS.filter((r) => r.status !== "approved");
-    }
-    return MOCK_REVIEWS.filter((r) => r.status === filter);
-  }, [filter]);
-
-  return (
-    <section className="space-y-10">
-      <PageHeader title="Reviews" subtitle="Track and manage project review requests from your team.">
-        <Link to="/dashboard/projects" className={primaryButtonClass()}>
-          <span className="material-symbols-outlined text-[18px]">send</span>
-          Submit for review
+        <Link to="/dashboard/team" className={primaryButtonClass()}>
+          <span className="material-symbols-outlined text-[18px]">groups</span>
+          Open teams
         </Link>
       </PageHeader>
 
+      {error && <ErrorBanner message={error} />}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon="rate_review" label="Pending" value={pendingCount} tone="tertiary" />
-        <MetricCard
-          icon="error"
-          label="Changes Requested"
-          value={MOCK_REVIEWS.filter((r) => r.status === "changes_requested").length}
-          tone="error"
-        />
-        <MetricCard
-          icon="check_circle"
-          label="Approved"
-          value={MOCK_REVIEWS.filter((r) => r.status === "approved").length}
-          tone="secondary"
-        />
-        <MetricCard icon="schedule" label="Avg. Turnaround" value="1.8 d" />
+        <MetricCard icon="task_alt" label="Open" value={open.length} tone="primary" />
+        <MetricCard icon="rate_review" label="Reviews" value={reviews.length} tone="tertiary" />
+        <MetricCard icon="error" label="Changes" value={changes.length} tone="error" />
+        <MetricCard icon="groups" label="Teams" value={new Set(items.map((item) => item.studioId)).size} />
       </div>
 
-      <FilterTabs items={FILTER_OPTIONS} value={filter} onChange={setFilter} />
+      <Form method="get" className="grid gap-3 rounded-xl border border-outline-variant bg-surface-container-low p-4 md:grid-cols-5">
+        <SelectFilter name="kind" label="Type" value={filters.kind}>
+          <option value="">All</option>
+          <option value={TaskIssueKind.Task}>Tasks</option>
+          <option value={TaskIssueKind.Review}>Reviews</option>
+        </SelectFilter>
+        <SelectFilter name="status" label="Status" value={filters.status}>
+          <option value="">All</option>
+          {Object.entries(TaskIssueStatus).map(([label, value]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </SelectFilter>
+        <SelectFilter name="studioId" label="Team" value={filters.studioId}>
+          <option value="">All teams</option>
+          {studios.map((studio) => (
+            <option key={studio.id} value={studio.id}>{studio.name}</option>
+          ))}
+        </SelectFilter>
+        <SelectFilter name="due" label="Due" value={filters.due}>
+          <option value="">Any time</option>
+          <option value="today">Today</option>
+          <option value="week">Next 7 days</option>
+        </SelectFilter>
+        <div className="flex items-end">
+          <button type="submit" className={primaryButtonClass("w-full justify-center")}>
+            <span className="material-symbols-outlined text-[18px]">filter_alt</span>
+            Apply
+          </button>
+        </div>
+      </Form>
 
       <section>
-        <SectionHeader
-          title={filter === "all" ? "All Reviews" : FILTER_OPTIONS.find((o) => o.value === filter)?.label || ""}
-          count={`${filtered.length} items`}
-        />
-
-        {filtered.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-outline-variant bg-surface-container-low px-6 py-16 text-center">
-            <span className="material-symbols-outlined text-4xl text-on-surface-variant">
-              rate_review
-            </span>
-            <p className="mt-3 text-body-sm text-on-surface">No reviews match this filter</p>
-          </div>
+        <SectionHeader title="Assigned to me" count={`${items.length} items`} />
+        {items.length === 0 ? (
+          <EmptyState
+            icon="task_alt"
+            title={studios.length === 0 ? "No teams yet" : "No assigned work"}
+            hint={studios.length === 0 ? "Join or create a team to see Studio tasks here." : "Tasks and reviews assigned to you will appear here."}
+          />
         ) : (
-          <div className="space-y-3">
-            {filtered.map((review) => (
-              <ReviewRow key={review.id} review={review} />
+          <div className="mt-4 space-y-3">
+            {items.map((item) => (
+              <TaskRow key={item.id} item={item} teamName={teamName(studios, item.studioId)} />
             ))}
           </div>
         )}
       </section>
     </section>
   );
+}
+
+function SelectFilter({
+  name,
+  label,
+  value,
+  children,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="text-label-md text-on-surface-variant">
+      {label}
+      <select
+        name={name}
+        defaultValue={value}
+        className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function TaskRow({ item, teamName }: { item: TaskIssueDto; teamName: string }) {
+  return (
+    <Link
+      to={`/teams/${item.studioId}/tasks`}
+      className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-4 transition-colors hover:border-primary/30"
+    >
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-on-surface-variant">
+        <span className="material-symbols-outlined text-[20px]">
+          {item.kind === TaskIssueKind.Review ? "rate_review" : "task_alt"}
+        </span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate text-body-sm font-bold text-on-surface">{item.title}</h3>
+        <p className="mt-0.5 truncate text-label-md text-on-surface-variant">
+          {teamName} · {taskKindLabel(item.kind)} · {item.milestone?.title ?? "No milestone"} · Due {formatDueDate(item.dueDate)}
+        </p>
+      </div>
+      <StatusBadge
+        label={taskStatusLabel(item.status)}
+        tone={statusTone(item.status)}
+        dotPosition="end"
+        className="px-2.5 py-1"
+      />
+    </Link>
+  );
+}
+
+function statusTone(status: number): Parameters<typeof StatusBadge>[0]["tone"] {
+  if (status === TaskIssueStatus.ChangesRequested) return "danger";
+  if (status === TaskIssueStatus.Approved || status === TaskIssueStatus.Done) return "success";
+  if (status === TaskIssueStatus.InReview) return "warning";
+  if (status === TaskIssueStatus.InProgress) return "primary";
+  return "neutral";
+}
+
+function teamName(studios: StudioDto[], studioId: string) {
+  return studios.find((studio) => studio.id === studioId)?.name ?? "Team";
+}
+
+function formatDueDate(value: string | null) {
+  if (!value) return "No due date";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No due date";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }

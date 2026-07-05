@@ -1,16 +1,20 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { actionErrorMessage } from "~/lib/action-error.server";
+import { useEffect, useMemo, useState } from "react";
 import { Link, redirect, useNavigation } from "react-router";
 
 import { PageHeader, SectionHeader, StatusBadge } from "~/components/dashboard/layout/DashboardPageLayout";
 import { ConfirmSubmitButton, EmptyState, ErrorBanner, primaryButtonClass } from "~/components/dashboard/section";
 import { AlbumAddItemsModal } from "~/components/dashboard/albums/album-add-items-modal";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
+import { AccessDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
-import { AlbumKind, MediaKind, OwnerKind, canWriteStudioContent, type AlbumDto, type MediaDto, type Workspace } from "~/lib/api";
+import { AlbumKind, MediaKind, canManageStudioAccess, canWriteStudioContent, type AlbumDto, type MediaDto, type Workspace } from "~/lib/api";
 import { albumsApi, ApiError, listAllMedia, listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
+import { isAlbumInStudioScope } from "./studio-albums";
 
 import type { Route } from "./+types/media-album-detail";
 
@@ -30,7 +34,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const albumId = params.albumId;
 
   if (!accessToken) {
-    return { album: null as AlbumDto | null, media: [] as MediaDto[], compatibleMedia: [] as MediaDto[], canWrite: false, error: "Your session expired. Please sign in again." };
+    return { album: null as AlbumDto | null, media: [] as MediaDto[], compatibleMedia: [] as MediaDto[], canWrite: false, canManageAccess: false, error: "Your session expired. Please sign in again." };
   }
 
   try {
@@ -40,8 +44,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       listAllMedia(accessToken, ws, reqLog),
       listMyStudios(accessToken, reqLog),
     ]);
-    const album = albums.find((item) => item.id === albumId && isStudioAlbum(item, studioId) && item.isDeleteAble === true) ?? null;
-    if (!album) return { album: null, media: [], compatibleMedia: [], canWrite: false, error: "Album not found." };
+    const studioAlbums = albums.filter((item) => isAlbumInStudioScope(item, studioId));
+    const album = studioAlbums.find((item) => item.id === albumId && item.isDeleteAble === true) ?? null;
+    if (!album) return { album: null, media: [], compatibleMedia: [], canWrite: false, canManageAccess: false, error: "Album not found." };
 
     const albumMedia = await albumsApi.listAlbumMedia(accessToken, album.id, ws, reqLog);
     const albumMediaIds = new Set(albumMedia.items.map((item) => item.id));
@@ -53,12 +58,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       media: albumMedia.items,
       compatibleMedia,
       canWrite: role != null ? canWriteStudioContent(role) : false,
+      canManageAccess: role != null ? canManageStudioAccess(role) : false,
       error: null as string | null,
     };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load this Studio album.";
     reqLog.error({ err: error, studioId, albumId }, "failed to load Studio album detail");
-    return { album: null, media: [] as MediaDto[], compatibleMedia: [] as MediaDto[], canWrite: false, error: message };
+    return { album: null, media: [] as MediaDto[], compatibleMedia: [] as MediaDto[], canWrite: false, canManageAccess: false, error: message };
   }
 }
 
@@ -78,6 +84,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   const ws = studioWs(studioId);
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "delete-album") {
       await albumsApi.deleteAlbum(accessToken, albumId, ws, reqLog);
       return redirect(`/teams/${studioId}/media/albums`);
@@ -96,7 +105,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, studioId, albumId }, "Studio album detail action failed");
     return { error: message };
   }
@@ -135,6 +144,7 @@ export default function TeamAlbumDetail({ loaderData, actionData, params }: Rout
           Studio albums
         </Link>
         <PageHeader title={album.name} subtitle={album.description || "No description provided."}>
+          <AccessDialog resourceType="album" resourceId={album.id} resourceName={album.name} canManageAccess={loaderData.canManageAccess} />
           {loaderData.canWrite ? (
             <>
               <button type="button" onClick={() => setAddMediaOpen(true)} className={primaryButtonClass()}>
@@ -178,7 +188,7 @@ export default function TeamAlbumDetail({ loaderData, actionData, params }: Rout
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {loaderData.media.map((item, index) => (
-            <AlbumMediaCard key={item.id} media={item} album={album} index={index} canWrite={loaderData.canWrite} onPreview={() => setPreviewMediaId(item.id)} />
+            <AlbumMediaCard key={item.id} media={item} album={album} index={index} canWrite={loaderData.canWrite} canManageAccess={loaderData.canManageAccess} onPreview={() => setPreviewMediaId(item.id)} />
           ))}
         </div>
       )}
@@ -191,7 +201,7 @@ export default function TeamAlbumDetail({ loaderData, actionData, params }: Rout
   );
 }
 
-function AlbumMediaCard({ media, album, index, canWrite, onPreview }: { media: MediaDto; album: AlbumDto; index: number; canWrite: boolean; onPreview: () => void }) {
+function AlbumMediaCard({ media, album, index, canWrite, canManageAccess, onPreview }: { media: MediaDto; album: AlbumDto; index: number; canWrite: boolean; canManageAccess: boolean; onPreview: () => void }) {
   return (
     <article className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
       <button type="button" onClick={onPreview} className="relative block aspect-video w-full overflow-hidden text-left" aria-label={`Preview ${media.filename}`}>
@@ -204,6 +214,7 @@ function AlbumMediaCard({ media, album, index, canWrite, onPreview }: { media: M
           <h3 className="truncate text-body-sm font-bold text-on-surface" title={media.filename}>{media.filename}</h3>
           <p className="mt-1 text-label-sm text-on-surface-variant">{formatDate(media.createdAt)}</p>
         </div>
+        <AccessDialog resourceType="media" resourceId={media.id} resourceName={media.filename} canManageAccess={canManageAccess} />
         {canWrite ? (
           <ConfirmSubmitButton fields={{ intent: "remove-media", albumId: album.id, mediaId: media.id }} title="Remove media from album?" message={`Remove ${media.filename} from ${album.name}?`} confirmLabel="Remove media" ariaLabel={`Remove ${media.filename} from ${album.name}`} buttonClassName="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error">
             <span className="material-symbols-outlined text-[18px]">close</span>
@@ -220,10 +231,6 @@ function acceptsMediaKind(albumKind: number, mediaKind: number) {
   if (albumKind === AlbumKind.Video) return mediaKind === MediaKind.Video;
   if (albumKind === AlbumKind.Audio) return mediaKind === MediaKind.Audio;
   return false;
-}
-
-function isStudioAlbum(album: AlbumDto, studioId: string): boolean {
-  return album.ownerKind === OwnerKind.Studio && album.ownerId === studioId;
 }
 
 function albumKindView(kind: number) {

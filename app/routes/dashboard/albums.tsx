@@ -1,8 +1,8 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { useEffect, useMemo, useState } from "react";
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
 
 import {
-  CardOverflowMenu,
   FilterTabs,
   FormActions,
   GradientThumbnail,
@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import {
+  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   Modal,
@@ -18,11 +19,13 @@ import {
 } from "~/components/dashboard/section";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
+import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { AlbumKind, PERSONAL, type AlbumDto } from "~/lib/api";
 import { albumsApi, ApiError } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/albums";
@@ -108,6 +111,9 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "create-album") {
       const name = String(formData.get("name") ?? "").trim();
       const description = String(formData.get("description") ?? "").trim();
@@ -158,7 +164,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent }, "album action failed");
     return { error: message };
   }
@@ -359,14 +365,17 @@ function AlbumCard({
           activeClassName="text-error"
           label={`${album.isFavorite ? "Remove from" : "Add to"} favorites`}
         />
-        <CardOverflowMenu
-          id={album.id}
-          itemLabel={album.name}
-          intent="delete-album"
-          confirmTitle="Delete album"
-          confirmMessage="Delete this album permanently? Media files will remain in your library."
+        <ShareDialog resourceType="album" resourceId={album.id} resourceName={album.name} />
+        <ConfirmSubmitButton
+          fields={{ intent: "delete-album", id: album.id }}
+          title="Delete album"
+          message="Delete this album permanently? Media files will remain in your library."
           confirmLabel="Delete album"
-        />
+          ariaLabel={`Delete ${album.name}`}
+          buttonClassName="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+        >
+          <span className="material-symbols-outlined text-[18px]">delete</span>
+        </ConfirmSubmitButton>
       </div>
     </article>
   );

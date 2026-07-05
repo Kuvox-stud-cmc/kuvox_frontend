@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet } from "react-router";
+import { useCallback, useRef } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router";
 
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger } from "~/lib/logger.server";
@@ -23,6 +24,22 @@ const NAV = [
 /** Settings section shell with a side nav. */
 export default function SettingsLayout({ loaderData }: Route.ComponentProps) {
   const user = loaderData.user;
+  const navigate = useNavigate();
+  const settingsEntryIndex = useRef(getHistoryIndex());
+  const handleBack = useCallback(() => {
+    const entryIndex = settingsEntryIndex.current;
+    const currentIndex = getHistoryIndex();
+
+    if (entryIndex !== null && currentIndex !== null && entryIndex > 0) {
+      const delta = entryIndex - 1 - currentIndex;
+      if (delta < 0) {
+        navigate(delta);
+        return;
+      }
+    }
+
+    navigate("/dashboard");
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-surface text-on-surface">
@@ -38,13 +55,14 @@ export default function SettingsLayout({ loaderData }: Route.ComponentProps) {
               </p>
             </div>
           </div>
-          <Link
-            to="/dashboard"
+          <button
+            type="button"
+            onClick={handleBack}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-outline-variant bg-surface-container-low px-4 text-label-md font-semibold text-on-surface transition-colors hover:border-primary/40 hover:bg-surface-container"
           >
             <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-            Back to dashboard
-          </Link>
+            Back
+          </button>
         </div>
       </header>
 
@@ -98,4 +116,10 @@ export default function SettingsLayout({ loaderData }: Route.ComponentProps) {
       </div>
     </div>
   );
+}
+
+function getHistoryIndex() {
+  if (typeof window === "undefined") return null;
+  const index = window.history.state?.idx;
+  return typeof index === "number" ? index : null;
 }

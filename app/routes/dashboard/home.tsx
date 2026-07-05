@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { Link } from "react-router";
 
 import {
@@ -8,14 +9,26 @@ import {
   StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
+import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { ErrorBanner } from "~/components/dashboard/section";
-import { PERSONAL, ProjectKind, projectKindLabel, type ProjectDto } from "~/lib/api";
 import {
-  ApiError,
+  PERSONAL,
+  ProjectKind,
+  TaskIssueKind,
+  TaskIssueStatus,
+  isTaskOpen,
+  projectKindLabel,
+  taskKindLabel,
+  taskStatusLabel,
+  type ProjectDto,
+  type TaskIssueDto,
+} from "~/lib/api";
+import {
   listMedia,
   listMediaTrash,
   listProjects,
   listProjectTrash,
+  listAssignedTasks,
   listSharedMedia,
   listSharedProjects,
   setProjectStar,
@@ -23,12 +36,13 @@ import {
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/home";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Dashboard · Kuvox" }];
+  return [{ title: "Dashboard Â· Kuvox" }];
 }
 
 function count<T>(result: PromiseSettledResult<{ totalCount: number }>): number {
@@ -46,11 +60,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     user,
     counts: { projects: 0, media: 0, shared: 0, trash: 0 },
     recent: [] as ProjectDto[],
+    currentWork: [] as TaskIssueDto[],
     error: "Your session expired. Please sign in again." as string | null,
   };
   if (!accessToken) return empty;
 
-  const [projects, media, sharedProjects, sharedMedia, projectTrash, mediaTrash] =
+  const [projects, media, sharedProjects, sharedMedia, projectTrash, mediaTrash, currentWork] =
     await Promise.allSettled([
       listProjects(accessToken, PERSONAL, reqLog),
       listMedia(accessToken, PERSONAL, reqLog),
@@ -58,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       listSharedMedia(accessToken, reqLog),
       listProjectTrash(accessToken, PERSONAL, reqLog),
       listMediaTrash(accessToken, PERSONAL, reqLog),
+      listAssignedTasks(accessToken, {}, reqLog),
     ]);
 
   const recent = projects.status === "fulfilled" ? projects.value.items.slice(0, 6) : [];
@@ -70,6 +86,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ["sharedMedia", sharedMedia],
     ["projectTrash", projectTrash],
     ["mediaTrash", mediaTrash],
+    ["currentWork", currentWork],
   ] as const;
   const failedOptional = optionalResults.filter(([, result]) => result.status === "rejected");
   if (coreFailed || failedOptional.length > 0) {
@@ -91,6 +108,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       trash: count(projectTrash) + count(mediaTrash),
     },
     recent,
+    currentWork:
+      currentWork.status === "fulfilled"
+        ? currentWork.value.filter((item) => isTaskOpen(item.status)).slice(0, 5)
+        : [],
     error: coreFailed ? "Some dashboard data couldn't be loaded." : null,
   };
 }
@@ -109,6 +130,9 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
@@ -128,29 +152,13 @@ export async function action({ request }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent }, "dashboard home action failed");
     return { error: message };
   }
 }
 
-/* ── Mock data (to be replaced by real API integration) ─────────────────── */
-
-const MOCK_REVIEWS = [
-  { id: "r1", title: "Travel Vlog", reviewer: "Sarah Chen", status: "waiting_approval" as const },
-  {
-    id: "r2",
-    title: "Product Promo",
-    reviewer: "John Smith",
-    status: "changes_requested" as const,
-  },
-  {
-    id: "r3",
-    title: "Instagram Reel",
-    reviewer: "Emma Davis",
-    status: "waiting_review" as const,
-  },
-];
+/* â”€â”€ Mock data (to be replaced by real API integration) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const MOCK_AI_SUGGESTIONS = [
   { id: "ai1", icon: "mic", title: "Remove silence", description: "Save 12s" },
@@ -168,7 +176,7 @@ const MOCK_AI_SUGGESTIONS = [
   },
 ];
 
-/* ── Sub-components ─────────────────────────────────────────────────────── */
+/* â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function formatStatus(status: string) {
   return status
@@ -204,25 +212,22 @@ function projectStatusBadge(status: string) {
   return statusTones[normalized] ?? { tone: "neutral" as const };
 }
 
-function reviewStatusBadge(status: string) {
-  const map: Record<string, { label: string; tone: Parameters<typeof StatusBadge>[0]["tone"] }> = {
-    waiting_approval: {
-      label: "Waiting Approval",
-      tone: "warning",
-    },
-    changes_requested: {
-      label: "Changes Requested",
-      tone: "danger",
-    },
-    waiting_review: {
-      label: "Waiting Review",
-      tone: "primary",
-    },
-  };
-  return map[status] ?? { label: status, tone: "neutral" as const };
+function taskStatusBadge(status: number) {
+  if (status === TaskIssueStatus.ChangesRequested) return { tone: "danger" as const };
+  if (status === TaskIssueStatus.Approved || status === TaskIssueStatus.Done) return { tone: "success" as const };
+  if (status === TaskIssueStatus.InReview) return { tone: "warning" as const };
+  if (status === TaskIssueStatus.InProgress) return { tone: "primary" as const };
+  return { tone: "neutral" as const };
 }
 
-/* ── Main component ─────────────────────────────────────────────────────── */
+function formatDueDate(dueDate: string | null) {
+  if (!dueDate) return "No due date";
+  const date = new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return "No due date";
+  return `Due ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date)}`;
+}
+
+/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function ProjectCard({ project, index }: { project: ProjectDto; index: number }) {
   return (
@@ -240,15 +245,18 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
         </div>
       </Link>
       <div className="absolute bottom-3 right-3">
-        <IconToggleButton
-          id={project.id}
-          active={project.isStarred}
-          intent="toggle-star"
-          activeIcon="star"
-          inactiveIcon="star_border"
-          activeClassName="text-yellow-500"
-          label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
-        />
+        <div className="flex items-center gap-1">
+          <ShareDialog resourceType="project" resourceId={project.id} resourceName={project.name} />
+          <IconToggleButton
+            id={project.id}
+            active={project.isStarred}
+            intent="toggle-star"
+            activeIcon="star"
+            inactiveIcon="star_border"
+            activeClassName="text-yellow-500"
+            label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
+          />
+        </div>
       </div>
 
       <div className="p-4">
@@ -275,18 +283,18 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
 }
 
 export default function DashboardHome({ loaderData, actionData }: Route.ComponentProps) {
-  const { user, counts, recent, error } = loaderData;
+  const { user, counts, recent, currentWork, error } = loaderData;
 
   return (
     <div className="space-y-8">
       {error && <ErrorBanner message={error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
-      {/* ── Hero Welcome ──────────────────────────────────────────────────── */}
+      {/* â”€â”€ Hero Welcome â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="flex items-end justify-between">
         <div>
           <h1 className="text-headline-lg font-bold text-on-surface">
-            Welcome back, {user.displayName} 👋
+            Welcome back, {user.displayName} đŸ‘‹
           </h1>
           <p className="mt-1 text-body-sm text-on-surface-variant">
             Let's continue creating amazing content together.
@@ -302,7 +310,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         </button>
       </section>
 
-      {/* ── Stats Row ─────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Stats Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
@@ -341,7 +349,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
 
       </div>
 
-      {/* ── Continue Editing ──────────────────────────────────────────────── */}
+      {/* â”€â”€ Continue Editing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section>
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-headline-md font-bold text-on-surface">Continue Editing</h2>
@@ -366,48 +374,54 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         )}
       </section>
 
-      {/* ── Three Column Middle ───────────────────────────────────────────── */}
+      {/* â”€â”€ Three Column Middle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-12 gap-8">
-        {/* Pending Reviews */}
-        <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-8">
-          <div className="mb-6 flex items-center justify-between">
-            <h3 className="font-bold text-on-surface">
-              Pending Reviews{" "}
-              <span className="ml-2 rounded-full bg-error/20 px-1.5 py-0.5 text-label-sm text-error">
-                5
-              </span>
-            </h3>
-            <Link
-              to="/dashboard/reviews"
-              className="text-label-sm font-bold uppercase tracking-wider text-primary hover:underline"
-            >
-              View All
-            </Link>
-          </div>
-          <div className="space-y-4">
-            {MOCK_REVIEWS.map((review) => (
-              <div key={review.id} className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-label-md font-bold text-on-surface-variant">
-                  {review.title.charAt(0)}
+        {currentWork.length > 0 && (
+          <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-8">
+            <div className="mb-6 flex items-center justify-between">
+              <h3 className="font-bold text-on-surface">
+                Current Work{" "}
+                <span className="ml-2 rounded-full bg-primary/20 px-1.5 py-0.5 text-label-sm text-primary">
+                  {currentWork.length}
+                </span>
+              </h3>
+              <Link
+                to="/dashboard/reviews"
+                className="text-label-sm font-bold uppercase tracking-wider text-primary hover:underline"
+              >
+                View All
+              </Link>
+            </div>
+            <div className="space-y-4">
+              {currentWork.map((item) => (
+                <div key={item.id} className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-on-surface-variant">
+                    <span className="material-symbols-outlined text-[20px]">
+                      {item.kind === TaskIssueKind.Review ? "rate_review" : "task_alt"}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="truncate text-label-md font-bold text-on-surface">
+                      {item.title}
+                    </h4>
+                    <p className="truncate text-label-sm text-on-surface-variant">
+                      {taskKindLabel(item.kind)} · {item.projectName ?? "Studio task"} · {formatDueDate(item.dueDate)}
+                    </p>
+                  </div>
+                  <StatusBadge
+                    label={taskStatusLabel(item.status)}
+                    {...taskStatusBadge(item.status)}
+                    className="bg-transparent px-0 py-0"
+                    dotPosition="end"
+                  />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="truncate text-label-md font-bold text-on-surface">
-                    {review.title}
-                  </h4>
-                  <p className="text-label-sm text-on-surface-variant">By {review.reviewer}</p>
-                </div>
-                <StatusBadge
-                  {...reviewStatusBadge(review.status)}
-                  className="bg-transparent px-0 py-0"
-                  dotPosition="end"
-                />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Quick Actions */}
-        <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-4">
+        <div className={`col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 ${currentWork.length > 0 ? "lg:col-span-4" : "lg:col-span-12"}`}>
           <h3 className="mb-6 font-bold text-on-surface">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-4">
             {(
@@ -451,7 +465,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         </div>
       </div>
 
-      {/* ── Bottom Section ────────────────────────────────────────────────── */}
+      {/* â”€â”€ Bottom Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-12 gap-8">
         {/* Recent Projects (real data) */}
         <div className="col-span-12 lg:col-span-9">
@@ -467,7 +481,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
           </div>
           {recent.length === 0 ? (
             <p className="mt-3 rounded-xl border border-dashed border-outline-variant bg-surface-container-low px-4 py-8 text-center text-body-sm text-on-surface-variant">
-              No projects yet — create one to get started.
+              No projects yet â€” create one to get started.
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-4">

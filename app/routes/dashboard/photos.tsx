@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, useNavigation, useSearchParams } from "react-router";
 
@@ -22,6 +23,7 @@ import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipe
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
+import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
 import { ApiError, listMedia, setMediaFavorite, softDelete, albumsApi } from "~/lib/api.server";
 import { useLiveMedia } from "~/lib/media-realtime";
@@ -30,6 +32,7 @@ import { TextField, TextArea } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/photos";
@@ -89,6 +92,9 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
@@ -136,7 +142,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent }, "media action failed");
     return { error: message };
   }
@@ -218,6 +224,7 @@ function PhotoCard({
         <span className="hidden text-label-sm text-on-surface-variant sm:block">
           {formatDate(photo.createdAt)}
         </span>
+        <ShareDialog resourceType="media" resourceId={photo.id} resourceName={photo.filename} />
         <CardOverflowMenu id={photo.id} itemLabel={photo.filename} placement="top" />
       </div>
     );
@@ -253,6 +260,12 @@ function PhotoCard({
               inactiveIcon="favorite_border"
               activeClassName="text-error"
               label={`${photo.isFavorite ? "Remove from" : "Add to"} favorites`}
+            />
+            <ShareDialog
+              resourceType="media"
+              resourceId={photo.id}
+              resourceName={photo.filename}
+              buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
             />
             <CardOverflowMenu
               id={photo.id}

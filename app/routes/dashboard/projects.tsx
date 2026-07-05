@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import ProjectsDashboard from "./projects-view";
 import {
   PERSONAL,
@@ -6,7 +7,6 @@ import {
   type ProjectDto,
 } from "~/lib/api";
 import {
-  ApiError,
   createProject,
   listMedia,
   listProjects,
@@ -16,12 +16,13 @@ import {
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/projects";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Projects · Kuvox" }];
+  return [{ title: "Projects Â· Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -77,6 +78,9 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "create") {
       const name = String(formData.get("name") ?? "").trim();
       const kind = Number(formData.get("kind") ?? ProjectKind.Video);
@@ -107,7 +111,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent }, "project action failed");
     return { error: message };
   }

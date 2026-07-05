@@ -25,7 +25,7 @@ export class StudiosApi extends BaseApiModule {
   }
 
   addStudioMember(token: string, studioId: string, input: { email: string; role: number }, log?: RequestLogger): Promise<StudioMemberDto> {
-    return this.client.post<StudioMemberDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/members`, { email: input.email, role: input.role }, { auth: require("./api-client.server").bearerAuth(token), log });
+    return this.client.post<StudioMemberDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/members`, { email: input.email, role: input.role }, { auth: bearerAuth(token), log });
   }
 
   listStudioInvitations(token: string, studioId: string, log?: RequestLogger): Promise<StudioInvitationDto[]> {
@@ -33,11 +33,11 @@ export class StudiosApi extends BaseApiModule {
   }
 
   createStudioInvitation(token: string, studioId: string, input: { email: string; role: number }, log?: RequestLogger): Promise<StudioInvitationDto> {
-    return this.client.post<StudioInvitationDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/invitations`, input, { auth: require("./api-client.server").bearerAuth(token), log });
+    return this.client.post<StudioInvitationDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/invitations`, input, { auth: bearerAuth(token), log });
   }
 
   resendStudioInvitation(token: string, studioId: string, invitationId: string, log?: RequestLogger): Promise<StudioInvitationDto> {
-    return this.client.post<StudioInvitationDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/invitations/${invitationId}/resend`, {}, { auth: require("./api-client.server").bearerAuth(token), log });
+    return this.client.post<StudioInvitationDto>(`${API_ROUTES.STUDIOS_AUTH}/${studioId}/invitations/${invitationId}/resend`, {}, { auth: bearerAuth(token), log });
   }
 
   revokeStudioInvitation(token: string, studioId: string, invitationId: string, log?: RequestLogger): Promise<void> {
@@ -106,7 +106,7 @@ export class StudiosApi extends BaseApiModule {
   }
 
   createStudio(token: string, name: string, log?: RequestLogger): Promise<StudioDto> {
-    return this.client.post<StudioDto>(`${API_ROUTES.STUDIOS_AUTH}`, { name }, { auth: require("./api-client.server").bearerAuth(token), log });
+    return this.client.post<StudioDto>(`${API_ROUTES.STUDIOS_AUTH}`, { name }, { auth: bearerAuth(token), log });
   }
 
   renameStudio(token: string, studioId: string, name: string, log?: RequestLogger): Promise<StudioDto> {

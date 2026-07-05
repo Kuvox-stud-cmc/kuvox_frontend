@@ -1,22 +1,23 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { Form, useNavigation } from "react-router";
 
 import { FormActions, PageHeader } from "~/components/dashboard/layout/DashboardPageLayout";
 import { ErrorBanner } from "~/components/dashboard/section";
-import { isStudioAdmin, UserStudioRole, type StudioWorkspaceSettingsDto } from "~/lib/api";
+import type { StudioWorkspaceSettingsDto } from "~/lib/api";
 import {
   ApiError,
   getWorkspaceSettings,
-  listMyStudios,
   updateWorkspaceSettings,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
+import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/settings-profile";
 
 function legacyMeta() {
-  return [{ title: "Studio profile settings · Kuvox" }];
+  return [{ title: "Studio profile settings Â· Kuvox" }];
 }
 
 function LegacyTeamProfileSettings() {
@@ -43,13 +44,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   try {
-    const [settings, studios] = await Promise.all([
-      getWorkspaceSettings(accessToken, params.studioId, reqLog),
-      listMyStudios(accessToken, reqLog),
-    ]);
-    const role = studios.find((studio) => studio.id === params.studioId)?.role ?? UserStudioRole.Member;
-    return { settings, isAdmin: isStudioAdmin(role), error: null as string | null };
+    await requireStudioAdminAccess(accessToken, params.studioId, reqLog);
+    const settings = await getWorkspaceSettings(accessToken, params.studioId, reqLog);
+    return { settings, isAdmin: true, error: null as string | null };
   } catch (error) {
+    if (error instanceof Response) throw error;
     const message = error instanceof ApiError ? error.message : "Couldn't load profile settings.";
     reqLog.error({ err: error, studioId: params.studioId }, "failed to load studio profile settings");
     return { settings: null as StudioWorkspaceSettingsDto | null, isAdmin: false, error: message };
@@ -72,6 +71,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!name) return { error: "Studio name is required." };
 
   try {
+    await requireStudioAdminAccess(accessToken, params.studioId, reqLog);
     await updateWorkspaceSettings(
       accessToken,
       params.studioId,
@@ -85,7 +85,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
     return { ok: true };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    if (error instanceof Response) throw error;
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, studioId: params.studioId }, "studio profile settings action failed");
     return { error: message };
   }

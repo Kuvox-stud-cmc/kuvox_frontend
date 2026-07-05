@@ -5,6 +5,7 @@ import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
+import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/roles";
 
 function legacyMeta() {
@@ -31,9 +32,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   try {
+    await requireStudioAdminAccess(accessToken, params.studioId, reqLog);
     const roles = await listStudioRoles(accessToken, params.studioId, reqLog);
     return { roles, error: null as string | null };
   } catch (error) {
+    if (error instanceof Response) throw error;
     const message = error instanceof ApiError ? error.message : "Couldn't load roles.";
     reqLog.error({ err: error, studioId: params.studioId }, "failed to load studio roles");
     return { roles: [] as StudioRoleDto[], error: message };

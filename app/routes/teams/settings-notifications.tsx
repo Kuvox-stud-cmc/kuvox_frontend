@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { Form, useNavigation } from "react-router";
 
 import { FormActions, PageHeader } from "~/components/dashboard/layout/DashboardPageLayout";
@@ -12,10 +13,11 @@ import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
+import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/settings-notifications";
 
 function legacyMeta() {
-  return [{ title: "Studio notification settings · Kuvox" }];
+  return [{ title: "Studio notification settings Â· Kuvox" }];
 }
 
 function LegacyTeamNotificationSettings() {
@@ -41,9 +43,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   try {
+    await requireStudioAdminAccess(accessToken, params.studioId, reqLog);
     const settings = await getNotificationSettings(accessToken, params.studioId, reqLog);
     return { settings, error: null as string | null };
   } catch (error) {
+    if (error instanceof Response) throw error;
     const message = error instanceof ApiError ? error.message : "Couldn't load notification settings.";
     reqLog.error({ err: error, studioId: params.studioId }, "failed to load studio notification settings");
     return { settings: null as StudioNotificationSettingsDto | null, error: message };
@@ -69,10 +73,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   };
 
   try {
+    await requireStudioAdminAccess(accessToken, params.studioId, reqLog);
     await updateNotificationSettings(accessToken, params.studioId, settings, reqLog);
     return { ok: true };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    if (error instanceof Response) throw error;
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, studioId: params.studioId }, "studio notification settings action failed");
     return { error: message };
   }

@@ -1,14 +1,24 @@
-import { ProjectsView } from "~/components/dashboard/workspace/projects-view";
-import { ProjectKind, canWriteStudioContent, type ProjectDto, type Workspace } from "~/lib/api";
-import { ApiError, createProject, listMyStudios, listProjects, softDelete } from "~/lib/api.server";
+import { actionErrorMessage } from "~/lib/action-error.server";
+import ProjectsDashboard from "../dashboard/projects-view";
+import { ProjectKind, canManageStudioAccess, canWriteStudioContent, type MediaDto, type ProjectDto, type Workspace } from "~/lib/api";
+import {
+  ApiError,
+  createProject,
+  listMedia,
+  listMyStudios,
+  listProjects,
+  setProjectStar,
+  softDelete,
+} from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/projects";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Team projects · Kuvox" }];
+  return [{ title: "Team projects Â· Kuvox" }];
 }
 
 const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
@@ -21,21 +31,43 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const accessToken = session.get("accessToken");
 
   if (!accessToken) {
-    return { projects: [] as ProjectDto[], error: "Your session expired. Please sign in again." };
+    return {
+      projects: [] as ProjectDto[],
+      sharedProjects: [] as ProjectDto[],
+      media: [] as MediaDto[],
+      error: "Your session expired. Please sign in again.",
+      canWrite: false,
+      canManageAccess: false,
+    };
   }
 
   try {
-    const [page, studios] = await Promise.all([
+    const [page, media, studios] = await Promise.all([
       listProjects(accessToken, studioWs(params.studioId), reqLog),
+      listMedia(accessToken, studioWs(params.studioId), reqLog),
       listMyStudios(accessToken, reqLog),
     ]);
     const role = studios.find((studio) => studio.id === params.studioId)?.role;
-    return { projects: page.items, error: null as string | null, canWrite: role != null ? canWriteStudioContent(role) : false };
+    return {
+      projects: page.items,
+      sharedProjects: [] as ProjectDto[],
+      media: media.items,
+      error: null as string | null,
+      canWrite: role != null ? canWriteStudioContent(role) : false,
+      canManageAccess: role != null ? canManageStudioAccess(role) : false,
+    };
   } catch (error) {
     const message =
       error instanceof ApiError ? error.message : "Couldn't load team projects.";
     reqLog.error({ err: error, studioId: params.studioId }, "failed to load team projects");
-    return { projects: [] as ProjectDto[], error: message, canWrite: false };
+    return {
+      projects: [] as ProjectDto[],
+      sharedProjects: [] as ProjectDto[],
+      media: [] as MediaDto[],
+      error: message,
+      canWrite: false,
+      canManageAccess: false,
+    };
   }
 }
 
@@ -54,6 +86,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   const ws = studioWs(params.studioId);
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "create") {
       const name = String(formData.get("name") ?? "").trim();
       const kind = Number(formData.get("kind") ?? ProjectKind.Video);
@@ -73,22 +108,37 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { ok: true, intent };
     }
 
+    if (intent === "toggle-star") {
+      const id = String(formData.get("id") ?? "");
+      const isStarred = String(formData.get("value") ?? "") === "true";
+      if (id) {
+        await setProjectStar(accessToken, id, isStarred, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, studioId: params.studioId }, "team project action failed");
     return { error: message };
   }
 }
 
-export default function TeamProjects({ loaderData, actionData }: Route.ComponentProps) {
+export default function TeamProjects({ loaderData, params }: Route.ComponentProps) {
   return (
-    <ProjectsView
+    <ProjectsDashboard
       projects={loaderData.projects}
-      loadError={loaderData.error}
-      actionData={actionData}
-      subtitle="Projects owned by this team."
+      sharedProjects={loaderData.sharedProjects}
+      media={loaderData.media}
+      error={loaderData.error}
+      basePath={`/teams/${params.studioId}/projects`}
+      studioId={params.studioId}
       canWrite={loaderData.canWrite}
+      canManageAccess={loaderData.canManageAccess}
+      workspaceKind="studio"
+      title="Studio Projects"
+      subtitle="Projects owned by this Studio workspace."
     />
   );
 }

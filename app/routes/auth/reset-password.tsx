@@ -1,6 +1,7 @@
 import { Form, Link, redirect, useNavigation, useSearchParams } from "react-router";
 
 import { ApiError, resetPasswordRequest } from "~/lib/api.server";
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { createRequestLogger } from "~/lib/logger.server";
 
 import type { Route } from "./+types/reset-password";
@@ -36,10 +37,10 @@ export async function action({ request }: Route.ActionArgs) {
   } catch (error) {
     if (error instanceof ApiError) {
       log.warn({ err: error }, "reset-password failed");
-      return { error: error.message };
+      return { error: actionErrorMessage(error, "Something went wrong. Please try again.") };
     }
     log.error({ err: error }, "reset-password failed: unexpected error");
-    return { error: "Something went wrong. Please try again." };
+    return { error: actionErrorMessage(error, "Something went wrong. Please try again.") };
   }
 }
 

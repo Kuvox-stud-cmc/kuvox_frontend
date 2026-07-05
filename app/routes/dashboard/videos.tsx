@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Form, useNavigation, useSearchParams } from "react-router";
 
@@ -18,6 +19,7 @@ import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipe
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
+import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 
@@ -25,6 +27,7 @@ import { ApiError, albumsApi, listMedia, setMediaFavorite, softDelete } from "~/
 import { getSession } from "~/lib/session.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { AlbumKind, MediaKind, PERSONAL, type AlbumDto, type MediaDto } from "~/lib/api";
 import { useLiveMedia } from "~/lib/media-realtime";
 import {
@@ -35,7 +38,7 @@ import {
 import type { Route } from "./+types/videos";
 
 export function meta() {
-  return [{ title: "Videos · Kuvox" }];
+  return [{ title: "Videos Â· Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -104,6 +107,9 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
@@ -155,7 +161,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent }, "video action failed");
     return { error: message };
   }
@@ -163,7 +169,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 function formatDuration(value: number | string | null): string {
   const sec = Number(value);
-  if (!sec) return "—";
+  if (!sec) return "â€”";
   const min = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
@@ -213,10 +219,10 @@ function VideoCard({
 }) {
   const pipelineState = resolveMediaPipeline(video, pipeline);
   const status = pipelineState.stage === "failed" ? "failed" : video.status.toLowerCase();
-  const res = video.width && video.height ? `${video.width}x${video.height}` : "—";
-  const fpsStr = "—";
+  const res = video.width && video.height ? `${video.width}x${video.height}` : "â€”";
+  const fpsStr = "â€”";
 
-  /* ── List view ────────────────────────────────────────────────────────── */
+  /* â”€â”€ List view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   if (listView) {
     return (
       <div
@@ -267,7 +273,7 @@ function VideoCard({
         </div>
         <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
           {video.durationSeconds != null && <span>{formatDuration(video.durationSeconds)}</span>}
-          {res !== "—" && (
+          {res !== "â€”" && (
             <>
               <span className="h-1 w-1 rounded-full bg-outline-variant" />
               <span>{res}</span>
@@ -284,12 +290,13 @@ function VideoCard({
           activeClassName="text-error"
           label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
         />
+        <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
         <CardOverflowMenu id={video.id} itemLabel={video.filename} />
       </div>
     );
   }
 
-  /* ── Grid view: Failed card ───────────────────────────────────────────── */
+  /* â”€â”€ Grid view: Failed card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   if (status === "failed") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-error/40">
@@ -327,6 +334,7 @@ function VideoCard({
                 activeClassName="text-error"
                 label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
               />
+              <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
               <CardOverflowMenu id={video.id} itemLabel={video.filename} />
             </div>
           </div>
@@ -335,7 +343,7 @@ function VideoCard({
     );
   }
 
-  /* ── Grid view: Uploading card ────────────────────────────────────────── */
+  /* â”€â”€ Grid view: Uploading card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   if (status === "uploading" || status === "uploaded") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
@@ -369,7 +377,10 @@ function VideoCard({
             <h3 className="truncate text-body-sm font-bold text-on-surface">
               {video.filename}
             </h3>
-            <CardOverflowMenu id={video.id} itemLabel={video.filename} />
+            <div className="flex items-center gap-1">
+              <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
+              <CardOverflowMenu id={video.id} itemLabel={video.filename} />
+            </div>
           </div>
           <p className="mb-3 text-label-md text-on-surface-variant">
             {pipelineState.detail}
@@ -395,7 +406,7 @@ function VideoCard({
     );
   }
 
-  /* ── Grid view: Ready / Processing card ───────────────────────────────── */
+  /* â”€â”€ Grid view: Ready / Processing card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   return (
     <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <VideoPreviewFrame
@@ -439,7 +450,10 @@ function VideoCard({
           <h3 className="truncate text-body-sm font-bold text-on-surface">
             {video.filename}
           </h3>
-          <CardOverflowMenu id={video.id} itemLabel={video.filename} />
+          <div className="flex items-center gap-1">
+            <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
+            <CardOverflowMenu id={video.id} itemLabel={video.filename} />
+          </div>
         </div>
         <p className="mb-3 text-label-md text-on-surface-variant">
           {new Date(video.createdAt).toLocaleDateString()}
@@ -492,7 +506,7 @@ function CreateNewCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-/* ── Main component ─────────────────────────────────────────────────────── */
+/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export default function Videos({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
@@ -586,7 +600,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
       {loaderData.error && <ErrorBanner message={loaderData.error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
-      {/* ── Hero Drop Zone ─────────────────────────────────────────────────── */}
+      {/* â”€â”€ Hero Drop Zone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-outline-variant bg-surface-container-low p-10 transition-colors hover:border-primary/30">
         {/* Decorative gradient blobs */}
         <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-primary/5 blur-3xl" />
@@ -633,7 +647,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         </div>
       </div>
 
-      {/* ── Metrics Row ────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Metrics Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           icon="videocam"
@@ -674,7 +688,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         />
       </div>
 
-      {/* ── Recent Projects ────────────────────────────────────────────────── */}
+      {/* â”€â”€ Recent Projects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section>
         <SectionHeader title="Recent Projects" actionTo="/dashboard/videos?view=recent" />
 
@@ -760,7 +774,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         )}
       </section>
 
-      {/* ── Import Modal ───────────────────────────────────────────────────── */}
+      {/* â”€â”€ Import Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <MediaUploadModal
         open={importOpen}
         onClose={() => setImportOpen(false)}

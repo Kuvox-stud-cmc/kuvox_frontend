@@ -3,6 +3,8 @@ export const API_ROUTES = {
     STUDIOS_AUTH: "/api/auth/studios",
     PROJECTS: "/api/projects",
     MEDIA: "/api/media",
+    ALBUMS: "/api/albums",
+    TASKS: "/api/tasks",
     TRASH: "/api/trash",
     NOTIFICATIONS: "/api/notifications",
 }

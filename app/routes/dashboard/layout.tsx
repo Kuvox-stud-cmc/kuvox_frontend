@@ -2,10 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Outlet } from "react-router";
 
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
-import { HeaderBar } from "~/routes/dashboard/header-bar";
+import { HeaderBar, type HeaderNotifications } from "~/routes/dashboard/header-bar";
 import { SidebarNav } from "~/routes/dashboard/sidebar-nav";
-import type { MediaStorageUsageDto, StudioDto } from "~/lib/api";
-import { getStorageUsage, listMyStudios } from "~/lib/api.server";
+import type { MediaStorageUsageDto, NotificationDto, StudioDto } from "~/lib/api";
+import {
+  getStorageUsage,
+  getUnreadNotificationCount,
+  listMyStudios,
+  listNotifications,
+} from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -30,12 +35,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   // The studios list is kept for future workspace-switcher integration.
   let studios: StudioDto[] = [];
   let storageUsage: MediaStorageUsageDto | null = null;
+  const notifications: HeaderNotifications = {
+    unreadCount: 0,
+    items: [] as NotificationDto[],
+    error: null,
+  };
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   if (accessToken) {
-    const [studiosResult, storageResult] = await Promise.allSettled([
+    const [studiosResult, storageResult, notificationsResult, unreadResult] = await Promise.allSettled([
       listMyStudios(accessToken, reqLog),
       getStorageUsage(accessToken, reqLog),
+      listNotifications(accessToken, { page: 1, pageSize: 5 }, reqLog),
+      getUnreadNotificationCount(accessToken, reqLog),
     ] as const);
 
     if (studiosResult.status === "fulfilled") {
@@ -49,14 +61,28 @@ export async function loader({ request }: Route.LoaderArgs) {
     } else {
       reqLog.warn({ err: storageResult.reason }, "failed to load storage usage for shell");
     }
+
+    if (notificationsResult.status === "fulfilled") {
+      notifications.items = notificationsResult.value.items.slice(0, 5);
+    } else {
+      notifications.error = "Couldn't load notifications.";
+      reqLog.warn({ err: notificationsResult.reason }, "failed to load notification preview for shell");
+    }
+
+    if (unreadResult.status === "fulfilled") {
+      notifications.unreadCount = unreadResult.value.count;
+    } else {
+      notifications.error ??= "Couldn't load notification count.";
+      reqLog.warn({ err: unreadResult.reason }, "failed to load notification unread count for shell");
+    }
   }
 
-  return { user, studios, storageUsage };
+  return { user, studios, storageUsage, notifications };
 }
 
 /** Authenticated app shell with a premium sidebar, top header bar, and scrollable main area. */
 export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
-  const { user, studios, storageUsage } = loaderData;
+  const { user, studios, storageUsage, notifications } = loaderData;
   const storagePercent = storageUsage
     ? Math.min(100, Math.max(0, Number(storageUsage.storagePercent)))
     : 0;
@@ -349,6 +375,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         <HeaderBar
           user={user}
+          notifications={notifications}
           onMenuToggle={isMobile ? toggleMobile : undefined}
         />
         <main className="flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-6 md:px-10 md:pb-10 md:pt-8">

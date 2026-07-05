@@ -1,5 +1,5 @@
 import { API_ROUTES } from "~/const/api-routes";
-import type { Workspace, ProjectDto, ProjectTrashItem, PagedResult } from "../api";
+import type { Workspace, ProjectDto, ProjectTrashItem, PagedResult, ShareRequest, ItemAccessMemberDto } from "../api";
 import { BaseApiModule } from "./base.server";
 import type { RequestLogger } from "../logger.server";
 import { apiClient } from "./api-client.server";
@@ -33,6 +33,22 @@ export class ProjectsApi extends BaseApiModule {
       log,
     );
   }
+
+  shareProject(token: string, id: string, input: ShareRequest, log?: RequestLogger): Promise<void> {
+    return this.postVoid(token, `${API_ROUTES.PROJECTS}/${id}/share`, input, log);
+  }
+
+  unshareProject(token: string, id: string, userId: string, log?: RequestLogger): Promise<void> {
+    return this.deleteVoid(token, `${API_ROUTES.PROJECTS}/${id}/share/${userId}`, log);
+  }
+
+  listAccess(token: string, id: string, log?: RequestLogger): Promise<ItemAccessMemberDto[]> {
+    return this.get<ItemAccessMemberDto[]>(token, `${API_ROUTES.PROJECTS}/${id}/access`, log);
+  }
+
+  updateAccess(token: string, id: string, input: { userId: string; role?: number | null; isHidden: boolean }, log?: RequestLogger): Promise<ItemAccessMemberDto[]> {
+    return this.put<typeof input, ItemAccessMemberDto[]>(token, `${API_ROUTES.PROJECTS}/${id}/access`, input, log);
+  }
 }
 
 export const projectsApi = new ProjectsApi(apiClient);
@@ -43,3 +59,7 @@ export const createProject = (t: string, w: Workspace, i: { kind: number; name: 
 export const listSharedProjects = (t: string, l?: RequestLogger) => projectsApi.listSharedProjects(t, l);
 export const listProjectTrash = (t: string, w: Workspace, l?: RequestLogger) => projectsApi.listProjectTrash(t, w, l);
 export const setProjectStar = (t: string, id: string, v: boolean, l?: RequestLogger) => projectsApi.setStar(t, id, v, l);
+export const shareProject = (t: string, id: string, i: ShareRequest, l?: RequestLogger) => projectsApi.shareProject(t, id, i, l);
+export const unshareProject = (t: string, id: string, u: string, l?: RequestLogger) => projectsApi.unshareProject(t, id, u, l);
+export const listProjectAccess = (t: string, id: string, l?: RequestLogger) => projectsApi.listAccess(t, id, l);
+export const updateProjectAccess = (t: string, id: string, i: { userId: string; role?: number | null; isHidden: boolean }, l?: RequestLogger) => projectsApi.updateAccess(t, id, i, l);

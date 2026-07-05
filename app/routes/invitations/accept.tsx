@@ -2,10 +2,10 @@ import { Link, redirect } from "react-router";
 
 import {
   acceptStudioInvitation,
-  ApiError,
   fetchMe,
   refreshRequest,
 } from "~/lib/api.server";
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { createRequestLogger } from "~/lib/logger.server";
 import { commitSession, getSession } from "~/lib/session.server";
 
@@ -65,10 +65,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
     return { accepted: true, error: null, signedIn };
   } catch (error) {
-    const message =
-      error instanceof ApiError
-        ? error.message
-        : "Something went wrong. Please try again.";
+    const message = actionErrorMessage(error, "Something went wrong. Please try again.");
     log.warn({ err: error, message }, "invitation accept failed");
     return { accepted: false, error: message, signedIn };
   }

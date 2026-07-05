@@ -20,6 +20,189 @@ export const MediaKind = { Video: 0, Image: 1, Audio: 2 } as const;
 /** Mirrors workspace ownership enums that serialize as integers on the wire. */
 export const OwnerKind = { User: 0, Studio: 1 } as const;
 
+export const ProjectRole = { Owner: 0, Editor: 1, Viewer: 2 } as const;
+
+export const Permission = { Owner: 0, Editor: 1, Viewer: 2 } as const;
+
+/** Mirrors `Tasks.Contracts.TaskIssueKind` (integers on the wire). */
+export const TaskIssueKind = { Task: 0, Review: 1 } as const;
+
+/** Mirrors `Tasks.Contracts.TaskIssueStatus` (integers on the wire). */
+export const TaskIssueStatus = {
+  Open: 0,
+  InProgress: 1,
+  InReview: 2,
+  ChangesRequested: 3,
+  Approved: 4,
+  Done: 5,
+  Closed: 6,
+} as const;
+
+/** Mirrors `Tasks.Contracts.TaskMilestoneStatus` (integers on the wire). */
+export const TaskMilestoneStatus = { Open: 0, Closed: 1 } as const;
+
+export interface TaskAssigneeDto {
+  userId: string;
+  email: string;
+  displayName: string;
+}
+
+export interface TaskMilestoneDto {
+  id: string;
+  studioId: string;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  status: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskLabelDto {
+  id: string;
+  studioId: string;
+  name: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskIssueDto {
+  id: string;
+  studioId: string;
+  projectId: string | null;
+  projectName: string | null;
+  parentTaskIssueId: string | null;
+  kind: number;
+  status: number;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  milestone: TaskMilestoneDto | null;
+  assignees: TaskAssigneeDto[];
+  labels: TaskLabelDto[];
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  commentsCount: number;
+  subtaskCount: number;
+  completedSubtaskCount: number;
+}
+
+export interface TaskCommentDto {
+  id: string;
+  taskIssueId: string;
+  authorUserId: string;
+  authorEmail: string;
+  authorDisplayName: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  editedAt: string | null;
+}
+
+export interface TaskActivityDto {
+  id: string;
+  taskIssueId: string;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  actorDisplayName: string | null;
+  action: string;
+  summary: string;
+  metadataJson: string | null;
+  createdAt: string;
+}
+
+export interface TaskIssueDetailDto extends TaskIssueDto {
+  subtasks: TaskIssueDto[];
+  comments: TaskCommentDto[];
+  activity: TaskActivityDto[];
+}
+
+export interface TaskIssueFilters {
+  studioId?: string;
+  kind?: number | string;
+  status?: number | string;
+  assigneeId?: string;
+  milestoneId?: string;
+  labelId?: string;
+  projectId?: string;
+  dueBefore?: string;
+}
+
+export interface CreateTaskIssueRequest {
+  kind: number;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  milestoneId: string | null;
+  projectId: string | null;
+  parentTaskIssueId: string | null;
+  assigneeIds: string[] | null;
+  labelIds: string[] | null;
+}
+
+export type UpdateTaskIssueRequest = CreateTaskIssueRequest;
+
+export type UpdateTaskIssueStatusRequest = components["schemas"]["UpdateTaskIssueStatusRequest"];
+
+export type CreateTaskMilestoneRequest = components["schemas"]["CreateTaskMilestoneRequest"];
+
+export type UpdateTaskMilestoneRequest = components["schemas"]["UpdateTaskMilestoneRequest"];
+
+export type CreateTaskLabelRequest = components["schemas"]["CreateTaskLabelRequest"];
+
+export type UpdateTaskLabelRequest = components["schemas"]["UpdateTaskLabelRequest"];
+
+export interface CreateTaskCommentRequest {
+  body: string;
+}
+
+export interface UpdateTaskCommentRequest {
+  body: string;
+}
+
+export function taskKindLabel(kind: number): string {
+  return kind === TaskIssueKind.Review ? "Review" : "Task";
+}
+
+export function taskStatusLabel(status: number): string {
+  if (status === TaskIssueStatus.InProgress) return "In progress";
+  if (status === TaskIssueStatus.InReview) return "In review";
+  if (status === TaskIssueStatus.ChangesRequested) return "Changes requested";
+  if (status === TaskIssueStatus.Approved) return "Approved";
+  if (status === TaskIssueStatus.Done) return "Done";
+  if (status === TaskIssueStatus.Closed) return "Closed";
+  return "Open";
+}
+
+export function isTaskOpen(status: number): boolean {
+  return status !== TaskIssueStatus.Done && status !== TaskIssueStatus.Closed;
+}
+
+export function sharedRoleLabel(role: number): string {
+  if (role === ProjectRole.Editor || role === Permission.Editor) return "Editor";
+  if (role === ProjectRole.Owner || role === Permission.Owner) return "Owner";
+  return "Viewer";
+}
+
+export interface ShareRequest {
+  email: string;
+  role: number;
+}
+
+export interface ItemAccessMemberDto {
+  userId: string;
+  email: string;
+  displayName: string;
+  studioRole: string;
+  effectiveRole: number;
+  overrideRole: number | null;
+  isHidden: boolean;
+  canManage: boolean;
+}
+
 export function projectKindLabel(kind: number): string {
   return kind === ProjectKind.Image ? "Image" : "Video";
 }
@@ -86,6 +269,10 @@ export function studioRoleLabel(role: number): string {
 
 export function isStudioAdmin(role: number): boolean {
   return role === UserStudioRole.Owner || role === UserStudioRole.Admin;
+}
+
+export function canManageStudioAccess(role: number): boolean {
+  return isStudioAdmin(role);
 }
 
 export function canWriteStudioContent(role: number): boolean {
@@ -207,6 +394,7 @@ export function notificationTypeIcon(type: number): string {
   if (type === 12) return "folder";
   if (type === 13 || [1, 2, 3, 4].includes(type)) return "perm_media";
   if (type === 14 || type === 15) return "storage";
+  if (type === 16 || type === 17) return "task_alt";
   return "notifications";
 }
 
@@ -304,11 +492,14 @@ export interface AlbumDto {
   id: string;
   ownerId: string;
   ownerKind: number;
+  ownerEmail?: string | null;
+  ownerDisplayName?: string | null;
   name: string;
   description: string;
   kind: number;
   materialSymbol: string;
   isDeleteAble: boolean;
+  mediaCount?: number;
   isFavorite: boolean;
 }
 

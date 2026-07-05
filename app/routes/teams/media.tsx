@@ -1,8 +1,10 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { MediaView } from "~/components/dashboard/workspace/media-view";
-import { type MediaDto, type Workspace } from "~/lib/api";
-import { ApiError, listMedia, softDelete } from "~/lib/api.server";
+import { canManageStudioAccess, canWriteStudioContent, type MediaDto, type Workspace } from "~/lib/api";
+import { ApiError, listMedia, listMyStudios, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -16,7 +18,7 @@ namespace Route {
 }
 
 export function meta() {
-  return [{ title: "Team media · Kuvox" }];
+  return [{ title: "Team media Â· Kuvox" }];
 }
 
 const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
@@ -33,16 +35,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       media: [] as MediaDto[],
       error: "Your session expired. Please sign in again.",
       studioId: String(params.studioId ?? ""),
+      canWrite: false,
+      canManageAccess: false,
     };
   }
 
   try {
-    const page = await listMedia(accessToken, studioWs(String(params.studioId ?? "")), reqLog);
-    return { media: page.items, error: null as string | null, studioId: String(params.studioId ?? "") };
+    const studioId = String(params.studioId ?? "");
+    const [page, studios] = await Promise.all([
+      listMedia(accessToken, studioWs(studioId), reqLog),
+      listMyStudios(accessToken, reqLog),
+    ]);
+    const role = studios.find((studio) => studio.id === studioId)?.role;
+    return {
+      media: page.items,
+      error: null as string | null,
+      studioId,
+      canWrite: role != null ? canWriteStudioContent(role) : false,
+      canManageAccess: role != null ? canManageStudioAccess(role) : false,
+    };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load team media.";
     reqLog.error({ err: error, studioId: params.studioId }, "failed to load team media");
-    return { media: [] as MediaDto[], error: message, studioId: String(params.studioId ?? "") };
+    return { media: [] as MediaDto[], error: message, studioId: String(params.studioId ?? ""), canWrite: false, canManageAccess: false };
   }
 }
 
@@ -58,9 +73,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
-  const ws = studioWs(String(params.studioId ?? ""));
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
@@ -71,7 +88,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, studioId: params.studioId }, "team media action failed");
     return { error: message };
   }
@@ -85,6 +102,9 @@ export default function TeamMedia({ loaderData, actionData }: Route.ComponentPro
       actionData={actionData}
       subtitle="This team's shared media library."
       studioId={loaderData.studioId}
+      canWrite={loaderData.canWrite}
+      canManageAccess={loaderData.canManageAccess}
+      workspaceKind="studio"
     />
   );
 }

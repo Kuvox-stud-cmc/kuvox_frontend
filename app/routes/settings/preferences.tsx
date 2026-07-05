@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { Form, redirect, useNavigation, useSearchParams } from "react-router";
 
 import { fetchSettings, updatePreferences, ApiError } from "~/lib/api.server";
@@ -64,7 +65,7 @@ export async function action({ request }: Route.ActionArgs) {
     );
     return redirect("/settings/preferences?saved=1");
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error }, "preferences action failed");
     return { error: message };
   }

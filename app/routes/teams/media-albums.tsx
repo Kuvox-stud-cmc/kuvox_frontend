@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { actionErrorMessage } from "~/lib/action-error.server";
+import { useEffect, useMemo, useState } from "react";
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
 
 import {
@@ -13,11 +14,14 @@ import {
 import { EmptyState, ErrorBanner, Modal, primaryButtonClass } from "~/components/dashboard/section";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
-import { AlbumKind, OwnerKind, canWriteStudioContent, type AlbumDto, type Workspace } from "~/lib/api";
+import { AccessDialog } from "~/components/dashboard/shared/resource-dialogs";
+import { AlbumKind, canManageStudioAccess, canWriteStudioContent, type AlbumDto, type Workspace } from "~/lib/api";
 import { albumsApi, ApiError, listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
+import { isAlbumInStudioScope } from "./studio-albums";
 
 import type { Route } from "./+types/media-albums";
 
@@ -52,7 +56,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const studioId = params.studioId;
 
   if (!accessToken) {
-    return { albums: [] as AlbumDto[], albumMediaCounts: {} as Record<string, number>, canWrite: false, error: "Your session expired. Please sign in again." };
+    return { albums: [] as AlbumDto[], albumMediaCounts: {} as Record<string, number>, canWrite: false, canManageAccess: false, error: "Your session expired. Please sign in again." };
   }
 
   try {
@@ -61,7 +65,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       albumsApi.listAlbums(accessToken, ws, reqLog),
       listMyStudios(accessToken, reqLog),
     ]);
-    const albums = allAlbums.filter((album) => isStudioAlbum(album, studioId) && album.isDeleteAble === true);
+    const albums = allAlbums.filter((album) => isAlbumInStudioScope(album, studioId) && album.isDeleteAble === true);
     const albumMediaEntries = await Promise.all(albums.map(async (album) => {
       const page = await albumsApi.listAlbumMedia(accessToken, album.id, ws, reqLog);
       return [album.id, page.items.length] as const;
@@ -71,12 +75,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       albums,
       albumMediaCounts: Object.fromEntries(albumMediaEntries),
       canWrite: role != null ? canWriteStudioContent(role) : false,
+      canManageAccess: role != null ? canManageStudioAccess(role) : false,
       error: null as string | null,
     };
   } catch (error) {
     const message = error instanceof ApiError ? error.message : "Couldn't load Studio albums.";
     reqLog.error({ err: error, studioId }, "failed to load Studio albums");
-    return { albums: [] as AlbumDto[], albumMediaCounts: {}, canWrite: false, error: message };
+    return { albums: [] as AlbumDto[], albumMediaCounts: {}, canWrite: false, canManageAccess: false, error: message };
   }
 }
 
@@ -93,6 +98,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   const ws = studioWs(params.studioId);
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "create-album") {
       const name = String(formData.get("name") ?? "").trim();
       const description = String(formData.get("description") ?? "").trim();
@@ -111,7 +119,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, studioId: params.studioId }, "Studio album action failed");
     return { error: message };
   }
@@ -180,7 +188,7 @@ export default function TeamAlbums({ loaderData, actionData, params }: Route.Com
       ) : (
         <div className="grid content-start grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredAlbums.map((album, index) => (
-            <AlbumCard key={album.id} album={album} count={loaderData.albumMediaCounts[album.id] ?? 0} index={index} studioId={params.studioId} canWrite={loaderData.canWrite} />
+            <AlbumCard key={album.id} album={album} count={loaderData.albumMediaCounts[album.id] ?? 0} index={index} studioId={params.studioId} canWrite={loaderData.canWrite} canManageAccess={loaderData.canManageAccess} />
           ))}
         </div>
       )}
@@ -206,7 +214,7 @@ export default function TeamAlbums({ loaderData, actionData, params }: Route.Com
   );
 }
 
-function AlbumCard({ album, count, index, studioId, canWrite }: { album: AlbumDto; count: number; index: number; studioId: string; canWrite: boolean }) {
+function AlbumCard({ album, count, index, studioId, canWrite, canManageAccess }: { album: AlbumDto; count: number; index: number; studioId: string; canWrite: boolean; canManageAccess: boolean }) {
   return (
     <article className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
       <Link to={`/teams/${studioId}/media/albums/${album.id}`} className="block w-full text-left">
@@ -221,6 +229,7 @@ function AlbumCard({ album, count, index, studioId, canWrite }: { album: AlbumDt
           <p className="mt-1 line-clamp-2 min-h-9 text-label-md text-on-surface-variant">{album.description || `${count} media item${count === 1 ? "" : "s"}`}</p>
           <p className="mt-3 text-label-sm font-semibold uppercase tracking-[0.08em] text-on-surface-variant">{count} item{count === 1 ? "" : "s"}</p>
         </Link>
+        <AccessDialog resourceType="album" resourceId={album.id} resourceName={album.name} canManageAccess={canManageAccess} />
         {canWrite ? <CardOverflowMenu id={album.id} itemLabel={album.name} intent="delete-album" confirmTitle="Delete album" confirmMessage="Delete this Studio album permanently? Media files will remain in the Studio library." confirmLabel="Delete album" /> : null}
       </div>
     </article>
@@ -238,10 +247,6 @@ function filterAlbums(albums: AlbumDto[], view: AlbumView) {
   if (view === "video") return albums.filter((album) => album.kind === AlbumKind.Video);
   if (view === "audio") return albums.filter((album) => album.kind === AlbumKind.Audio);
   return albums;
-}
-
-function isStudioAlbum(album: AlbumDto, studioId: string): boolean {
-  return album.ownerKind === OwnerKind.Studio && album.ownerId === studioId;
 }
 
 function albumKindLabel(kind: number) {

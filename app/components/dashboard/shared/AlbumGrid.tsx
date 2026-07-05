@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { GradientThumbnail } from "~/components/dashboard/shared/GradientThumbnail";
 import { EmptyState, primaryButtonClass } from "~/components/dashboard/section";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
+import { AccessDialog, ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import type { AlbumDto } from "~/lib/api";
 
 interface AlbumGridProps {
@@ -19,6 +20,8 @@ interface AlbumGridProps {
   favoriteIntent?: string;
   limit?: number;
   getAlbumTo?: (album: AlbumDto) => string;
+  workspaceKind?: "personal" | "studio";
+  canManageAccess?: boolean;
 }
 
 export function AlbumGrid({
@@ -35,6 +38,8 @@ export function AlbumGrid({
   favoriteIntent = "toggle-album-favorite",
   limit,
   getAlbumTo,
+  workspaceKind = "personal",
+  canManageAccess = false,
 }: AlbumGridProps) {
   if (albums.length === 0) {
     return (
@@ -99,19 +104,26 @@ export function AlbumGrid({
               ) : (
                 thumbnail
               )}
-              {showFavoriteToggle ? (
-                <div className="absolute bottom-2 right-2">
-                  <IconToggleButton
-                    id={album.id}
-                    active={album.isFavorite}
-                    intent={favoriteIntent}
-                    activeIcon="favorite"
-                    inactiveIcon="favorite_border"
-                    activeClassName="text-error"
-                    label={`${album.isFavorite ? "Remove from" : "Add to"} favorites`}
-                  />
+              <div className="absolute bottom-2 right-2">
+                <div className="flex items-center gap-1">
+                  {workspaceKind === "studio" ? (
+                    <AccessDialog resourceType="album" resourceId={album.id} resourceName={album.name} canManageAccess={canManageAccess} />
+                  ) : (
+                    <ShareDialog resourceType="album" resourceId={album.id} resourceName={album.name} />
+                  )}
+                  {showFavoriteToggle ? (
+                    <IconToggleButton
+                      id={album.id}
+                      active={album.isFavorite}
+                      intent={favoriteIntent}
+                      activeIcon="favorite"
+                      inactiveIcon="favorite_border"
+                      activeClassName="text-error"
+                      label={`${album.isFavorite ? "Remove from" : "Add to"} favorites`}
+                    />
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
             </div>
             <div className="min-w-0">
               {albumTo ? (

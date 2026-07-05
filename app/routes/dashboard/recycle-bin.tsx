@@ -1,7 +1,7 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { TrashView } from "~/components/dashboard/workspace/trash-view";
 import { PERSONAL, toTrashEntries, type ResourceKind, type TrashEntry } from "~/lib/api";
 import {
-  ApiError,
   listMediaTrash,
   listProjectTrash,
   permanentDelete,
@@ -14,7 +14,7 @@ import { getSession } from "~/lib/session.server";
 import type { Route } from "./+types/recycle-bin";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Recycle Bin · Kuvox" }];
+  return [{ title: "Recycle Bin Â· Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -76,7 +76,7 @@ export async function action({ request }: Route.ActionArgs) {
     }
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, resource }, "trash action failed");
     return { error: message };
   }

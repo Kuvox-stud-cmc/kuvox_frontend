@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Form, Link, redirect, useNavigation } from "react-router";
 
 import { ApiError, registerRequest } from "~/lib/api.server";
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { redirectIfAuthenticated } from "~/lib/auth.server";
 import { createRequestLogger } from "~/lib/logger.server";
 
@@ -45,7 +46,7 @@ export async function action({ request }: Route.ActionArgs) {
       return { error: "An account with this email already exists." };
     }
     log.error({ err: error }, "signup failed: unexpected error");
-    return { error: "Something went wrong. Please try again." };
+    return { error: actionErrorMessage(error, "Something went wrong. Please try again.") };
   }
 }
 

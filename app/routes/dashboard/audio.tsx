@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Form, Link, useActionData, useLoaderData, useNavigation, useRevalidator, useSearchParams } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
@@ -6,12 +7,16 @@ import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/
 import { ApiError, listMedia, setMediaFavorite, softDelete, albumsApi } from "~/lib/api.server";
 import { useLiveMedia } from "~/lib/media-realtime";
 import type { MediaPipeline } from "~/lib/media-pipeline";
+import { useAudioMetadataDurations } from "~/lib/audio-metadata-duration";
+import { formatMediaDuration, resolvePlayableMediaDuration } from "~/lib/media-duration";
 import { createRequestLogger } from "~/lib/logger.server";
+import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
+import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { resolveMediaObjectSource } from "~/components/dashboard/shared/MediaPreviewOverlay";
 
 import {
@@ -110,7 +115,7 @@ function paginationPages(currentPage: number, pageCount: number): Array<number |
 }
 
 export function meta() {
-  return [{ title: "Audio · Kuvox" }];
+  return [{ title: "Audio Â· Kuvox" }];
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -193,6 +198,9 @@ export async function action({ request }: ActionFunctionArgs) {
   const reqLog = createRequestLogger(request).child({ component: "AudioAction" });
 
   try {
+    const resourceAction = await handleResourceAction(formData, accessToken, reqLog);
+    if (resourceAction) return resourceAction;
+
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
       if (id) {
@@ -255,12 +263,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     return { error: message };
   }
 }
 
-/* ── Sub-components ─────────────────────────────────────────────────────── */
+/* â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 
 
@@ -307,9 +315,7 @@ function MiniWaveform() {
 }
 
 function formatTrackDuration(value: MediaDto["durationSeconds"]): string {
-  const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
-  return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+  return formatMediaDuration(value);
 }
 
 function formatTrackSize(value: MediaDto["sizeBytes"]): string {
@@ -490,6 +496,13 @@ function AudioTable({
   const safePage = Math.min(Math.max(currentPage, 1), pageCount);
   const pageStartIndex = (safePage - 1) * AUDIO_PAGE_SIZE;
   const pagedTracks = tracks.slice(pageStartIndex, pageStartIndex + AUDIO_PAGE_SIZE);
+  const rowDurations = useAudioMetadataDurations(
+    pagedTracks.map((track) => ({
+      id: track.id,
+      metadataDuration: track.durationSeconds,
+      src: resolveMediaObjectSource(track, ["canonical"])?.src,
+    })),
+  );
   const showingStart = tracks.length === 0 ? 0 : pageStartIndex + 1;
   const showingEnd = Math.min(pageStartIndex + AUDIO_PAGE_SIZE, tracks.length);
   const pageItems = paginationPages(safePage, pageCount);
@@ -556,7 +569,7 @@ function AudioTable({
                 <FormatBadge format={track.codec ? track.codec.toUpperCase() : "MP3"} />
               </td>
               <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
-                {formatTrackDuration(track.durationSeconds)}
+                {formatTrackDuration(rowDurations[track.id])}
               </td>
               <td className="px-4 py-3 text-center text-on-surface-variant">
                 {formatTrackSize(track.sizeBytes)}
@@ -592,6 +605,7 @@ function AudioTable({
                     activeClassName="text-error"
                     label={`${track.isFavorite ? "Remove from" : "Add to"} favorites`}
                   />
+                  <ShareDialog resourceType="media" resourceId={track.id} resourceName={track.filename} />
                   <CardOverflowMenu id={track.id} itemLabel={track.filename} />
                 </div>
               </td>
@@ -653,7 +667,7 @@ function AudioTable({
   );
 }
 
-/* ── Main component ─────────────────────────────────────────────────────── */
+/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export default function Audio() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -795,7 +809,7 @@ export default function Audio() {
       activeTrack?.canonicalStorageKey,
     ],
   );
-  const activeAudioDuration = audioDuration || Number(activeTrack?.durationSeconds || 0);
+  const activeAudioDuration = resolvePlayableMediaDuration(activeTrack?.durationSeconds, audioDuration);
   const displayedAudioCurrentTime = pendingSeek?.time ?? audioCurrentTime;
   const audioProgress =
     pendingSeek
@@ -1000,7 +1014,7 @@ export default function Audio() {
       {loaderData.error && <ErrorBanner message={loaderData.error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
-      {/* ── Stats Grid ─────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Stats Grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon="music_note"
@@ -1030,7 +1044,7 @@ export default function Audio() {
         />
       </div>
 
-      {/* ── Quick Preview (Featured Player) ─────────────────────────────────── */}
+      {/* â”€â”€ Quick Preview (Featured Player) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-headline-md font-bold text-on-surface">
@@ -1067,7 +1081,7 @@ export default function Audio() {
                       />
                     </div>
                     <p className="text-body-sm text-on-surface-variant">
-                      Audio / {formatTrackDuration(activeTrack.durationSeconds)} /{" "}
+                      Audio / {formatTrackDuration(activeAudioDuration)} /{" "}
                       {formatTrackSize(activeTrack.sizeBytes)}
                     </p>
                     <div className="mt-3 max-w-xl">
@@ -1077,7 +1091,10 @@ export default function Audio() {
                       />
                     </div>
                   </div>
-                  <CardOverflowMenu id={activeTrack.id} itemLabel={activeTrack.filename} />
+                  <div className="flex items-center gap-1">
+                    <ShareDialog resourceType="media" resourceId={activeTrack.id} resourceName={activeTrack.filename} />
+                    <CardOverflowMenu id={activeTrack.id} itemLabel={activeTrack.filename} />
+                  </div>
                 </div>
 
                 {/* Waveform */}
@@ -1197,7 +1214,7 @@ export default function Audio() {
         </div>
       </section>
 
-      {/* ── All Audio (Table) ──────────────────────────────────────────────── */}
+      {/* â”€â”€ All Audio (Table) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section
         id="section-all"
         ref={sectionAllRef}
@@ -1238,7 +1255,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* ── Music Section ──────────────────────────────────────────────────── */}
+      {/* â”€â”€ Music Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section
         id="section-music"
         ref={sectionMusicRef}
@@ -1255,7 +1272,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* ── SFX Section ────────────────────────────────────────────────────── */}
+      {/* â”€â”€ SFX Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section
         id="section-sfx"
         ref={sectionSfxRef}
@@ -1272,7 +1289,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* ── Voiceovers Section ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Voiceovers Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section
         id="section-voiceovers"
         ref={sectionVoiceoversRef}
@@ -1289,7 +1306,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* ── Import Modal ───────────────────────────────────────────────────── */}
+      {/* â”€â”€ Import Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <MediaUploadModal
         open={importOpen}
         onClose={() => setImportOpen(false)}

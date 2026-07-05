@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { Form, redirect, useNavigation } from "react-router";
 
 import {
@@ -17,17 +18,17 @@ import {
   ApiError,
   deleteStudio,
   getWorkspaceSettings,
-  listMyStudios,
   updateWorkspaceSettings,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
+import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/settings-workspace";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Studio workspace settings · Kuvox" }];
+  return [{ title: "Studio workspace settings Â· Kuvox" }];
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -46,11 +47,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   try {
-    const studios = await listMyStudios(accessToken, reqLog);
-    const studio = studios.find((item) => item.id === params.studioId) ?? null;
-    const settings = studio ? await getWorkspaceSettings(accessToken, params.studioId, reqLog) : null;
-    return { studio, settings, error: studio ? null : "Studio not found." };
+    const access = await requireStudioAdminAccess(accessToken, params.studioId, reqLog);
+    const settings = await getWorkspaceSettings(accessToken, params.studioId, reqLog);
+    return { studio: access.studio, settings, error: null as string | null };
   } catch (error) {
+    if (error instanceof Response) throw error;
     const message = error instanceof ApiError ? error.message : "Couldn't load Studio settings.";
     reqLog.error({ err: error, studioId: params.studioId }, "failed to load Studio settings");
     return { studio: null as StudioDto | null, settings: null as StudioWorkspaceSettingsDto | null, error: message };
@@ -73,6 +74,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const studioId = params.studioId;
 
   try {
+    await requireStudioAdminAccess(accessToken, studioId, reqLog);
+
     if (intent === "save") {
       const name = String(formData.get("name") ?? "").trim();
       if (!name) {
@@ -100,7 +103,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Unknown action." };
   } catch (error) {
     if (error instanceof Response) throw error;
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, studioId }, "Studio settings action failed");
     return { error: message };
   }

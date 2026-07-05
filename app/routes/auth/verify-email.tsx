@@ -1,6 +1,7 @@
 import { Link, redirect } from "react-router";
 
-import { ApiError, fetchMe, verifyEmailRequest } from "~/lib/api.server";
+import { fetchMe, verifyEmailRequest } from "~/lib/api.server";
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { commitSession, getSession } from "~/lib/session.server";
 import { createRequestLogger } from "~/lib/logger.server";
 
@@ -37,10 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       headers: { "Set-Cookie": await commitSession(session) },
     });
   } catch (error) {
-    const message =
-      error instanceof ApiError
-        ? error.message
-        : "Something went wrong. Please try again.";
+    const message = actionErrorMessage(error, "Something went wrong. Please try again.");
     log.warn({ err: error, message }, "verify-email failed");
     return { error: message };
   }

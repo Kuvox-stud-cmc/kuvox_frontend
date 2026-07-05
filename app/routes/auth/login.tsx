@@ -6,6 +6,7 @@ import {
   fetchMe,
   loginRequest,
 } from "~/lib/api.server";
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { redirectIfAuthenticated } from "~/lib/auth.server";
 import { createRequestLogger } from "~/lib/logger.server";
 import { commitSession, getSession } from "~/lib/session.server";
@@ -61,7 +62,7 @@ export async function action({ request }: Route.ActionArgs) {
         email,
       };
     }
-    return { error: "Something went wrong. Please try again.", unverified: false, email };
+    return { error: actionErrorMessage(error, "Something went wrong. Please try again."), unverified: false, email };
   }
 }
 

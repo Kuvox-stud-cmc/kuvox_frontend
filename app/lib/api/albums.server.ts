@@ -1,13 +1,14 @@
 import { BaseApiModule } from "./base.server";
-import { workspaceQuery, type Workspace, type AlbumDto, type CreateAlbumDto } from "../api";
+import { workspaceQuery, type Workspace, type AlbumDto, type CreateAlbumDto, type ShareRequest, type ItemAccessMemberDto } from "../api";
 import type { RequestLogger } from "../logger.server";
+import { API_ROUTES } from "~/const/api-routes";
 
 export class AlbumsApiModule extends BaseApiModule {
   /**
    * Creates a new album.
    */
   async createAlbum(token: string, ws: Workspace, dto: CreateAlbumDto, log?: RequestLogger): Promise<AlbumDto> {
-    return this.create<CreateAlbumDto, AlbumDto>(token, "/api/albums", ws, dto, log);
+    return this.create<CreateAlbumDto, AlbumDto>(token, API_ROUTES.ALBUMS, ws, dto, log);
   }
 
   /**
@@ -26,7 +27,11 @@ export class AlbumsApiModule extends BaseApiModule {
     const query = ws
       ? workspaceQuery(ws, options?.includeSystem ? { includeSystem: "true" } : undefined)
       : options?.includeSystem ? "?includeSystem=true" : "";
-    return this.get<AlbumDto[]>(token, `/api/albums${query}`, log);
+    return this.get<AlbumDto[]>(token, `${API_ROUTES.ALBUMS}${query}`, log);
+  }
+
+  async listSharedAlbums(token: string, log?: RequestLogger): Promise<AlbumDto[]> {
+    return this.get<AlbumDto[]>(token, `${API_ROUTES.ALBUMS}/shared`, log);
   }
 
   /**
@@ -40,7 +45,7 @@ export class AlbumsApiModule extends BaseApiModule {
   ): Promise<void> {
     const ws = isWorkspace(wsOrLog) ? wsOrLog : undefined;
     const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
-    return this.deleteVoid(token, `/api/albums/${id}${ws ? workspaceQuery(ws) : ""}`, log);
+    return this.deleteVoid(token, `${API_ROUTES.ALBUMS}/${id}${ws ? workspaceQuery(ws) : ""}`, log);
   }
 
   /**
@@ -49,7 +54,7 @@ export class AlbumsApiModule extends BaseApiModule {
   async setFavorite(token: string, id: string, isFavorite: boolean, log?: RequestLogger): Promise<AlbumDto> {
     return this.put<{ isFavorite: boolean }, AlbumDto>(
       token,
-      `/api/albums/${id}/favorite`,
+      `${API_ROUTES.ALBUMS}/${id}/favorite`,
       { isFavorite },
       log,
     );
@@ -67,7 +72,7 @@ export class AlbumsApiModule extends BaseApiModule {
   ): Promise<void> {
     const ws = isWorkspace(wsOrLog) ? wsOrLog : undefined;
     const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
-    return this.postVoid(token, `/api/albums/${id}/media${ws ? workspaceQuery(ws) : ""}`, { mediaIds }, log);
+    return this.postVoid(token, `${API_ROUTES.ALBUMS}/${id}/media${ws ? workspaceQuery(ws) : ""}`, { mediaIds }, log);
   }
 
   /**
@@ -84,7 +89,7 @@ export class AlbumsApiModule extends BaseApiModule {
     const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
     return this.postVoid(
       token,
-      `/api/albums/audio-categories/${encodeURIComponent(category)}/media${ws ? workspaceQuery(ws) : ""}`,
+      `${API_ROUTES.ALBUMS}/audio-categories/${encodeURIComponent(category)}/media${ws ? workspaceQuery(ws) : ""}`,
       { mediaIds },
       log,
     );
@@ -102,7 +107,7 @@ export class AlbumsApiModule extends BaseApiModule {
   ): Promise<void> {
     const ws = isWorkspace(wsOrLog) ? wsOrLog : undefined;
     const log = isWorkspace(wsOrLog) ? maybeLog : wsOrLog;
-    return this.client.requestVoid(`/api/albums/${id}/media${ws ? workspaceQuery(ws) : ""}`, { method: "DELETE", body: JSON.stringify({ mediaIds }) }, { auth: bearerAuth(token), log });
+    return this.client.requestVoid(`${API_ROUTES.ALBUMS}/${id}/media${ws ? workspaceQuery(ws) : ""}`, { method: "DELETE", body: JSON.stringify({ mediaIds }) }, { auth: bearerAuth(token), log });
   }
 
   /**
@@ -122,12 +127,33 @@ export class AlbumsApiModule extends BaseApiModule {
     const query = ws
       ? workspaceQuery(ws, options?.includeSystem ? { includeSystem: "true" } : undefined)
       : options?.includeSystem ? "?includeSystem=true" : "";
-    return this.get<import("../api").PagedResult<import("../api").MediaDto>>(token, `/api/albums/${id}/media${query}`, log);
+    return this.get<import("../api").PagedResult<import("../api").MediaDto>>(token, `${API_ROUTES.ALBUMS}/${id}/media${query}`, log);
+  }
+
+  async shareAlbum(token: string, id: string, input: ShareRequest, log?: RequestLogger): Promise<void> {
+    return this.postVoid(token, `${API_ROUTES.ALBUMS}/${id}/share`, input, log);
+  }
+
+  async unshareAlbum(token: string, id: string, userId: string, log?: RequestLogger): Promise<void> {
+    return this.deleteVoid(token, `${API_ROUTES.ALBUMS}/${id}/share/${userId}`, log);
+  }
+
+  async listAccess(token: string, id: string, log?: RequestLogger): Promise<ItemAccessMemberDto[]> {
+    return this.get<ItemAccessMemberDto[]>(token, `${API_ROUTES.ALBUMS}/${id}/access`, log);
+  }
+
+  async updateAccess(token: string, id: string, input: { userId: string; role?: number | null; isHidden: boolean }, log?: RequestLogger): Promise<ItemAccessMemberDto[]> {
+    return this.put<typeof input, ItemAccessMemberDto[]>(token, `${API_ROUTES.ALBUMS}/${id}/access`, input, log);
   }
 }
 
 import { apiClient, bearerAuth } from "./api-client.server";
 export const albumsApi = new AlbumsApiModule(apiClient);
+export const listSharedAlbums = (t: string, l?: RequestLogger) => albumsApi.listSharedAlbums(t, l);
+export const shareAlbum = (t: string, id: string, i: ShareRequest, l?: RequestLogger) => albumsApi.shareAlbum(t, id, i, l);
+export const unshareAlbum = (t: string, id: string, u: string, l?: RequestLogger) => albumsApi.unshareAlbum(t, id, u, l);
+export const listAlbumAccess = (t: string, id: string, l?: RequestLogger) => albumsApi.listAccess(t, id, l);
+export const updateAlbumAccess = (t: string, id: string, i: { userId: string; role?: number | null; isHidden: boolean }, l?: RequestLogger) => albumsApi.updateAccess(t, id, i, l);
 
 function isWorkspace(value: unknown): value is Workspace {
   return Boolean(value && typeof value === "object" && "kind" in value);

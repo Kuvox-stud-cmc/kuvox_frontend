@@ -82,7 +82,7 @@ const MAIN_NAV: NavItemConfig[] = [
 
 const WORKSPACE_NAV: NavItemConfig[] = [
   { to: "/dashboard/projects", label: "Projects", icon: "folder" },
-  { to: "/dashboard/reviews", label: "Reviews", icon: "rate_review", badge: 5 },
+  { to: "/dashboard/reviews", label: "Tasks & Reviews", icon: "task_alt" },
   { to: "/dashboard/shared-assets", label: "Shared Assets", icon: "share" },
   { to: "/dashboard/brand-kits", label: "Brand Kits", icon: "palette" },
 ];

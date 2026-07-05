@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { useEffect, useRef, useState } from "react";
 import { Form, useNavigation } from "react-router";
 
@@ -10,7 +11,6 @@ import {
   SectionHeader,
 } from "~/components/dashboard/section";
 import {
-  isStudioAdmin,
   studioRoleLabel,
   UserStudioRole,
   type StudioMemberDto,
@@ -18,7 +18,6 @@ import {
 import {
   ApiError,
   createStudioInvitation,
-  listMyStudios,
   listStudioMembers,
   removeStudioMember,
   updateStudioMember,
@@ -27,10 +26,11 @@ import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
+import { requireStudioAccess, requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/members";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Team members · Kuvox" }];
+  return [{ title: "Team members Â· Kuvox" }];
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -50,18 +50,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     };
   }
 
-  const studios = await listMyStudios(accessToken, reqLog);
-  const role = studios.find((s) => s.id === studioId)?.role ?? UserStudioRole.Member;
-
+  let isAdmin = false;
   try {
+    const access = await requireStudioAccess(accessToken, studioId, reqLog);
+    isAdmin = access.canManageAccess;
     const members = await listStudioMembers(accessToken, studioId, reqLog);
-    return { members, isAdmin: isStudioAdmin(role), currentUserId: user.id, error: null as string | null };
+    return { members, isAdmin, currentUserId: user.id, error: null as string | null };
   } catch (error) {
+    if (error instanceof Response) throw error;
     const message = error instanceof ApiError ? error.message : "Couldn't load members.";
     reqLog.error({ err: error, studioId }, "failed to load studio members");
     return {
       members: [] as StudioMemberDto[],
-      isAdmin: isStudioAdmin(role),
+      isAdmin,
       currentUserId: user.id,
       error: message,
     };
@@ -83,6 +84,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
+    await requireStudioAdminAccess(accessToken, studioId, reqLog);
+
     if (intent === "invite") {
       const email = String(formData.get("email") ?? "").trim();
       const role = Number(formData.get("role") ?? UserStudioRole.Member);
@@ -97,6 +100,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       const userId = String(formData.get("userId") ?? "");
       const role = Number(formData.get("role") ?? UserStudioRole.Member);
       if (userId) {
+        const members = await listStudioMembers(accessToken, studioId, reqLog);
+        const target = members.find((member) => member.userId === userId);
+        if (target?.role === UserStudioRole.Owner) {
+          return { error: "Owners cannot be changed from member management." };
+        }
         await updateStudioMember(accessToken, studioId, userId, role, reqLog);
       }
       return { ok: true, intent };
@@ -105,6 +113,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (intent === "remove") {
       const userId = String(formData.get("userId") ?? "");
       if (userId) {
+        const members = await listStudioMembers(accessToken, studioId, reqLog);
+        const target = members.find((member) => member.userId === userId);
+        if (target?.role === UserStudioRole.Owner) {
+          return { error: "Owners cannot be removed from this Studio." };
+        }
         await removeStudioMember(accessToken, studioId, userId, reqLog);
       }
       return { ok: true, intent };
@@ -112,7 +125,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    if (error instanceof Response) throw error;
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, studioId }, "team member action failed");
     return { error: message };
   }
@@ -147,13 +161,6 @@ export default function TeamMembers({ loaderData, actionData }: Route.ComponentP
           ) : undefined
         }
       />
-
-      {!isAdmin && (
-        <p className="mt-4 flex items-center gap-2 rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface-variant">
-          <span className="material-symbols-outlined text-[18px]">lock</span>
-          Only team Admins can invite, change roles, or remove members.
-        </p>
-      )}
 
       {error && <ErrorBanner message={error} />}
       {actionData && "error" in actionData && actionData.error && (
@@ -223,7 +230,7 @@ export default function TeamMembers({ loaderData, actionData }: Route.ComponentP
               disabled={navigation.state === "submitting"}
               className={primaryButtonClass()}
             >
-              {navigation.state === "submitting" ? "Inviting…" : "Invite"}
+              {navigation.state === "submitting" ? "Invitingâ€¦" : "Invite"}
             </button>
           </div>
         </Form>
@@ -245,7 +252,6 @@ function MemberRow({
 }) {
   const roleFormRef = useRef<HTMLFormElement>(null);
   const isOwner = member.role === UserStudioRole.Owner;
-  const ownerSelf = isOwner && isSelf;
 
   return (
     <li className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-4">
@@ -285,10 +291,10 @@ function MemberRow({
                 </select>
               </Form>
             )}
-            {ownerSelf ? (
+            {isOwner ? (
               <span
-                title="Owners cannot remove their own account"
-                aria-label="Owners cannot remove their own account"
+                title="Owners cannot be removed"
+                aria-label="Owners cannot be removed"
                 className="rounded-lg p-1.5 text-on-surface-variant/60"
               >
                 <span className="material-symbols-outlined text-[20px]">lock</span>

@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 
-import { ApiError, declineStudioInvitation } from "~/lib/api.server";
+import { declineStudioInvitation } from "~/lib/api.server";
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { createRequestLogger } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
@@ -26,10 +27,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     await declineStudioInvitation(token, accessToken, log);
     return { declined: true, error: null };
   } catch (error) {
-    const message =
-      error instanceof ApiError
-        ? error.message
-        : "Something went wrong. Please try again.";
+    const message = actionErrorMessage(error, "Something went wrong. Please try again.");
     log.warn({ err: error, message }, "invitation decline failed");
     return { declined: false, error: message };
   }

@@ -1,3 +1,4 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { Form, useNavigation } from "react-router";
 
 import { StatusBadge } from "~/components/dashboard/layout/DashboardPageLayout";
@@ -9,7 +10,6 @@ import {
   SectionHeader,
 } from "~/components/dashboard/section";
 import {
-  isStudioAdmin,
   studioRoleLabel,
   UserStudioRole,
   type StudioInvitationDto,
@@ -17,7 +17,6 @@ import {
 import {
   ApiError,
   createStudioInvitation,
-  listMyStudios,
   listStudioInvitations,
   resendStudioInvitation,
   revokeStudioInvitation,
@@ -26,10 +25,11 @@ import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
 
+import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/invitations";
 
 function legacyMeta() {
-  return [{ title: "Studio invitations · Kuvox" }];
+  return [{ title: "Studio invitations Â· Kuvox" }];
 }
 
 function LegacyTeamInvitations() {
@@ -57,13 +57,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   try {
-    const studios = await listMyStudios(accessToken, reqLog);
-    const role = studios.find((studio) => studio.id === studioId)?.role ?? UserStudioRole.Member;
-    const invitations = isStudioAdmin(role)
-      ? await listStudioInvitations(accessToken, studioId, reqLog)
-      : [];
-    return { invitations, isAdmin: isStudioAdmin(role), error: null as string | null };
+    await requireStudioAdminAccess(accessToken, studioId, reqLog);
+    const invitations = await listStudioInvitations(accessToken, studioId, reqLog);
+    return { invitations, isAdmin: true, error: null as string | null };
   } catch (error) {
+    if (error instanceof Response) throw error;
     const message = error instanceof ApiError ? error.message : "Couldn't load invitations.";
     reqLog.error({ err: error, studioId }, "failed to load studio invitations");
     return { invitations: [] as StudioInvitationDto[], isAdmin: false, error: message };
@@ -80,11 +78,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Your session expired. Please sign in again." };
   }
 
+  const studioId = params.studioId;
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
-  const studioId = params.studioId;
 
   try {
+    await requireStudioAdminAccess(accessToken, studioId, reqLog);
+
     if (intent === "create") {
       const email = String(formData.get("email") ?? "").trim();
       const role = Number(formData.get("role") ?? UserStudioRole.Member);
@@ -108,7 +108,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    if (error instanceof Response) throw error;
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, studioId }, "studio invitation action failed");
     return { error: message };
   }

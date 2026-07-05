@@ -1,7 +1,7 @@
+import { actionErrorMessage } from "~/lib/action-error.server";
 import { TrashView } from "~/components/dashboard/workspace/trash-view";
 import { toTrashEntries, type ResourceKind, type TrashEntry, type Workspace } from "~/lib/api";
 import {
-  ApiError,
   listMediaTrash,
   listProjectTrash,
   permanentDelete,
@@ -14,7 +14,7 @@ import { getSession } from "~/lib/session.server";
 import type { Route } from "./+types/trash";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Team trash · Kuvox" }];
+  return [{ title: "Team trash Â· Kuvox" }];
 }
 
 const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
@@ -80,7 +80,7 @@ export async function action({ request }: Route.ActionArgs) {
     }
     return { error: "Unknown action." };
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : "Something went wrong.";
+    const message = actionErrorMessage(error);
     reqLog.error({ err: error, intent, resource, id }, "team trash action failed");
     return { error: message };
   }

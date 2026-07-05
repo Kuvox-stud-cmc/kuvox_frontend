@@ -7,13 +7,11 @@ import {
   GradientThumbnail,
   MetricCard,
   PageHeader,
-  SectionHeader,
   SortDropdown,
   ViewToggle,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import {
   CardGridSkeleton,
-  Chip,
   EmptyState,
   ErrorBanner,
 } from "~/components/dashboard/section";
@@ -22,10 +20,11 @@ import {
   mediaKindLabel,
   ProjectKind,
   projectKindLabel,
+  type AlbumDto,
   type MediaDto,
   type ProjectDto,
 } from "~/lib/api";
-import { listSharedMedia, listSharedProjects } from "~/lib/api.server";
+import { albumsApi, listSharedAlbums, listSharedMedia, listSharedProjects } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { getSession } from "~/lib/session.server";
@@ -51,30 +50,76 @@ export async function loader({ request }: Route.LoaderArgs) {
     return {
       projects: [] as ProjectDto[],
       media: [] as MediaDto[],
+      albums: [] as AlbumDto[],
+      albumMedia: [] as SharedAlbumMediaGroup[],
       error: "Your session expired. Please sign in again." as string | null,
     };
   }
 
-  const [projectsResult, mediaResult] = await Promise.allSettled([
+  const [projectsResult, mediaResult, albumsResult] = await Promise.allSettled([
     listSharedProjects(accessToken, reqLog),
     listSharedMedia(accessToken, reqLog),
+    listSharedAlbums(accessToken, reqLog),
   ]);
 
   const projects = projectsResult.status === "fulfilled" ? projectsResult.value.items : [];
   const media = mediaResult.status === "fulfilled" ? mediaResult.value.items : [];
+  const albums = albumsResult.status === "fulfilled" ? albumsResult.value : [];
+  const albumMediaResults: PromiseSettledResult<SharedAlbumMediaGroup>[] =
+    albums.length > 0
+      ? await Promise.allSettled(
+          albums.map(async (album): Promise<SharedAlbumMediaGroup> => {
+            const result = await albumsApi.listAlbumMedia(accessToken, album.id, reqLog);
+            return {
+              albumId: album.id,
+              albumName: album.name,
+              ownerId: album.ownerId,
+              ownerEmail: album.ownerEmail,
+              ownerDisplayName: album.ownerDisplayName,
+              items: result.items,
+            } satisfies SharedAlbumMediaGroup;
+          }),
+        )
+      : [];
+  const albumMedia: SharedAlbumMediaGroup[] = [];
+  for (const result of albumMediaResults) {
+    if (result.status === "fulfilled") {
+      albumMedia.push(result.value);
+    }
+  }
   const error =
-    projectsResult.status === "rejected" || mediaResult.status === "rejected"
+    projectsResult.status === "rejected" ||
+    mediaResult.status === "rejected" ||
+    albumsResult.status === "rejected"
       ? "Some shared items couldn't be loaded."
       : null;
   if (error) reqLog.warn("some shared items failed to load");
+  if (albumMediaResults.some((result) => result.status === "rejected")) {
+    reqLog.warn("some shared album media failed to load");
+  }
 
-  return { projects, media, error };
+  return { projects, media, albums, albumMedia, error };
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 function shortOwner(ownerId: string): string {
   return ownerId.slice(0, 8);
+}
+
+interface OwnerInfo {
+  ownerId: string;
+  ownerEmail?: string | null;
+  ownerDisplayName?: string | null;
+}
+
+function ownerLabel(owner: OwnerInfo): string {
+  return owner.ownerEmail || owner.ownerDisplayName || shortOwner(owner.ownerId);
+}
+
+function ownerAvatar(owner: OwnerInfo): string {
+  const label = owner.ownerEmail || owner.ownerDisplayName || owner.ownerId;
+  return label.trim().charAt(0).toUpperCase() || "?";
 }
 
 function formatSize(bytes: number): string {
@@ -112,33 +157,56 @@ function mediaIconTone(kind: number): string {
 
 
 
-type TabFilter = "all" | "photos" | "videos" | "audio";
+type TabFilter = "all" | "projects" | "albums" | "photos" | "videos" | "audio";
 
 const TABS: { key: TabFilter; label: string }[] = [
   { key: "all", label: "All Assets" },
+  { key: "projects", label: "Projects" },
+  { key: "albums", label: "Albums" },
   { key: "photos", label: "Photos" },
   { key: "videos", label: "Videos" },
   { key: "audio", label: "Audio" },
 ];
 
+interface SharedAlbumMediaGroup extends OwnerInfo {
+  albumId: string;
+  albumName: string;
+  items: MediaDto[];
+}
+
 /** A unified item for display — either a project or a media record. */
-interface SharedItem {
+interface SharedItem extends OwnerInfo {
   id: string;
-  kind: "project" | "media";
+  kind: "project" | "media" | "album";
   label: string;
   icon: string;
   iconTone: string;
   typeLabel: string;
-  ownerId: string;
   sizeBytes: number;
+  mediaCount: number;
   createdAt: string;
   mediaKind?: number;
   projectKind?: number;
+  sourceAlbumName?: string;
   linkTo?: string;
 }
 
-function toSharedItems(projects: ProjectDto[], media: MediaDto[]): SharedItem[] {
+function projectMediaCount(project: ProjectDto): number {
+  return Number((project as ProjectDto & { mediaCount?: number | string }).mediaCount ?? 0);
+}
+
+function albumMediaCount(album: AlbumDto): number {
+  return Number(album.mediaCount ?? 0);
+}
+
+function toSharedItems(
+  projects: ProjectDto[],
+  media: MediaDto[],
+  albums: AlbumDto[],
+  albumMedia: SharedAlbumMediaGroup[],
+): SharedItem[] {
   const items: SharedItem[] = [];
+  const mediaItems = new Map<string, SharedItem>();
 
   for (const project of projects) {
     items.push({
@@ -147,9 +215,12 @@ function toSharedItems(projects: ProjectDto[], media: MediaDto[]): SharedItem[] 
       label: project.name,
       icon: project.kind === ProjectKind.Video ? "movie" : "image",
       iconTone: project.kind === ProjectKind.Video ? "text-secondary" : "text-primary",
-      typeLabel: projectKindLabel(project.kind),
+      typeLabel: `${projectKindLabel(project.kind)} Project`,
       ownerId: project.ownerId,
+      ownerEmail: project.ownerEmail,
+      ownerDisplayName: project.ownerDisplayName,
       sizeBytes: 0,
+      mediaCount: projectMediaCount(project),
       createdAt: project.createdAt,
       projectKind: project.kind,
       linkTo:
@@ -160,7 +231,7 @@ function toSharedItems(projects: ProjectDto[], media: MediaDto[]): SharedItem[] 
   }
 
   for (const item of media) {
-    items.push({
+    mediaItems.set(item.id, {
       id: item.id,
       kind: "media",
       label: item.filename,
@@ -168,9 +239,54 @@ function toSharedItems(projects: ProjectDto[], media: MediaDto[]): SharedItem[] 
       iconTone: mediaIconTone(item.kind),
       typeLabel: mediaKindLabel(item.kind),
       ownerId: item.ownerId,
+      ownerEmail: item.ownerEmail,
+      ownerDisplayName: item.ownerDisplayName,
       sizeBytes: Number(item.sizeBytes),
+      mediaCount: 1,
       createdAt: item.createdAt,
       mediaKind: item.kind,
+    });
+  }
+
+  for (const group of albumMedia) {
+    for (const item of group.items) {
+      if (mediaItems.has(item.id)) continue;
+      mediaItems.set(item.id, {
+        id: item.id,
+        kind: "media",
+        label: item.filename,
+        icon: mediaIcon(item.kind),
+        iconTone: mediaIconTone(item.kind),
+        typeLabel: mediaKindLabel(item.kind),
+        ownerId: item.ownerId,
+        ownerEmail: item.ownerEmail ?? group.ownerEmail,
+        ownerDisplayName: item.ownerDisplayName ?? group.ownerDisplayName,
+        sizeBytes: Number(item.sizeBytes),
+        mediaCount: 1,
+        createdAt: item.createdAt,
+        mediaKind: item.kind,
+        sourceAlbumName: group.albumName,
+      });
+    }
+  }
+
+  items.push(...mediaItems.values());
+
+  for (const album of albums) {
+    items.push({
+      id: album.id,
+      kind: "album",
+      label: album.name,
+      icon: album.materialSymbol || "collections",
+      iconTone: "text-primary",
+      typeLabel: "Album",
+      ownerId: album.ownerId,
+      ownerEmail: album.ownerEmail,
+      ownerDisplayName: album.ownerDisplayName,
+      sizeBytes: 0,
+      mediaCount: albumMediaCount(album),
+      createdAt: "",
+      linkTo: `/dashboard/albums/${album.id}?shared=true`,
     });
   }
 
@@ -182,6 +298,7 @@ function toSharedItems(projects: ProjectDto[], media: MediaDto[]): SharedItem[] 
 
 
 function AssetCard({ item, index }: { item: SharedItem; index: number }) {
+  const sharedBy = ownerLabel(item);
   const inner = (
     <div className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-all hover:border-primary/40">
       {/* Thumbnail area */}
@@ -218,7 +335,7 @@ function AssetCard({ item, index }: { item: SharedItem; index: number }) {
             {item.label}
           </h3>
           <p className="mt-1 text-label-sm text-white/75">
-            Shared by: {shortOwner(item.ownerId)}
+            Shared by: {sharedBy}
           </p>
         </div>
       </div>
@@ -230,15 +347,22 @@ function AssetCard({ item, index }: { item: SharedItem; index: number }) {
         <div className="mt-2 flex items-center gap-2">
           {/* Owner avatar circle */}
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-container text-[10px] font-bold text-on-primary-container">
-            {shortOwner(item.ownerId).charAt(0).toUpperCase()}
+            {ownerAvatar(item)}
           </div>
           <span className="truncate text-label-sm text-on-surface-variant">
-            Shared by: {shortOwner(item.ownerId)}
+            Shared by: {sharedBy}
           </span>
         </div>
+        {item.sourceAlbumName && (
+          <div className="mt-1 truncate text-label-sm text-on-surface-variant">
+            In album: {item.sourceAlbumName}
+          </div>
+        )}
         <div className="mt-4 flex items-center justify-between border-t border-outline-variant/30 pt-3">
           <span className="text-label-sm font-bold uppercase text-outline">
-            {item.typeLabel} {item.sizeBytes > 0 ? `· ${formatSize(item.sizeBytes)}` : ""}
+            {item.typeLabel}
+            {item.kind === "media" && item.sizeBytes > 0 ? ` - ${formatSize(item.sizeBytes)}` : ""}
+            {item.kind !== "media" ? ` - ${item.mediaCount} media` : ""}
           </span>
           <span className="text-label-sm text-on-surface-variant">{formatDate(item.createdAt)}</span>
         </div>
@@ -258,6 +382,7 @@ function AssetCard({ item, index }: { item: SharedItem; index: number }) {
 }
 
 function AssetListItem({ item }: { item: SharedItem }) {
+  const sharedBy = ownerLabel(item);
   const inner = (
     <div className="group flex items-center justify-between rounded-xl border border-transparent p-3 transition-colors hover:border-outline-variant hover:bg-surface-container-high">
       <div className="flex items-center gap-4 overflow-hidden">
@@ -267,7 +392,7 @@ function AssetListItem({ item }: { item: SharedItem }) {
         <div className="min-w-0">
           <div className="truncate text-body-sm font-semibold text-on-surface">{item.label}</div>
           <div className="text-label-sm text-on-surface-variant">
-            Shared by {shortOwner(item.ownerId)} · {formatDate(item.createdAt)}
+            Shared by {sharedBy} - {item.sourceAlbumName ? `In ${item.sourceAlbumName}` : item.kind === "media" ? formatDate(item.createdAt) : `${item.mediaCount} media`}
           </div>
         </div>
       </div>
@@ -302,15 +427,18 @@ function AssetListItem({ item }: { item: SharedItem }) {
   return inner;
 }
 
-function OwnerRow({ ownerId, count }: { ownerId: string; count: number }) {
+function OwnerRow({ owner, count }: { owner: OwnerInfo; count: number }) {
+  const label = ownerLabel(owner);
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-outline-variant bg-primary-container text-body-sm font-bold text-on-primary-container">
-          {shortOwner(ownerId).charAt(0).toUpperCase()}
+          {ownerAvatar(owner)}
         </div>
         <div>
-          <div className="text-body-sm font-semibold text-on-surface">{shortOwner(ownerId)}</div>
+          <div className="max-w-[11rem] truncate text-body-sm font-semibold text-on-surface" title={label}>
+            {label}
+          </div>
           <div className="text-label-sm text-on-surface-variant">{count} assets</div>
         </div>
       </div>
@@ -322,33 +450,42 @@ function OwnerRow({ ownerId, count }: { ownerId: string; count: number }) {
 /* ── Main Component ─────────────────────────────────────────────────────── */
 
 export default function Shared({ loaderData }: Route.ComponentProps) {
-  const { projects, media, error } = loaderData;
+  const { projects, media, albums, albumMedia, error } = loaderData as {
+    projects: ProjectDto[];
+    media: MediaDto[];
+    albums: AlbumDto[];
+    albumMedia: SharedAlbumMediaGroup[];
+    error: string | null;
+  };
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
-  const isEmpty = projects.length === 0 && media.length === 0;
+  const isEmpty = projects.length === 0 && media.length === 0 && albums.length === 0;
 
   const [layoutMode, setLayoutMode] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<"latest" | "name" | "size">("latest");
   const [activeTab, setActiveTab] = useState<TabFilter>("all");
 
   // Merge projects + media into a unified display list
-  const allItems = useMemo(() => toSharedItems(projects, media), [projects, media]);
+  const allItems = useMemo(
+    () => toSharedItems(projects, media, albums, albumMedia),
+    [projects, media, albums, albumMedia],
+  );
 
   // Filter by tab
   const filteredItems = useMemo(() => {
     if (activeTab === "all") return allItems;
     return allItems.filter((item) => {
+      if (activeTab === "projects") {
+        return item.kind === "project";
+      }
+      if (activeTab === "albums") {
+        return item.kind === "album";
+      }
       if (activeTab === "photos") {
-        return (
-          (item.kind === "media" && item.mediaKind === MediaKind.Image) ||
-          (item.kind === "project" && item.projectKind === ProjectKind.Image)
-        );
+        return item.kind === "media" && item.mediaKind === MediaKind.Image;
       }
       if (activeTab === "videos") {
-        return (
-          (item.kind === "media" && item.mediaKind === MediaKind.Video) ||
-          (item.kind === "project" && item.projectKind === ProjectKind.Video)
-        );
+        return item.kind === "media" && item.mediaKind === MediaKind.Video;
       }
       if (activeTab === "audio") {
         return item.kind === "media" && item.mediaKind === MediaKind.Audio;
@@ -371,36 +508,45 @@ export default function Shared({ loaderData }: Route.ComponentProps) {
   const recentItems = sortedItems.slice(6);
 
   // Stats
-  const totalCount = allItems.length;
   const projectCount = projects.length;
-  const mediaCount = media.length;
-  const videoCount = allItems.filter(
-    (i) =>
-      (i.kind === "media" && i.mediaKind === MediaKind.Video) ||
-      (i.kind === "project" && i.projectKind === ProjectKind.Video),
-  ).length;
-  const imageCount = allItems.filter(
-    (i) =>
-      (i.kind === "media" && i.mediaKind === MediaKind.Image) ||
-      (i.kind === "project" && i.projectKind === ProjectKind.Image),
-  ).length;
-  const audioCount = allItems.filter(
-    (i) => i.kind === "media" && i.mediaKind === MediaKind.Audio,
-  ).length;
+  const albumCount = albums.length;
+  const directMediaCount = media.length;
+  const flattenedMediaItems = allItems.filter((item) => item.kind === "media");
+  const albumNestedMediaCount = new Set(albumMedia.flatMap((group) => group.items.map((item) => item.id))).size;
+  const projectNestedMediaCount = projects.reduce((total, project) => total + projectMediaCount(project), 0);
+  const mediaCount = flattenedMediaItems.length + projectNestedMediaCount;
+  const totalCount = projectCount + albumCount + mediaCount;
+  const videoCount = flattenedMediaItems.filter((item) => item.mediaKind === MediaKind.Video).length;
+  const imageCount = flattenedMediaItems.filter((item) => item.mediaKind === MediaKind.Image).length;
+  const audioCount = flattenedMediaItems.filter((item) => item.mediaKind === MediaKind.Audio).length;
 
   // Owner breakdown
   const ownerCounts = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { owner: OwnerInfo; count: number }>();
     for (const item of allItems) {
-      map.set(item.ownerId, (map.get(item.ownerId) ?? 0) + 1);
+      const existing = map.get(item.ownerId);
+      if (existing) {
+        existing.count += 1;
+        if (!existing.owner.ownerEmail && item.ownerEmail) existing.owner.ownerEmail = item.ownerEmail;
+        if (!existing.owner.ownerDisplayName && item.ownerDisplayName) existing.owner.ownerDisplayName = item.ownerDisplayName;
+      } else {
+        map.set(item.ownerId, {
+          owner: {
+            ownerId: item.ownerId,
+            ownerEmail: item.ownerEmail,
+            ownerDisplayName: item.ownerDisplayName,
+          },
+          count: 1,
+        });
+      }
     }
-    return Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1])
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count)
       .slice(0, 5);
   }, [allItems]);
 
   // Storage
-  const totalBytes = media.reduce((sum, m) => sum + Number(m.sizeBytes), 0);
+  const totalBytes = flattenedMediaItems.reduce((sum, item) => sum + item.sizeBytes, 0);
 
   return (
     <section className="space-y-8">
@@ -427,26 +573,27 @@ export default function Shared({ loaderData }: Route.ComponentProps) {
 
       {/* ── Stat Cards ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon="folder_shared" label="Total Shared" value={totalCount} detail="Projects + Media" />
+        <MetricCard icon="folder_shared" label="Total Shared" value={totalCount} detail="Projects + albums + media files" />
         <MetricCard
           icon="folder"
           label="Projects"
           value={projectCount}
-          detail={`${videoCount} video · ${imageCount - (imageCount > projectCount ? projectCount : 0)} image`}
+          detail={`${projectNestedMediaCount} media inside`}
           tone="secondary"
         />
         <MetricCard
           icon="perm_media"
           label="Media Files"
           value={mediaCount}
-          detail={formatSize(totalBytes)}
+          detail={`${directMediaCount} direct - ${albumNestedMediaCount + projectNestedMediaCount} inside projects/albums`}
           tone="tertiary"
         />
         <MetricCard
-          icon="category"
-          label="Type Breakdown"
-          value={`${videoCount}V · ${imageCount}I · ${audioCount}A`}
-          detail="Across all types"
+          icon="collections"
+          label="Albums"
+          suffix="media"
+          value={albumNestedMediaCount}
+          detail={`${albumCount} shared albums`}
         />
       </div>
 
@@ -530,8 +677,8 @@ export default function Shared({ loaderData }: Route.ComponentProps) {
               <div className="rounded-xl border border-outline-variant bg-surface-container-low p-5">
                 <h3 className="mb-4 text-body-sm font-bold text-on-surface">Shared By</h3>
                 <div className="space-y-4">
-                  {ownerCounts.map(([ownerId, count]) => (
-                    <OwnerRow key={ownerId} ownerId={ownerId} count={count} />
+                  {ownerCounts.map(({ owner, count }) => (
+                    <OwnerRow key={owner.ownerId} owner={owner} count={count} />
                   ))}
                 </div>
               </div>

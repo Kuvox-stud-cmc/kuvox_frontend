@@ -146,6 +146,441 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                    kind?: components["schemas"]["TaskIssueKind"];
+                    status?: components["schemas"]["TaskIssueStatus"];
+                    assigneeId?: string;
+                    milestoneId?: string;
+                    labelId?: string;
+                    projectId?: string;
+                    dueBefore?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskIssueDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateTaskIssueRequest"];
+                    "text/json": components["schemas"]["CreateTaskIssueRequest"];
+                    "application/*+json": components["schemas"]["CreateTaskIssueRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskIssueDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/assigned-to-me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                    kind?: components["schemas"]["TaskIssueKind"];
+                    status?: components["schemas"]["TaskIssueStatus"];
+                    milestoneId?: string;
+                    labelId?: string;
+                    projectId?: string;
+                    dueBefore?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskIssueDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskIssueDto"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateTaskIssueRequest"];
+                    "text/json": components["schemas"]["UpdateTaskIssueRequest"];
+                    "application/*+json": components["schemas"]["UpdateTaskIssueRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskIssueDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateTaskIssueStatusRequest"];
+                    "text/json": components["schemas"]["UpdateTaskIssueStatusRequest"];
+                    "application/*+json": components["schemas"]["UpdateTaskIssueStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskIssueDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/milestones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskMilestoneDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateTaskMilestoneRequest"];
+                    "text/json": components["schemas"]["CreateTaskMilestoneRequest"];
+                    "application/*+json": components["schemas"]["CreateTaskMilestoneRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskMilestoneDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/milestones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateTaskMilestoneRequest"];
+                    "text/json": components["schemas"]["UpdateTaskMilestoneRequest"];
+                    "application/*+json": components["schemas"]["UpdateTaskMilestoneRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskMilestoneDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskLabelDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateTaskLabelRequest"];
+                    "text/json": components["schemas"]["CreateTaskLabelRequest"];
+                    "application/*+json": components["schemas"]["CreateTaskLabelRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskLabelDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/labels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateTaskLabelRequest"];
+                    "text/json": components["schemas"]["UpdateTaskLabelRequest"];
+                    "application/*+json": components["schemas"]["UpdateTaskLabelRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskLabelDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -407,6 +842,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ToggleProjectStarRequest"];
+                    "text/json": components["schemas"]["ToggleProjectStarRequest"];
+                    "application/*+json": components["schemas"]["ToggleProjectStarRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{id}/share": {
         parameters: {
             query?: never;
@@ -483,6 +961,70 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectAccessMemberDto"][];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateProjectAccessRequest"];
+                    "text/json": components["schemas"]["UpdateProjectAccessRequest"];
+                    "application/*+json": components["schemas"]["UpdateProjectAccessRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectAccessMemberDto"][];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -790,7 +1332,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    studioId?: string;
+                    includeSystem?: boolean;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -813,7 +1358,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    studioId?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -845,6 +1392,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/albums/shared": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AlbumDto"][];
+                        "application/json": components["schemas"]["AlbumDto"][];
+                        "text/json": components["schemas"]["AlbumDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/albums/{id}": {
         parameters: {
             query?: never;
@@ -857,7 +1441,9 @@ export interface paths {
         post?: never;
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    studioId?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -880,7 +1466,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/albums/{id}/media": {
+    "/api/albums/{id}/favorite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ToggleAlbumFavoriteRequest"];
+                    "text/json": components["schemas"]["ToggleAlbumFavoriteRequest"];
+                    "application/*+json": components["schemas"]["ToggleAlbumFavoriteRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AlbumDto"];
+                        "application/json": components["schemas"]["AlbumDto"];
+                        "text/json": components["schemas"]["AlbumDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/albums/{id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ShareAlbumRequest"];
+                    "text/json": components["schemas"]["ShareAlbumRequest"];
+                    "application/*+json": components["schemas"]["ShareAlbumRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/albums/{id}/share/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/albums/{id}/access": {
         parameters: {
             query?: never;
             header?: never;
@@ -890,6 +1598,77 @@ export interface paths {
         get: {
             parameters: {
                 query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AlbumAccessMemberDto"][];
+                        "application/json": components["schemas"]["AlbumAccessMemberDto"][];
+                        "text/json": components["schemas"]["AlbumAccessMemberDto"][];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateAlbumAccessRequest"];
+                    "text/json": components["schemas"]["UpdateAlbumAccessRequest"];
+                    "application/*+json": components["schemas"]["UpdateAlbumAccessRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AlbumAccessMemberDto"][];
+                        "application/json": components["schemas"]["AlbumAccessMemberDto"][];
+                        "text/json": components["schemas"]["AlbumAccessMemberDto"][];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/albums/{id}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                    includeSystem?: boolean;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -914,7 +1693,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    studioId?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -940,7 +1721,9 @@ export interface paths {
         };
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    studioId?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -964,6 +1747,49 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/albums/audio-categories/{category}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                };
+                header?: never;
+                path: {
+                    category: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AssignAudioCategoryDto"];
+                    "text/json": components["schemas"]["AssignAudioCategoryDto"];
+                    "application/*+json": components["schemas"]["AssignAudioCategoryDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1015,6 +1841,7 @@ export interface paths {
                     "multipart/form-data": {
                         File?: components["schemas"]["IFormFile"];
                         Kind?: components["schemas"]["MediaKind"];
+                        Filename?: string;
                     };
                 };
             };
@@ -1113,6 +1940,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/media/storage-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    studioId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaStorageUsageDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/media/{id}": {
         parameters: {
             query?: never;
@@ -1166,6 +2030,109 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{id}/object/{variant}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    variant: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    variant: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{id}/favorite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ToggleMediaFavoriteRequest"];
+                    "text/json": components["schemas"]["ToggleMediaFavoriteRequest"];
+                    "application/*+json": components["schemas"]["ToggleMediaFavoriteRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1247,6 +2214,70 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaAccessMemberDto"][];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateMediaAccessRequest"];
+                    "text/json": components["schemas"]["UpdateMediaAccessRequest"];
+                    "application/*+json": components["schemas"]["UpdateMediaAccessRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaAccessMemberDto"][];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2702,17 +3733,38 @@ export interface components {
             email: string;
             role: components["schemas"]["UserStudioRole"];
         };
+        AlbumAccessMemberDto: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+            studioRole: string;
+            effectiveRole: components["schemas"]["Permission"];
+            overrideRole: null | components["schemas"]["Permission"];
+            isHidden: boolean;
+            canManage: boolean;
+        };
         AlbumDto: {
             /** Format: uuid */
             id: string;
+            /** Format: uuid */
+            ownerId: string;
+            ownerKind: components["schemas"]["OwnerKind"];
+            ownerEmail: null | string;
+            ownerDisplayName: null | string;
             name: string;
             description: string;
             kind: components["schemas"]["AlbumKind"];
             materialSymbol: string;
             isDeleteAble: boolean;
+            /** Format: int32 */
+            mediaCount: number | string;
             isFavorite: boolean;
         };
         AlbumKind: number;
+        AssignAudioCategoryDto: {
+            mediaIds: string[];
+        };
         AuthTokenDto: {
             accessToken: string;
             refreshToken: string;
@@ -2744,6 +3796,30 @@ export interface components {
         CreateStudioRequest: {
             name: string;
         };
+        CreateTaskIssueRequest: {
+            kind: components["schemas"]["TaskIssueKind"];
+            title: string;
+            description: null | string;
+            /** Format: date-time */
+            dueDate: null | string;
+            /** Format: uuid */
+            milestoneId: null | string;
+            /** Format: uuid */
+            projectId: null | string;
+            assigneeIds: null | string[];
+            labelIds: null | string[];
+        };
+        CreateTaskLabelRequest: {
+            name: string;
+            color: string;
+        };
+        CreateTaskMilestoneRequest: {
+            title: string;
+            description: null | string;
+            /** Format: date-time */
+            dueDate: null | string;
+            status: components["schemas"]["TaskMilestoneStatus"];
+        };
         CreateTimelineRequest: {
             /** Format: uuid */
             projectId: string;
@@ -2764,12 +3840,25 @@ export interface components {
             email: string;
             password: string;
         };
+        MediaAccessMemberDto: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+            studioRole: string;
+            effectiveRole: components["schemas"]["Permission"];
+            overrideRole: null | components["schemas"]["Permission"];
+            isHidden: boolean;
+            canManage: boolean;
+        };
         MediaDto: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             ownerId: string;
             ownerKind: components["schemas"]["OwnerKind"];
+            ownerEmail: null | string;
+            ownerDisplayName: null | string;
             kind: components["schemas"]["MediaKind"];
             filename: string;
             storageKey: string;
@@ -2794,6 +3883,7 @@ export interface components {
             isFavorite: boolean;
             pipeline: components["schemas"]["MediaPipelineDto"];
         };
+        MediaKind: number;
         MediaPipelineDto: {
             stage: string;
             label: string;
@@ -2804,7 +3894,33 @@ export interface components {
             stepCount: number | string;
             terminal: boolean;
         };
-        MediaKind: number;
+        MediaStorageObjectBreakdownDto: {
+            /** Format: int64 */
+            rawBytes: number | string;
+            /** Format: int64 */
+            canonicalBytes: number | string;
+            /** Format: int64 */
+            proxyBytes: number | string;
+            /** Format: int64 */
+            thumbnailBytes: number | string;
+        };
+        MediaStorageUsageDto: {
+            plan: string;
+            /** Format: int64 */
+            storageBytesUsed: number | string;
+            /** Format: int64 */
+            storageBytesQuota: number | string;
+            /** Format: double */
+            storagePercent: number | string;
+            /** Format: int32 */
+            mediaCount: number | string;
+            /** Format: int64 */
+            activeBytesUsed: number | string;
+            /** Format: int64 */
+            trashBytesUsed: number | string;
+            objectBreakdown: components["schemas"]["MediaStorageObjectBreakdownDto"];
+            trashObjectBreakdown: components["schemas"]["MediaStorageObjectBreakdownDto"];
+        };
         MediaTrashItemDto: {
             /** Format: uuid */
             id: string;
@@ -2911,12 +4027,25 @@ export interface components {
             teamSeats: number | string;
             prioritySupport: boolean;
         };
+        ProjectAccessMemberDto: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+            studioRole: string;
+            effectiveRole: components["schemas"]["ProjectRole"];
+            overrideRole: null | components["schemas"]["ProjectRole"];
+            isHidden: boolean;
+            canManage: boolean;
+        };
         ProjectDto: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             ownerId: string;
             ownerKind: components["schemas"]["OwnerKind"];
+            ownerEmail: null | string;
+            ownerDisplayName: null | string;
             kind: components["schemas"]["ProjectKind"];
             name: string;
             description: null | string;
@@ -2927,6 +4056,8 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** Format: int32 */
+            mediaCount: number | string;
             isStarred: boolean;
         };
         ProjectKind: number;
@@ -2970,6 +4101,10 @@ export interface components {
         ResetPasswordRequest: {
             token: string;
             newPassword: string;
+        };
+        ShareAlbumRequest: {
+            email: string;
+            role: components["schemas"]["Permission"];
         };
         ShareMediaRequest: {
             email: string;
@@ -3066,6 +4201,70 @@ export interface components {
             avatarUrl: null | string;
             publicSlug: null | string;
         };
+        TaskAssigneeDto: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+        };
+        TaskIssueDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            studioId: string;
+            /** Format: uuid */
+            projectId: null | string;
+            projectName: null | string;
+            kind: components["schemas"]["TaskIssueKind"];
+            status: components["schemas"]["TaskIssueStatus"];
+            title: string;
+            description: null | string;
+            /** Format: date-time */
+            dueDate: null | string;
+            milestone: null | components["schemas"]["TaskMilestoneDto"];
+            assignees: components["schemas"]["TaskAssigneeDto"][];
+            labels: components["schemas"]["TaskLabelDto"][];
+            /** Format: uuid */
+            createdByUserId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            closedAt: null | string;
+            /** Format: int32 */
+            commentsCount: number | string;
+        };
+        TaskIssueKind: number;
+        TaskIssueStatus: number;
+        TaskLabelDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            studioId: string;
+            name: string;
+            color: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        TaskMilestoneDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            studioId: string;
+            title: string;
+            description: null | string;
+            /** Format: date-time */
+            dueDate: null | string;
+            status: components["schemas"]["TaskMilestoneStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        TaskMilestoneStatus: number;
         TimelineDto: {
             /** Format: uuid */
             id: string;
@@ -3088,9 +4287,30 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        ToggleAlbumFavoriteRequest: {
+            isFavorite: boolean;
+        };
+        ToggleMediaFavoriteRequest: {
+            isFavorite: boolean;
+        };
+        ToggleProjectStarRequest: {
+            isStarred: boolean;
+        };
         UnreadCountDto: {
             /** Format: int32 */
             count: number | string;
+        };
+        UpdateAlbumAccessRequest: {
+            /** Format: uuid */
+            userId: string;
+            role: null | components["schemas"]["Permission"];
+            isHidden: boolean;
+        };
+        UpdateMediaAccessRequest: {
+            /** Format: uuid */
+            userId: string;
+            role: null | components["schemas"]["Permission"];
+            isHidden: boolean;
         };
         UpdatePreferencesRequest: {
             emailNotificationsEnabled: boolean;
@@ -3100,6 +4320,12 @@ export interface components {
         };
         UpdateProfileRequest: {
             displayName: string;
+        };
+        UpdateProjectAccessRequest: {
+            /** Format: uuid */
+            userId: string;
+            role: null | components["schemas"]["ProjectRole"];
+            isHidden: boolean;
         };
         UpdateProjectRequest: {
             name: string;
@@ -3120,6 +4346,33 @@ export interface components {
             description: null | string;
             avatarUrl: null | string;
             publicSlug: null | string;
+        };
+        UpdateTaskIssueRequest: {
+            kind: components["schemas"]["TaskIssueKind"];
+            title: string;
+            description: null | string;
+            /** Format: date-time */
+            dueDate: null | string;
+            /** Format: uuid */
+            milestoneId: null | string;
+            /** Format: uuid */
+            projectId: null | string;
+            assigneeIds: null | string[];
+            labelIds: null | string[];
+        };
+        UpdateTaskIssueStatusRequest: {
+            status: components["schemas"]["TaskIssueStatus"];
+        };
+        UpdateTaskLabelRequest: {
+            name: string;
+            color: string;
+        };
+        UpdateTaskMilestoneRequest: {
+            title: string;
+            description: null | string;
+            /** Format: date-time */
+            dueDate: null | string;
+            status: components["schemas"]["TaskMilestoneStatus"];
         };
         UserDto: {
             /** Format: uuid */

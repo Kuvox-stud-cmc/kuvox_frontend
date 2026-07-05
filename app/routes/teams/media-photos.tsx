@@ -1,8 +1,8 @@
 import { MediaKind } from "~/lib/api";
 
 import {
+  createTeamMediaKindAction,
   createTeamMediaKindLoader,
-  teamMediaKindAction,
 } from "./media-kind-route.server";
 import { TeamMediaKindView } from "./media-kind-route";
 import type { Route } from "./+types/media-photos";
@@ -12,12 +12,15 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export const loader = createTeamMediaKindLoader(MediaKind.Image);
-export const action = teamMediaKindAction;
+export const action = createTeamMediaKindAction(MediaKind.Image);
 
 export default function TeamPhotos({ loaderData, actionData, params }: Route.ComponentProps) {
   return (
     <TeamMediaKindView
       media={loaderData.media}
+      albums={loaderData.albums}
+      albumMediaCounts={loaderData.albumMediaCounts}
+      albumMedia={loaderData.albumMedia}
       error={loaderData.error}
       actionData={actionData}
       kind={MediaKind.Image}
@@ -25,6 +28,7 @@ export default function TeamPhotos({ loaderData, actionData, params }: Route.Com
       subtitle="Photo assets owned by this Studio."
       studioId={params.studioId}
       canWrite={loaderData.canWrite ?? false}
+      canManageAccess={loaderData.canManageAccess ?? false}
     />
   );
 }
