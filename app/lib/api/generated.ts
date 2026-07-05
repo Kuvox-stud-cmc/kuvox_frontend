@@ -3806,7 +3806,10 @@ export interface components {
             milestoneId: null | string;
             /** Format: uuid */
             projectId: null | string;
+            /** Format: uuid */
+            parentTaskIssueId: null | string;
             assigneeIds: null | string[];
+            reviewerIds: null | string[];
             labelIds: null | string[];
         };
         CreateTaskLabelRequest: {
@@ -4207,6 +4210,12 @@ export interface components {
             email: string;
             displayName: string;
         };
+        TaskReviewerDto: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+        };
         TaskIssueDto: {
             /** Format: uuid */
             id: string;
@@ -4215,6 +4224,8 @@ export interface components {
             /** Format: uuid */
             projectId: null | string;
             projectName: null | string;
+            /** Format: uuid */
+            parentTaskIssueId: null | string;
             kind: components["schemas"]["TaskIssueKind"];
             status: components["schemas"]["TaskIssueStatus"];
             title: string;
@@ -4223,6 +4234,7 @@ export interface components {
             dueDate: null | string;
             milestone: null | components["schemas"]["TaskMilestoneDto"];
             assignees: components["schemas"]["TaskAssigneeDto"][];
+            reviewers: components["schemas"]["TaskReviewerDto"][];
             labels: components["schemas"]["TaskLabelDto"][];
             /** Format: uuid */
             createdByUserId: string;
@@ -4234,6 +4246,10 @@ export interface components {
             closedAt: null | string;
             /** Format: int32 */
             commentsCount: number | string;
+            /** Format: int32 */
+            subtaskCount: number | string;
+            /** Format: int32 */
+            completedSubtaskCount: number | string;
         };
         TaskIssueKind: number;
         TaskIssueStatus: number;
@@ -4357,7 +4373,10 @@ export interface components {
             milestoneId: null | string;
             /** Format: uuid */
             projectId: null | string;
+            /** Format: uuid */
+            parentTaskIssueId: null | string;
             assigneeIds: null | string[];
+            reviewerIds: null | string[];
             labelIds: null | string[];
         };
         UpdateTaskIssueStatusRequest: {

@@ -47,6 +47,12 @@ export interface TaskAssigneeDto {
   displayName: string;
 }
 
+export interface TaskReviewerDto {
+  userId: string;
+  email: string;
+  displayName: string;
+}
+
 export interface TaskMilestoneDto {
   id: string;
   studioId: string;
@@ -80,6 +86,7 @@ export interface TaskIssueDto {
   dueDate: string | null;
   milestone: TaskMilestoneDto | null;
   assignees: TaskAssigneeDto[];
+  reviewers: TaskReviewerDto[];
   labels: TaskLabelDto[];
   createdByUserId: string;
   createdAt: string;
@@ -140,6 +147,7 @@ export interface CreateTaskIssueRequest {
   projectId: string | null;
   parentTaskIssueId: string | null;
   assigneeIds: string[] | null;
+  reviewerIds: string[] | null;
   labelIds: string[] | null;
 }
 
@@ -394,6 +402,7 @@ export function notificationTypeIcon(type: number): string {
   if (type === 12) return "folder";
   if (type === 13 || [1, 2, 3, 4].includes(type)) return "perm_media";
   if (type === 14 || type === 15) return "storage";
+  if (type === 18) return "alternate_email";
   if (type === 16 || type === 17) return "task_alt";
   return "notifications";
 }
