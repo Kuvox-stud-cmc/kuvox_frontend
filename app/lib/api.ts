@@ -211,6 +211,30 @@ export interface ItemAccessMemberDto {
   canManage: boolean;
 }
 
+export interface ImageCompositionDto {
+  projectId: string;
+  documentJson: unknown | null;
+  revisionNumber: number | string;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+}
+
+export interface SaveImageCompositionRequest {
+  documentJson: unknown;
+  operationsJson: unknown[];
+  baseRevisionNumber: number;
+}
+
+export interface ImageCompositionRevisionDto {
+  id: string;
+  projectId: string;
+  revisionNumber: number | string;
+  documentJson: unknown;
+  operationsJson: unknown;
+  createdAt: string;
+  createdByUserId: string;
+}
+
 export function projectKindLabel(kind: number): string {
   return kind === ProjectKind.Image ? "Image" : "Video";
 }
