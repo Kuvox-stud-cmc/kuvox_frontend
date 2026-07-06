@@ -1,4 +1,11 @@
 import type { LibraryTab } from "~/store/slices/editor-slice";
+import { MediaKind, OwnerKind, type MediaDto } from "~/lib/api";
+import {
+  createMockVideoProjectDocument,
+  type VideoProjectDocument,
+  type VideoTimelineItem,
+  type VideoTrack,
+} from "~/lib/editor/video-document";
 
 export interface EditorProjectMock {
   id: string;
@@ -17,13 +24,6 @@ export interface MediaAssetMock {
   duration: string;
   icon: string;
   gradient: string;
-}
-
-export interface EditorToolMock {
-  id: string;
-  icon: string;
-  label: string;
-  active?: boolean;
 }
 
 export interface TimelineClipMock {
@@ -65,6 +65,11 @@ export const editorProject: EditorProjectMock = {
   previewGradient:
     "linear-gradient(135deg, #0b1820 0%, #17465a 42%, #83633b 100%)",
 };
+
+export const mockVideoProjectDocument = createMockVideoProjectDocument(
+  editorProject.id,
+  editorProject.name,
+);
 
 export const mediaAssets: MediaAssetMock[] = [
   {
@@ -133,47 +138,93 @@ export const mediaAssets: MediaAssetMock[] = [
   },
 ];
 
-export const editorTools: EditorToolMock[] = [
-  { id: "trim", icon: "content_cut", label: "Trim tool", active: true },
-  { id: "split", icon: "call_split", label: "Split" },
-  { id: "transition", icon: "animation", label: "Transitions" },
-  { id: "speed", icon: "speed", label: "Speed" },
-  { id: "color", icon: "palette", label: "Color" },
-  { id: "captions", icon: "subtitles", label: "Captions" },
-];
+export const workspaceMediaAssets: MediaDto[] = mediaAssets.map((asset, index) => ({
+  id: asset.id,
+  ownerId: "mock-user",
+  ownerKind: OwnerKind.User,
+  ownerEmail: "mock@example.com",
+  ownerDisplayName: "Mock User",
+  kind: mediaKindFromTab(asset.type),
+  filename: asset.title,
+  storageKey: `mock/${asset.id}`,
+  sizeBytes: 1024 * (index + 1),
+  status: "Ready",
+  canonicalStorageKey: null,
+  proxyStorageKey: null,
+  thumbnailStorageKey: null,
+  errorMessage: null,
+  durationSeconds: asset.type === "stills" ? null : secondsFromLabel(asset.duration),
+  width: asset.type === "audio" ? null : 1920,
+  height: asset.type === "audio" ? null : 1080,
+  codec: null,
+  frameRate: asset.type === "clips" ? 30 : null,
+  createdAt: new Date(Date.UTC(2026, 0, index + 1, 10, 0, 0)).toISOString(),
+  isFavorite: false,
+  pipeline: {
+    stage: "ready",
+    label: "Ready to edit",
+    detail: "Import and processing completed.",
+    step: 4,
+    stepCount: 4,
+    terminal: true,
+  },
+}));
 
-export const timelineTracks: TimelineTrackMock[] = [
-  {
-    id: "v1",
-    label: "V1",
-    icon: "video_camera_front",
-    height: 64,
-    clips: [
-      { id: "tl-beach", label: "Beach_01.mp4", start: 20, width: 210, tone: "video" },
-      { id: "tl-city", label: "City_Night.mp4", start: 238, width: 160, tone: "video" },
-      { id: "tl-mountain", label: "Mountain_View.mp4", start: 414, width: 250, tone: "video" },
-    ],
-  },
-  {
-    id: "a1",
-    label: "A1",
-    icon: "graphic_eq",
-    height: 64,
-    clips: [
-      { id: "tl-audio-main", label: "Main ambience", start: 20, width: 378, tone: "audio" },
-      { id: "tl-audio-bed", label: "Music bed", start: 414, width: 250, tone: "audio" },
-    ],
-  },
-  {
-    id: "t1",
-    label: "T1",
-    icon: "subtitles",
-    height: 48,
-    clips: [
-      { id: "tl-caption", label: "Welcome to summer", start: 70, width: 116, tone: "text" },
-    ],
-  },
-];
+const timelinePixelsPerSecond = 10;
+
+const trackIcons: Record<VideoTrack["kind"], string> = {
+  video: "video_camera_front",
+  audio: "graphic_eq",
+  text: "subtitles",
+  overlay: "filter",
+};
+
+export function createTimelineTracksFromVideoDocument(
+  document: VideoProjectDocument,
+): TimelineTrackMock[] {
+  return document.tracks.map((track) => ({
+    id: track.id,
+    label: track.label,
+    icon: trackIcons[track.kind],
+    height: track.kind === "text" ? 48 : 64,
+    clips: track.items.map((item) => ({
+      id: item.id,
+      label: timelineItemLabel(document, item),
+      start: Math.round(item.timelineStart * timelinePixelsPerSecond),
+      width: Math.round(item.duration * timelinePixelsPerSecond),
+      tone: timelineItemTone(item),
+    })),
+  }));
+}
+
+export const timelineTracks: TimelineTrackMock[] =
+  createTimelineTracksFromVideoDocument(mockVideoProjectDocument);
+
+function timelineItemTone(item: VideoTimelineItem): TimelineClipMock["tone"] {
+  if (item.type === "audio") return "audio";
+  if (item.type === "text") return "text";
+  return "video";
+}
+
+function timelineItemLabel(
+  document: VideoProjectDocument,
+  item: VideoTimelineItem,
+): string {
+  if (item.type === "text") {
+    return item.text;
+  }
+
+  const media = document.media[item.mediaId];
+  if (!media) {
+    return item.id;
+  }
+
+  if (item.type === "audio") {
+    return media.name.replace(/\.[^/.]+$/, "");
+  }
+
+  return media.name;
+}
 
 export const assistantMessages: AssistantMessageMock[] = [
   {
@@ -199,3 +250,17 @@ export const assistantSuggestions: AssistantSuggestionMock[] = [
   { id: "s2", icon: "palette", label: "Color grade for a cinematic look" },
   { id: "s3", icon: "content_cut", label: "Trim ending to 30s" },
 ];
+
+function mediaKindFromTab(tab: LibraryTab): number {
+  if (tab === "audio") return MediaKind.Audio;
+  if (tab === "stills") return MediaKind.Image;
+  return MediaKind.Video;
+}
+
+function secondsFromLabel(label: string): number {
+  const parts = label.split(":").map((part) => Number(part));
+  if (parts.some((part) => !Number.isFinite(part))) return 5;
+  if (parts.length === 2) return (parts[0] * 60) + parts[1];
+  if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+  return parts[0] || 5;
+}

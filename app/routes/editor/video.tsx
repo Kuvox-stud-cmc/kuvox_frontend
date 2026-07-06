@@ -4,8 +4,8 @@ import { redirect } from "react-router";
 
 import { EditorSkeleton } from "~/components/editor/editor-skeleton";
 import { VideoEditorWorkspace } from "~/components/editor/video-editor-workspace";
-import { ProjectKind } from "~/lib/api";
-import { getProject } from "~/lib/api.server";
+import { OwnerKind, ProjectKind, type MediaDto, type Workspace } from "~/lib/api";
+import { getProject, listAllMedia } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { getSession } from "~/lib/session.server";
 import { makeStore } from "~/store";
@@ -17,7 +17,7 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireUser(request);
+  const user = await requireUser(request);
   const session = await getSession(request);
   const accessToken = session.get("accessToken");
   if (!accessToken) {
@@ -29,7 +29,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw redirect(`/editor/image/${project.id}`);
   }
 
-  return { projectId: params.projectId, project };
+  let media: MediaDto[] = [];
+  let mediaLoadError: string | null = null;
+  try {
+    media = await listAllMedia(accessToken, workspaceForProject(project));
+  } catch (error) {
+    mediaLoadError = error instanceof Error ? error.message : String(error);
+  }
+
+  return { projectId: params.projectId, project, user, media, mediaLoadError };
 }
 
 export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
@@ -47,9 +55,17 @@ export default function VideoEditorRoute({ loaderData }: Route.ComponentProps) {
   return (
     <Provider store={store}>
       <VideoEditorWorkspace
-        projectId={loaderData.projectId}
-        projectName={loaderData.project.name}
+        project={loaderData.project}
+        userId={loaderData.user.id}
+        media={loaderData.media}
+        mediaLoadError={loaderData.mediaLoadError}
       />
     </Provider>
   );
+}
+
+function workspaceForProject(project: { ownerKind: number; ownerId: string }): Workspace {
+  return project.ownerKind === OwnerKind.Studio
+    ? { kind: "studio", studioId: project.ownerId }
+    : { kind: "personal" };
 }

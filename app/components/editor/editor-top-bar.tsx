@@ -5,7 +5,10 @@ import {
   modalOpened,
   popoverToggled,
   searchQueryChanged,
+  selectChromeState,
+  selectEditorSyncChromeState,
   timelineToggled,
+  type EditorSyncStatus,
   type EditorMode,
 } from "~/store/slices/editor-slice";
 
@@ -23,8 +26,9 @@ const modes: Array<{ value: EditorMode; label: string; icon?: string }> = [
 
 export function EditorTopBar({ project }: EditorTopBarProps) {
   const dispatch = useAppDispatch();
-  const editorMode = useAppSelector((state) => state.editor.editorMode);
-  const searchQuery = useAppSelector((state) => state.editor.searchQuery);
+  const { editorMode, searchQuery } = useAppSelector(selectChromeState);
+  const { syncStatus, pendingSyncCount } = useAppSelector(selectEditorSyncChromeState);
+  const syncCopy = syncStatusCopy(syncStatus, pendingSyncCount);
 
   return (
     <header className="z-50 grid h-toolbar-width shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-outline-variant bg-surface px-3 2xl:px-4">
@@ -84,6 +88,11 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
       </div>
 
       <div className="flex items-center justify-end gap-1.5">
+        <span
+          className={`hidden h-8 items-center rounded-[4px] border px-2 text-label-sm font-semibold lg:flex ${syncCopy.className}`}
+        >
+          {syncCopy.label}
+        </span>
         <EditorIconButton
           icon="view_timeline"
           label="Toggle timeline"
@@ -113,4 +122,46 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
       </div>
     </header>
   );
+}
+
+function syncStatusCopy(status: EditorSyncStatus, pendingSyncCount: number) {
+  if (status === "syncing") {
+    return {
+      label: "Syncing",
+      className: "border-outline-variant bg-surface-container-low text-on-surface-variant",
+    };
+  }
+
+  if (status === "synced" || status === "clean") {
+    return {
+      label: "Synced",
+      className: "border-outline-variant bg-surface-container-low text-on-surface-variant",
+    };
+  }
+
+  if (status === "saved-local") {
+    return {
+      label: pendingSyncCount > 0 ? `Saved locally (${pendingSyncCount})` : "Saved locally",
+      className: "border-tertiary/40 bg-tertiary-container text-on-tertiary-container",
+    };
+  }
+
+  if (status === "server-changed") {
+    return {
+      label: "Server changed",
+      className: "border-error/40 bg-error-container text-on-error-container",
+    };
+  }
+
+  if (status === "failed" || status === "sync-failed") {
+    return {
+      label: "Sync failed",
+      className: "border-error/40 bg-error-container text-on-error-container",
+    };
+  }
+
+  return {
+    label: "Saved locally",
+    className: "border-outline-variant bg-surface-container-low text-on-surface-variant",
+  };
 }

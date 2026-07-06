@@ -1,7 +1,12 @@
 import { useEffect, type CSSProperties } from "react";
 
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
-import { projectOpened } from "~/store/slices/editor-slice";
+import {
+  projectOpened,
+  mediaAssetAddedToTimeline,
+  selectEditorMode,
+  selectTimelinePanelState,
+} from "~/store/slices/editor-slice";
 
 import { AiAssistantPanel } from "./ai-assistant-panel";
 import { EditorModalLayer, EditorPopoverLayer, EditorToast } from "./editor-overlays";
@@ -11,9 +16,7 @@ import {
   assistantMessages,
   assistantSuggestions,
   editorProject,
-  editorTools,
-  mediaAssets,
-  timelineTracks,
+  workspaceMediaAssets,
 } from "./mock-editor-data";
 import { PreviewPanel } from "./panels/preview-panel";
 import { TimelinePanel } from "./panels/timeline-panel";
@@ -31,9 +34,8 @@ interface EditorWorkspaceProps {
  */
 export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
   const dispatch = useAppDispatch();
-  const editorMode = useAppSelector((state) => state.editor.editorMode);
-  const timelineHeight = useAppSelector((state) => state.editor.timelineHeight);
-  const timelineOpen = useAppSelector((state) => state.editor.timelineOpen);
+  const editorMode = useAppSelector(selectEditorMode);
+  const { height: timelineHeight, open: timelineOpen } = useAppSelector(selectTimelinePanelState);
 
   useEffect(() => {
     dispatch(projectOpened(projectId));
@@ -51,16 +53,24 @@ export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
       <EditorTopBar project={{ ...editorProject, id: projectId }} />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <MediaLibraryPanel assets={mediaAssets} />
+        <MediaLibraryPanel
+          media={workspaceMediaAssets}
+          onAddMedia={(media) => dispatch(mediaAssetAddedToTimeline(media))}
+        />
         <PreviewPanel project={editorProject} />
         {editorMode === "ai" ? (
           <AiAssistantPanel messages={assistantMessages} suggestions={assistantSuggestions} />
         ) : (
-          <ToolRail tools={editorTools} />
+          <ToolRail />
         )}
       </div>
 
-      <TimelinePanel tracks={timelineTracks} />
+      <TimelinePanel
+        onMediaDrop={(mediaId, placement) => {
+          const media = workspaceMediaAssets.find((item) => item.id === mediaId);
+          if (media) dispatch(mediaAssetAddedToTimeline(placement ? { media, ...placement } : media));
+        }}
+      />
       <EditorPopoverLayer />
       <EditorModalLayer />
       <EditorToast />

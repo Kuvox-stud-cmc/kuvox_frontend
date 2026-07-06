@@ -1,0 +1,186 @@
+import assert from "node:assert/strict";
+
+import { MediaKind, OwnerKind, type MediaDto } from "../app/lib/api";
+import {
+  buildAddMediaToTimelineOperation,
+  isMediaReadyForTimeline,
+  mediaDtoToVideoMediaReference,
+  mediaLibraryKind,
+} from "../app/lib/editor/editor-media";
+import {
+  createEmptyVideoProjectDocument,
+  type VideoProjectDocument,
+} from "../app/lib/editor/video-document";
+
+function main(): void {
+  assertMediaReferenceMapping();
+  assertReadinessClassification();
+  assertVideoImageAndAudioOperations();
+  assertNonReadyMediaIsNonDestructive();
+  assertImageFallsBackToVideoTrack();
+}
+
+function assertMediaReferenceMapping(): void {
+  const media = mediaDto({
+    id: "video-1",
+    kind: MediaKind.Video,
+    filename: "clip.mp4",
+    durationSeconds: "12.5",
+    width: "1920",
+    height: "1080",
+    proxyStorageKey: "proxy.mp4",
+    thumbnailStorageKey: "thumb.jpg",
+  });
+  const reference = mediaDtoToVideoMediaReference(media);
+
+  assert.deepEqual(reference, {
+    id: "video-1",
+    kind: "video",
+    name: "clip.mp4",
+    duration: 12.5,
+    width: 1920,
+    height: 1080,
+    sourceUrl: "/bff/media/video-1/object/proxy?v=proxy.mp4",
+    thumbnailUrl: "/bff/media/video-1/object/thumbnail?v=thumb.jpg",
+    objectUrls: {
+      proxy: "/bff/media/video-1/object/proxy?v=proxy.mp4",
+      raw: "/bff/media/video-1/object/raw?v=raw",
+    },
+  });
+  assert.equal(mediaLibraryKind(media), "clips");
+}
+
+function assertReadinessClassification(): void {
+  assert.equal(isMediaReadyForTimeline(mediaDto({ status: "Ready" })), true);
+  assert.equal(isMediaReadyForTimeline(mediaDto({ status: "Processing" })), false);
+  assert.equal(isMediaReadyForTimeline(mediaDto({ status: "Failed", errorMessage: "bad" })), false);
+}
+
+function assertVideoImageAndAudioOperations(): void {
+  const document = documentWithOverlay();
+  const now = "2026-03-01T12:00:00.000Z";
+
+  const video = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, mediaDto({ id: "video-1", kind: MediaKind.Video, durationSeconds: 8 })),
+    media: mediaDto({ id: "video-1", kind: MediaKind.Video, durationSeconds: 8 }),
+    now,
+  });
+  assert.equal(video.ok, true);
+  assert.equal(video.ok && video.operation.type, "addMediaToTimeline");
+  assert.equal(video.ok && video.operation.trackId, "v1");
+  assert.equal(video.ok && video.operation.item.duration, 8);
+
+  const image = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, mediaDto({ id: "image-1", kind: MediaKind.Image, filename: "still.png" })),
+    media: mediaDto({ id: "image-1", kind: MediaKind.Image, filename: "still.png" }),
+    now,
+  });
+  assert.equal(image.ok, true);
+  assert.equal(image.ok && image.operation.trackId, "o1");
+  assert.equal(image.ok && image.operation.item.duration, 5);
+
+  const audio = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, mediaDto({ id: "audio-1", kind: MediaKind.Audio, durationSeconds: 11 })),
+    media: mediaDto({ id: "audio-1", kind: MediaKind.Audio, durationSeconds: 11 }),
+    now,
+  });
+  assert.equal(audio.ok, true);
+  assert.equal(audio.ok && audio.operation.type, "addAudioItem");
+  assert.equal(audio.ok && audio.operation.trackId, "a1");
+  assert.equal(audio.ok && audio.operation.item.duration, 11);
+}
+
+function assertNonReadyMediaIsNonDestructive(): void {
+  const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
+  const processing = buildAddMediaToTimelineOperation({
+    document,
+    media: mediaDto({ status: "Processing" }),
+    now: "2026-03-01T12:00:00.000Z",
+  });
+
+  assert.equal(processing.ok, false);
+  assert.deepEqual(document.media, {});
+  assert.equal(document.tracks.every((track) => track.items.length === 0), true);
+}
+
+function assertImageFallsBackToVideoTrack(): void {
+  const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
+  const media = mediaDto({ id: "image-1", kind: MediaKind.Image, filename: "still.png" });
+  const built = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, media),
+    media,
+    now: "2026-03-01T12:00:00.000Z",
+  });
+
+  assert.equal(built.ok, true);
+  assert.equal(built.ok && built.operation.trackId, "v1");
+}
+
+function documentWithOverlay(): VideoProjectDocument {
+  const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
+  return {
+    ...document,
+    tracks: [
+      document.tracks[0],
+      {
+        id: "o1",
+        kind: "overlay",
+        label: "O1",
+        locked: false,
+        hidden: false,
+        muted: false,
+        items: [],
+      },
+      document.tracks[1],
+      document.tracks[2],
+    ],
+  };
+}
+
+function upsertMedia(document: VideoProjectDocument, media: MediaDto): VideoProjectDocument {
+  const reference = mediaDtoToVideoMediaReference(media);
+  return {
+    ...document,
+    media: {
+      ...document.media,
+      [reference.id]: reference,
+    },
+  };
+}
+
+function mediaDto(overrides: Partial<MediaDto> = {}): MediaDto {
+  return {
+    id: "media-1",
+    ownerId: "user-1",
+    ownerKind: OwnerKind.User,
+    ownerEmail: null,
+    ownerDisplayName: null,
+    kind: MediaKind.Video,
+    filename: "media.mp4",
+    storageKey: "raw",
+    sizeBytes: 100,
+    status: "Ready",
+    canonicalStorageKey: null,
+    proxyStorageKey: null,
+    thumbnailStorageKey: null,
+    errorMessage: null,
+    durationSeconds: 10,
+    width: null,
+    height: null,
+    codec: null,
+    frameRate: null,
+    createdAt: "2026-03-01T10:00:00.000Z",
+    isFavorite: false,
+    pipeline: {
+      stage: String(overrides.status ?? "Ready").toLowerCase() === "failed" ? "failed" : String(overrides.status ?? "Ready").toLowerCase() === "ready" ? "ready" : "ingesting",
+      label: String(overrides.status ?? "Ready"),
+      detail: "",
+      step: String(overrides.status ?? "Ready").toLowerCase() === "ready" ? 4 : 2,
+      stepCount: 4,
+      terminal: ["ready", "failed"].includes(String(overrides.status ?? "Ready").toLowerCase()),
+    },
+    ...overrides,
+  };
+}
+
+main();

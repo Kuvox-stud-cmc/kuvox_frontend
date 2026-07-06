@@ -6,6 +6,7 @@ import {
   assistantMessageAdded,
   assistantSuggestionChosen,
   commandInputChanged,
+  selectAssistantState,
   toastShown,
 } from "~/store/slices/editor-slice";
 
@@ -19,8 +20,7 @@ interface AiAssistantPanelProps {
 
 export function AiAssistantPanel({ messages, suggestions }: AiAssistantPanelProps) {
   const dispatch = useAppDispatch();
-  const commandInput = useAppSelector((state) => state.editor.commandInput);
-  const extraMessages = useAppSelector((state) => state.editor.assistantMessages);
+  const { commandInput, messages: extraMessages } = useAppSelector(selectAssistantState);
   const visibleMessages = [...messages, ...extraMessages];
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

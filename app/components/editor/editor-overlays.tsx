@@ -4,6 +4,7 @@ import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   modalClosed,
   popoverClosed,
+  selectOverlayState,
   toastCleared,
   toastShown,
 } from "~/store/slices/editor-slice";
@@ -12,7 +13,7 @@ import { EditorIcon } from "./editor-ui";
 
 export function EditorToast() {
   const dispatch = useAppDispatch();
-  const message = useAppSelector((state) => state.editor.toastMessage);
+  const message = useAppSelector((state) => selectOverlayState(state).toastMessage);
 
   useEffect(() => {
     if (!message) {
@@ -42,7 +43,7 @@ export function EditorToast() {
 
 export function EditorPopoverLayer() {
   const dispatch = useAppDispatch();
-  const activePopover = useAppSelector((state) => state.editor.activePopover);
+  const activePopover = useAppSelector((state) => selectOverlayState(state).activePopover);
 
   if (!activePopover) {
     return null;
@@ -119,9 +120,13 @@ export function EditorPopoverLayer() {
 
 export function EditorModalLayer() {
   const dispatch = useAppDispatch();
-  const activeModal = useAppSelector((state) => state.editor.activeModal);
+  const activeModal = useAppSelector((state) => selectOverlayState(state).activeModal);
 
   if (!activeModal) {
+    return null;
+  }
+
+  if (activeModal === "import-media" || activeModal === "fullscreen") {
     return null;
   }
 
