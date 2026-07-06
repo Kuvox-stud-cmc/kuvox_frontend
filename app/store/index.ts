@@ -1,6 +1,7 @@
 import { configureStore } from "@reduxjs/toolkit";
 
 import { editorReducer } from "./slices/editor-slice";
+import { imageEditorReducer } from "./slices/image-editor-slice";
 
 /**
  * The Redux store is scoped to the **client-only editor route**. It is created
@@ -11,6 +12,7 @@ export function makeStore() {
   return configureStore({
     reducer: {
       editor: editorReducer,
+      imageEditor: imageEditorReducer,
     },
   });
 }

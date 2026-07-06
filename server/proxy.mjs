@@ -42,6 +42,23 @@ export function installProxyHandlers(appOrServer, maybeServer) {
     await proxyHttp(req, res, "/api/media");
   });
 
+  app.use("/bff/projects", async (req, res, next) => {
+    const pathname = incomingPathname(req, "/bff/projects");
+    const imageCompositionRoute = parseProjectImageCompositionRoute(pathname);
+    if (!imageCompositionRoute) {
+      next();
+      return;
+    }
+
+    if (req.method !== "GET" && req.method !== "PUT") {
+      res.setHeader("Allow", "GET, PUT");
+      sendJson(res, 405, { error: "Method not allowed." });
+      return;
+    }
+
+    await proxyHttp(req, res, imageCompositionRoute.targetPath);
+  });
+
   app.use("/bff/media", async (req, res, next) => {
     const pathname = incomingPathname(req, "/bff/media");
     const objectRoute = parseMediaObjectRoute(pathname);
@@ -196,6 +213,17 @@ function parseMediaObjectRoute(pathname) {
 
   return {
     targetPath: `/api/media/${mediaId}/object/${variant}`,
+  };
+}
+
+function parseProjectImageCompositionRoute(pathname) {
+  const match = /^\/bff\/projects\/([^/]+)\/image-composition$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: `/api/projects/${match[1]}/image-composition`,
   };
 }
 

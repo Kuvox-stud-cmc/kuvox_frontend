@@ -1,5 +1,14 @@
 import { API_ROUTES } from "~/const/api-routes";
-import type { Workspace, ProjectDto, ProjectTrashItem, PagedResult, ShareRequest, ItemAccessMemberDto } from "../api";
+import type {
+  Workspace,
+  ProjectDto,
+  ProjectTrashItem,
+  PagedResult,
+  ShareRequest,
+  ItemAccessMemberDto,
+  ImageCompositionDto,
+  SaveImageCompositionRequest,
+} from "../api";
 import { BaseApiModule } from "./base.server";
 import type { RequestLogger } from "../logger.server";
 import { apiClient } from "./api-client.server";
@@ -53,6 +62,24 @@ export class ProjectsApi extends BaseApiModule {
   updateAccess(token: string, id: string, input: { userId: string; role?: number | null; isHidden: boolean }, log?: RequestLogger): Promise<ItemAccessMemberDto[]> {
     return this.put<typeof input, ItemAccessMemberDto[]>(token, `${API_ROUTES.PROJECTS}/${id}/access`, input, log);
   }
+
+  getImageComposition(token: string, id: string, log?: RequestLogger): Promise<ImageCompositionDto> {
+    return this.get<ImageCompositionDto>(token, `${API_ROUTES.PROJECTS}/${id}/image-composition`, log);
+  }
+
+  saveImageComposition(
+    token: string,
+    id: string,
+    input: SaveImageCompositionRequest,
+    log?: RequestLogger,
+  ): Promise<ImageCompositionDto> {
+    return this.put<SaveImageCompositionRequest, ImageCompositionDto>(
+      token,
+      `${API_ROUTES.PROJECTS}/${id}/image-composition`,
+      input,
+      log,
+    );
+  }
 }
 
 export const projectsApi = new ProjectsApi(apiClient);
@@ -68,3 +95,5 @@ export const shareProject = (t: string, id: string, i: ShareRequest, l?: Request
 export const unshareProject = (t: string, id: string, u: string, l?: RequestLogger) => projectsApi.unshareProject(t, id, u, l);
 export const listProjectAccess = (t: string, id: string, l?: RequestLogger) => projectsApi.listAccess(t, id, l);
 export const updateProjectAccess = (t: string, id: string, i: { userId: string; role?: number | null; isHidden: boolean }, l?: RequestLogger) => projectsApi.updateAccess(t, id, i, l);
+export const getImageComposition = (t: string, id: string, l?: RequestLogger) => projectsApi.getImageComposition(t, id, l);
+export const saveImageComposition = (t: string, id: string, i: SaveImageCompositionRequest, l?: RequestLogger) => projectsApi.saveImageComposition(t, id, i, l);
