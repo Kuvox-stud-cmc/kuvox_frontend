@@ -4,10 +4,10 @@ import { redirect } from "react-router";
 
 import { EditorSkeleton } from "~/components/editor/editor-skeleton";
 import { ImageEditorWorkspace } from "~/components/editor/image-editor-workspace";
-import type { ImageCompositionDocument } from "~/components/editor/image/document/types";
 import { MediaKind, OwnerKind, PERSONAL, ProjectKind, type ProjectDto, type Workspace } from "~/lib/api";
 import { getImageComposition, getProject, listAllMedia } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { normalizeImageCompositionPayload } from "~/lib/editor/image/image-composition-payload";
 import { getSession } from "~/lib/session.server";
 import { makeStore } from "~/store";
 
@@ -42,7 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return {
       projectId,
       project,
-      imageComposition: normalizeServerComposition(composition),
+      imageComposition: normalizeImageCompositionPayload(composition),
       imageMedia: media.filter((item) => item.kind === MediaKind.Image),
       mediaError: null,
     };
@@ -50,7 +50,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return {
       projectId,
       project,
-      imageComposition: normalizeServerComposition(composition),
+      imageComposition: normalizeImageCompositionPayload(composition),
       imageMedia: [],
       mediaError:
         error instanceof Error ? error.message : "Media could not be loaded for this project.",
@@ -84,24 +84,6 @@ export default function ImageEditorRoute({ loaderData }: Route.ComponentProps) {
       />
     </Provider>
   );
-}
-
-function normalizeServerComposition(composition: Awaited<ReturnType<typeof getImageComposition>>) {
-  return {
-    document:
-      isImageCompositionDocument(composition.documentJson)
-        ? composition.documentJson
-        : null,
-    revisionNumber: Number(composition.revisionNumber) || 0,
-    updatedAt: composition.updatedAt,
-    updatedByUserId: composition.updatedByUserId,
-  };
-}
-
-function isImageCompositionDocument(value: unknown): value is ImageCompositionDocument {
-  if (!value || typeof value !== "object") return false;
-  const document = value as Partial<ImageCompositionDocument>;
-  return document.version === 1 && Boolean(document.canvas) && Array.isArray(document.layers);
 }
 
 function workspaceFromProject(project: ProjectDto): Workspace {

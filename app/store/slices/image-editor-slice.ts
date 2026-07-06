@@ -1,16 +1,16 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
-import { createDefaultImageCompositionDocument } from "~/components/editor/image/document/default-document";
+import { createDefaultImageCompositionDocument } from "~/lib/editor/image/document/default-document";
 import {
   applyImageOperation,
   imageLayerOperationAvailability,
   restoreImageDocumentSnapshot,
-} from "~/components/editor/image/document/operations";
+} from "~/lib/editor/image/document/operations";
 import type {
   ImageCompositionDocument,
   ImageCompositionOperation,
   ImageHistoryEntry,
-} from "~/components/editor/image/document/types";
+} from "~/lib/editor/image/document/types";
 import type { RootState } from "~/store";
 
 export type ImageEditorMode = "manual" | "ai";

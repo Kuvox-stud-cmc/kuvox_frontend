@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState, type DragEvent } from "react";
+import { Suspense, lazy, useState, type DragEvent } from "react";
 
 import { EditorIcon } from "../editor-ui";
 import {
@@ -6,42 +6,38 @@ import {
   createImageLayerFromMedia,
   createImageOperation,
   createImageDocumentId,
-} from "./document/operations";
+} from "~/lib/editor/image/document/operations";
 import { ImageEditorToolbar } from "./image-editor-toolbar";
 import { ImageExportModal } from "./export-modal";
 import { LayersPanel } from "./layers-panel";
 import { MediaTemplatePanel } from "./media-template-panel";
 import { PropertiesPanel } from "./properties-panel";
-import { imageCompositionCanExport } from "./export/types";
+import { imageCompositionCanExport } from "~/lib/editor/image/export/types";
 import type {
   ImageCompositionOperation,
-  ImageCompositionDocument,
-  ImageHistoryEntry,
   ImageLayerStylePatch,
   ImageLayerTransform,
-} from "./document/types";
-import { MediaKind, type MediaDto } from "~/lib/api";
-import { uploadMediaFile } from "~/lib/media-upload.client";
+} from "~/lib/editor/image/document/types";
+import type { ServerImageComposition } from "~/lib/editor/image/image-composition-payload";
+import type { MediaDto } from "~/lib/api";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   imageActiveToolChanged,
   imageDocumentOperationApplied,
-  imageDraftLoaded,
   imageEditorModeChanged,
-  imageBackendSyncFailed,
-  imageBackendSyncSucceeded,
   imageLayerSelected,
   imagePanelTabChanged,
-  imageProjectOpened,
   imageRedoRequested,
-  imageSaveStateChanged,
   imageSelectionCleared,
-  imageServerVersionLoaded,
   imageUndoRequested,
   type ImageEditorMode,
   type ImageSaveState,
   type ImageEditorTool,
 } from "~/store/slices/image-editor-slice";
+import { useImageAutosave } from "./use-image-autosave";
+import { useImageKeyboardShortcuts } from "./use-image-keyboard-shortcuts";
+import { useImageMediaUpload } from "./use-image-media-upload";
+import { useImageProjectDraft } from "./use-image-project-draft";
 
 const ImageCanvas = lazy(() =>
   import("./image-canvas").then((module) => ({ default: module.ImageCanvas })),
@@ -51,25 +47,9 @@ interface ImageEditorWorkspaceProps {
   projectId: string;
   projectName?: string | null;
   uploadStudioId?: string | null;
-  backendComposition?: {
-    document: ImageCompositionDocument | null;
-    revisionNumber: number;
-    updatedAt: string | null;
-    updatedByUserId: string | null;
-  } | null;
+  backendComposition?: ServerImageComposition | null;
   imageMedia?: MediaDto[];
   mediaError?: string | null;
-}
-
-type UploadQueueStatus = "queued" | "uploading" | "uploaded" | "failed";
-
-interface UploadQueueItem {
-  id: string;
-  fileName: string;
-  progress: number;
-  status: UploadQueueStatus;
-  error: string | null;
-  uploadedMedia: MediaDto | null;
 }
 
 export function ImageEditorWorkspace({
@@ -82,182 +62,21 @@ export function ImageEditorWorkspace({
 }: ImageEditorWorkspaceProps) {
   const dispatch = useAppDispatch();
   const imageEditor = useAppSelector((state) => state.imageEditor);
-  const latestDocumentUpdatedAt = useRef<string | null>(null);
-  const initializedProject = useRef<string | null>(null);
   const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [editorImageMedia, setEditorImageMedia] = useState<MediaDto[]>(imageMedia);
-  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [narrowPanel, setNarrowPanel] = useState<"canvas" | "properties">("canvas");
   const [dragTarget, setDragTarget] = useState<"assets" | "canvas" | null>(null);
-  const [conflictAction, setConflictAction] = useState<"reload" | "keep-local" | null>(null);
-
-  useEffect(() => {
-    dispatch(
-      imageProjectOpened({
-        projectId,
-        projectName,
-        document: backendComposition?.document ?? null,
-        baseRevisionNumber: backendComposition?.revisionNumber ?? 0,
-        lastSyncedAt: backendComposition?.updatedAt ?? null,
-      }),
-    );
-    initializedProject.current = projectId;
-  }, [backendComposition, dispatch, projectId, projectName]);
-
-  useEffect(() => {
-    setEditorImageMedia((current) => mergeMediaLists(imageMedia, current));
-  }, [imageMedia]);
-
-  useEffect(() => {
-    let cancelled = false;
-    import("./persistence/image-editor-cache.client").then(async (cache) => {
-      const draft = await cache.loadNewestImageCompositionDraft(projectId);
-      if (cancelled || !draft?.hasUnsyncedChanges) return;
-
-      const serverUpdatedAt = backendComposition?.updatedAt
-        ? Date.parse(backendComposition.updatedAt)
-        : 0;
-      const draftUpdatedAt = Date.parse(draft.updatedAt);
-      if (!Number.isFinite(draftUpdatedAt) || draftUpdatedAt < serverUpdatedAt) return;
-
-      dispatch(
-        imageDraftLoaded({
-          document: draft.document,
-          baseRevisionNumber: draft.baseRevisionNumber,
-          lastSyncedAt: draft.lastSyncedAt,
-        }),
-      );
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [backendComposition?.updatedAt, dispatch, projectId]);
-
-  useEffect(() => {
-    latestDocumentUpdatedAt.current = imageEditor.document.updatedAt ?? null;
-  }, [imageEditor.document.updatedAt]);
-
-  useEffect(() => {
-    if (imageEditor.projectId !== projectId || initializedProject.current !== projectId) return;
-    const documentUpdatedAt = imageEditor.document.updatedAt;
-    if (!documentUpdatedAt) return;
-
-    const unsyncedOperations = getUnsyncedImageOperations(imageEditor.document);
-    const baseRevisionNumber = imageEditor.document.baseRevisionNumber ?? 0;
-    const documentChangedSinceSync = imageEditor.document.lastSyncedAt
-      ? Date.parse(documentUpdatedAt) > Date.parse(imageEditor.document.lastSyncedAt)
-      : imageEditor.document.operationHistory.length > 0;
-    if (!documentChangedSinceSync && unsyncedOperations.length === 0) return;
-
-    import("./persistence/image-editor-cache.client").then((cache) => {
-      cache.saveImageCompositionDraft({
-        projectId,
-        document: imageEditor.document,
-        baseRevisionNumber,
-        operations: unsyncedOperations,
-      }).catch((error: unknown) => {
-        dispatch(
-          imageSaveStateChanged({
-            state: "sync-failed",
-            error: error instanceof Error ? error.message : "Local draft could not be saved.",
-          }),
-        );
-      });
-    });
-
-    if (imageEditor.saveState === "server-changed" || conflictAction) return;
-
-    const timeoutId = window.setTimeout(async () => {
-      dispatch(imageSaveStateChanged({ state: "syncing" }));
-      try {
-        const response = await fetch(
-          `/bff/projects/${encodeURIComponent(projectId)}/image-composition`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              documentJson: imageEditor.document,
-              operationsJson: unsyncedOperations.map((entry) => ({
-                id: entry.id,
-                type: entry.operation.type,
-                label: entry.label,
-                source: entry.source,
-                createdAt: entry.createdAt,
-              })),
-              baseRevisionNumber,
-            }),
-          },
-        );
-
-        if (response.status === 409) {
-          const message = await readSaveError(response, "The server has a newer version.");
-          const serverComposition = await fetchServerComposition(projectId).catch(() => null);
-          const cache = await import("./persistence/image-editor-cache.client");
-          await cache.markImageCompositionSyncFailed({ projectId, error: message });
-          dispatch(
-            imageBackendSyncFailed({
-              conflict: true,
-              error: message,
-              serverRevisionNumber: serverComposition?.revisionNumber ?? null,
-              serverUpdatedAt: serverComposition?.updatedAt ?? null,
-              updatedByUserId: serverComposition?.updatedByUserId ?? null,
-            }),
-          );
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(await readSaveError(response, "Image composition sync failed."));
-        }
-
-        const saved = (await response.json()) as { revisionNumber: number | string; updatedAt: string | null };
-        if (latestDocumentUpdatedAt.current !== documentUpdatedAt) return;
-
-        const syncedAt = saved.updatedAt ?? new Date().toISOString();
-        const revisionNumber = Number(saved.revisionNumber) || baseRevisionNumber + 1;
-        const cache = await import("./persistence/image-editor-cache.client");
-        await cache.markImageCompositionSyncSucceeded({ projectId, revisionNumber, syncedAt });
-        dispatch(imageBackendSyncSucceeded({ revisionNumber, syncedAt, updatedAt: saved.updatedAt }));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Image composition sync failed.";
-        const cache = await import("./persistence/image-editor-cache.client");
-        await cache.markImageCompositionSyncFailed({ projectId, error: message });
-        dispatch(imageBackendSyncFailed({ error: message }));
-      }
-    }, 1500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    dispatch,
-    imageEditor.document,
-    imageEditor.projectId,
-    imageEditor.saveState,
-    conflictAction,
+  const initializedProject = useImageProjectDraft({
     projectId,
-  ]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const modifier = event.ctrlKey || event.metaKey;
-      if (!modifier || event.key.toLowerCase() !== "z" && event.key.toLowerCase() !== "y") return;
-
-      if (event.key.toLowerCase() === "z" && !event.shiftKey) {
-        event.preventDefault();
-        dispatch(imageUndoRequested());
-        return;
-      }
-
-      if (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey)) {
-        event.preventDefault();
-        dispatch(imageRedoRequested());
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dispatch]);
+    projectName,
+    backendComposition,
+  });
+  const { conflictAction, handleReloadServerVersion, handleKeepLocalEdits } = useImageAutosave({
+    projectId,
+    imageEditor,
+    initializedProject,
+  });
+  useImageKeyboardShortcuts();
 
   const applyOperation = (operation: ImageCompositionOperation) => {
     dispatch(imageDocumentOperationApplied(operation));
@@ -290,199 +109,11 @@ export function ImageEditorWorkspace({
     );
   };
 
-  const handleReloadServerVersion = async () => {
-    if (conflictAction) return;
-    setConflictAction("reload");
-    dispatch(imageSaveStateChanged({ state: "syncing" }));
-    try {
-      const serverComposition = await fetchServerComposition(projectId);
-      dispatch(
-        imageServerVersionLoaded({
-          document: serverComposition.document,
-          baseRevisionNumber: serverComposition.revisionNumber,
-          lastSyncedAt: serverComposition.updatedAt,
-        }),
-      );
-      const cache = await import("./persistence/image-editor-cache.client");
-      await cache.clearImageCompositionDraft(projectId);
-    } catch (error) {
-      dispatch(
-        imageBackendSyncFailed({
-          conflict: true,
-          error: error instanceof Error ? error.message : "Server version could not be loaded.",
-          serverRevisionNumber: imageEditor.conflict?.serverRevisionNumber ?? null,
-          serverUpdatedAt: imageEditor.conflict?.serverUpdatedAt ?? null,
-          updatedByUserId: imageEditor.conflict?.updatedByUserId ?? null,
-        }),
-      );
-    } finally {
-      setConflictAction(null);
-    }
-  };
-
-  const handleKeepLocalEdits = async () => {
-    if (conflictAction) return;
-    const localDocument = imageEditor.document;
-    const unsyncedOperations = getUnsyncedImageOperations(localDocument);
-    setConflictAction("keep-local");
-    dispatch(imageSaveStateChanged({ state: "syncing" }));
-
-    try {
-      const latestServer = await fetchServerComposition(projectId);
-      const baseRevisionNumber = latestServer.revisionNumber;
-      const response = await fetch(
-        `/bff/projects/${encodeURIComponent(projectId)}/image-composition`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            documentJson: {
-              ...localDocument,
-              projectId,
-              baseRevisionNumber,
-            },
-            operationsJson: unsyncedOperations.map((entry) => ({
-              id: entry.id,
-              type: entry.operation.type,
-              label: entry.label,
-              source: entry.source,
-              createdAt: entry.createdAt,
-            })),
-            baseRevisionNumber,
-          }),
-        },
-      );
-
-      if (response.status === 409) {
-        const message = await readSaveError(response, "The server changed again.");
-        const serverComposition = await fetchServerComposition(projectId).catch(() => null);
-        const cache = await import("./persistence/image-editor-cache.client");
-        await cache.markImageCompositionSyncFailed({ projectId, error: message });
-        dispatch(
-          imageBackendSyncFailed({
-            conflict: true,
-            error: message,
-            serverRevisionNumber: serverComposition?.revisionNumber ?? latestServer.revisionNumber,
-            serverUpdatedAt: serverComposition?.updatedAt ?? latestServer.updatedAt,
-            updatedByUserId: serverComposition?.updatedByUserId ?? latestServer.updatedByUserId,
-          }),
-        );
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(await readSaveError(response, "Local edits could not be saved."));
-      }
-
-      const saved = normalizeServerCompositionPayload(await response.json());
-      const syncedAt = saved.updatedAt ?? new Date().toISOString();
-      const cache = await import("./persistence/image-editor-cache.client");
-      await cache.replaceImageCompositionDraft({
-        projectId,
-        document: {
-          ...localDocument,
-          projectId,
-          baseRevisionNumber: saved.revisionNumber,
-          lastSyncedAt: syncedAt,
-        },
-        baseRevisionNumber: saved.revisionNumber,
-        syncedAt,
-      });
-      dispatch(
-        imageBackendSyncSucceeded({
-          revisionNumber: saved.revisionNumber,
-          syncedAt,
-          updatedAt: saved.updatedAt,
-        }),
-      );
-    } catch (error) {
-      dispatch(
-        imageBackendSyncFailed({
-          conflict: true,
-          error: error instanceof Error ? error.message : "Local edits could not be saved.",
-          serverRevisionNumber: imageEditor.conflict?.serverRevisionNumber ?? null,
-          serverUpdatedAt: imageEditor.conflict?.serverUpdatedAt ?? null,
-          updatedByUserId: imageEditor.conflict?.updatedByUserId ?? null,
-        }),
-      );
-    } finally {
-      setConflictAction(null);
-    }
-  };
-
-  const uploadImageFiles = async (files: File[], addLayerAfterUpload: boolean) => {
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    const rejectedFiles = files.filter((file) => !file.type.startsWith("image/"));
-
-    if (rejectedFiles.length > 0) {
-      setUploadQueue((current) => [
-        ...rejectedFiles.map((file) => ({
-          id: createImageDocumentId("upload"),
-          fileName: file.name || "Unsupported file",
-          progress: 0,
-          status: "failed" as const,
-          error: "Only image files can be imported.",
-          uploadedMedia: null,
-        })),
-        ...current,
-      ]);
-    }
-
-    for (const file of imageFiles) {
-      const uploadId = createImageDocumentId("upload");
-      setUploadQueue((current) => [
-        {
-          id: uploadId,
-          fileName: file.name || "Untitled image",
-          progress: 0,
-          status: "queued",
-          error: null,
-          uploadedMedia: null,
-        },
-        ...current,
-      ]);
-
-      try {
-        setUploadQueue((current) =>
-          updateUploadQueueItem(current, uploadId, { status: "uploading", progress: 1 }),
-        );
-        const uploadedMedia = await uploadMediaFile({
-          file,
-          kind: MediaKind.Image,
-          filename: file.name,
-          studioId: uploadStudioId,
-          onProgress: (progress) => {
-            setUploadQueue((current) =>
-              updateUploadQueueItem(current, uploadId, {
-                progress,
-                status: "uploading",
-              }),
-            );
-          },
-        });
-
-        setEditorImageMedia((current) => mergeMediaLists([uploadedMedia], current));
-        setUploadQueue((current) =>
-          updateUploadQueueItem(current, uploadId, {
-            status: "uploaded",
-            progress: 100,
-            uploadedMedia,
-          }),
-        );
-
-        if (addLayerAfterUpload) {
-          handleAddMedia(uploadedMedia);
-        }
-      } catch (error) {
-        setUploadQueue((current) =>
-          updateUploadQueueItem(current, uploadId, {
-            status: "failed",
-            error: error instanceof Error ? error.message : "Upload failed.",
-          }),
-        );
-      }
-    }
-  };
+  const { editorImageMedia, uploadQueue, uploadImageFiles } = useImageMediaUpload({
+    imageMedia,
+    uploadStudioId,
+    onAddUploadedMedia: handleAddMedia,
+  });
 
   const handleDropFiles = (
     event: DragEvent<HTMLElement>,
@@ -913,74 +544,6 @@ function saveStateLabel(saveState: ImageSaveState) {
   if (saveState === "sync-failed") return "Sync failed";
   if (saveState === "server-changed") return "Server changed";
   return "Saved locally";
-}
-
-async function readSaveError(response: Response, fallback: string) {
-  try {
-    const body = await response.json();
-    return body?.detail || body?.error || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-interface ServerImageComposition {
-  document: ImageCompositionDocument | null;
-  revisionNumber: number;
-  updatedAt: string | null;
-  updatedByUserId: string | null;
-}
-
-async function fetchServerComposition(projectId: string): Promise<ServerImageComposition> {
-  const response = await fetch(
-    `/bff/projects/${encodeURIComponent(projectId)}/image-composition`,
-  );
-  if (!response.ok) {
-    throw new Error(await readSaveError(response, "Server version could not be loaded."));
-  }
-  return normalizeServerCompositionPayload(await response.json());
-}
-
-function normalizeServerCompositionPayload(value: unknown): ServerImageComposition {
-  const body = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  return {
-    document: isImageCompositionDocument(body.documentJson) ? body.documentJson : null,
-    revisionNumber: Number(body.revisionNumber) || 0,
-    updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : null,
-    updatedByUserId: typeof body.updatedByUserId === "string" ? body.updatedByUserId : null,
-  };
-}
-
-function isImageCompositionDocument(value: unknown): value is ImageCompositionDocument {
-  if (!value || typeof value !== "object") return false;
-  const document = value as Partial<ImageCompositionDocument>;
-  return document.version === 1 && Boolean(document.canvas) && Array.isArray(document.layers);
-}
-
-function getUnsyncedImageOperations(document: ImageCompositionDocument): ImageHistoryEntry[] {
-  if (!document.lastSyncedAt) return document.operationHistory;
-  const syncedAt = Date.parse(document.lastSyncedAt);
-  if (!Number.isFinite(syncedAt)) return document.operationHistory;
-  return document.operationHistory.filter((entry) => Date.parse(entry.createdAt) > syncedAt);
-}
-
-function updateUploadQueueItem(
-  items: UploadQueueItem[],
-  id: string,
-  patch: Partial<UploadQueueItem>,
-) {
-  return items.map((item) => (item.id === id ? { ...item, ...patch } : item));
-}
-
-function mergeMediaLists(primary: MediaDto[], secondary: MediaDto[]) {
-  const seen = new Set<string>();
-  const merged: MediaDto[] = [];
-  for (const item of [...primary, ...secondary]) {
-    if (!item?.id || seen.has(item.id)) continue;
-    seen.add(item.id);
-    merged.push(item);
-  }
-  return merged;
 }
 
 function formatConflictTimestamp(value: string) {

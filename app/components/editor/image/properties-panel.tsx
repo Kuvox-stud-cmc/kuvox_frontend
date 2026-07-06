@@ -6,7 +6,7 @@ import type {
   ImageCompositionLayer,
   ImageLayerStylePatch,
   ImageLayerTransform,
-} from "./document/types";
+} from "~/lib/editor/image/document/types";
 import type { ImageEditorMode } from "~/store/slices/image-editor-slice";
 
 interface PropertiesPanelProps {

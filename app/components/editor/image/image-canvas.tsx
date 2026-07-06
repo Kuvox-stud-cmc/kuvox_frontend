@@ -15,7 +15,7 @@ import type {
   ImageCompositionDocument,
   ImageCompositionLayer,
   ImageLayerTransform,
-} from "./document/types";
+} from "~/lib/editor/image/document/types";
 
 interface ImageCanvasProps {
   document: ImageCompositionDocument;

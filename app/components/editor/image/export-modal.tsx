@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EditorIcon } from "../editor-ui";
-import type { ImageCompositionDocument } from "./document/types";
-import { sanitizeImageExportFilename } from "./export/filename";
+import type { ImageCompositionDocument } from "~/lib/editor/image/document/types";
+import { sanitizeImageExportFilename } from "~/lib/editor/image/export/filename";
 import {
   imageCompositionCanExport,
   resolveImageExportDimensions,
   type ImageExportResult,
   type ImageExportSettings,
   type ImageExportSizeMode,
-} from "./export/types";
+} from "~/lib/editor/image/export/types";
 
 type ExportStatus = "idle" | "preparing" | "downloading" | "failed";
 
@@ -67,7 +67,9 @@ export function ImageExportModal({
     setResult(null);
 
     try {
-      const { exportImageCompositionDocument } = await import("./export/image-export.client");
+      const { exportImageCompositionDocument } = await import(
+        "~/lib/editor/image/export/image-export.client"
+      );
       const exportResult = await exportImageCompositionDocument(composition, settings);
       setStatus("downloading");
       setResult(exportResult);

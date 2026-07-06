@@ -1,14 +1,14 @@
 import type { FormEvent } from "react";
 
 import { EditorIcon } from "../editor-ui";
-import {
-  createImageAiGroupOperation,
-  planMockImageAiCommand,
-} from "./ai-command-planner";
 import type {
   ImageCompositionDocument,
   ImageHistoryEntry,
-} from "./document/types";
+} from "~/lib/editor/image/document/types";
+import {
+  createImageAiGroupOperation,
+  planMockImageAiCommand,
+} from "~/lib/editor/image/ai-command-planner";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   imageAiCommandApplied,

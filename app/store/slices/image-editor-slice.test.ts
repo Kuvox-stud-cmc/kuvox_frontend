@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultImageCompositionDocument } from "~/components/editor/image/document/default-document";
-import { createCenteredTextLayer, createImageOperation } from "~/components/editor/image/document/operations";
+import { createDefaultImageCompositionDocument } from "~/lib/editor/image/document/default-document";
+import { createCenteredTextLayer, createImageOperation } from "~/lib/editor/image/document/operations";
 import {
   imageBackendSyncFailed,
   imageBackendSyncSucceeded,

@@ -1,5 +1,5 @@
 import { EditorIcon } from "../editor-ui";
-import type { ImageCompositionDocument, ImageCompositionLayer } from "./document/types";
+import type { ImageCompositionDocument, ImageCompositionLayer } from "~/lib/editor/image/document/types";
 
 interface LayersPanelProps {
   document: ImageCompositionDocument;
