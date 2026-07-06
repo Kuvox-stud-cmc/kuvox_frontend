@@ -49,6 +49,19 @@ function count<T>(result: PromiseSettledResult<{ totalCount: number }>): number 
   return result.status === "fulfilled" ? result.value.totalCount : 0;
 }
 
+function randomPositiveMessage(displayName: string): string {
+  const name = displayName.trim() || "creator";
+  const messages = [
+    `Great to see you, ${name} \u2728`,
+    `Ready to make something amazing, ${name} \u{1F680}`,
+    `Your next idea starts here, ${name} \u{1F4A1}`,
+    `Let's build something sharp, ${name} \u{1F3AC}`,
+    `You've got this, ${name} \u{1F4AA}`,
+  ];
+
+  return messages[Math.floor(Math.random() * messages.length)];
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const log = createRequestLogger(request);
   const user = await requireUser(request, log);
@@ -58,6 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const empty = {
     user,
+    welcomeMessage: randomPositiveMessage(user.displayName),
     counts: { projects: 0, media: 0, shared: 0, trash: 0 },
     recent: [] as ProjectDto[],
     currentWork: [] as TaskIssueDto[],
@@ -101,6 +115,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     user,
+    welcomeMessage: randomPositiveMessage(user.displayName),
     counts: {
       projects: count(projects),
       media: count(media),
@@ -283,7 +298,7 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
 }
 
 export default function DashboardHome({ loaderData, actionData }: Route.ComponentProps) {
-  const { user, counts, recent, currentWork, error } = loaderData;
+  const { welcomeMessage, counts, recent, currentWork, error } = loaderData;
 
   return (
     <div className="space-y-8">
@@ -294,7 +309,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
       <section className="flex items-end justify-between">
         <div>
           <h1 className="text-headline-lg font-bold text-on-surface">
-            Welcome back, {user.displayName} đŸ‘‹
+            {welcomeMessage}
           </h1>
           <p className="mt-1 text-body-sm text-on-surface-variant">
             Let's continue creating amazing content together.
