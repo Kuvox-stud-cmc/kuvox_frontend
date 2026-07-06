@@ -27,6 +27,7 @@ import {
 import { albumsApi, listSharedAlbums, listSharedMedia, listSharedProjects } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { projectEditorHref } from "~/lib/project-routes";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/shared-assets";
@@ -223,10 +224,7 @@ function toSharedItems(
       mediaCount: projectMediaCount(project),
       createdAt: project.createdAt,
       projectKind: project.kind,
-      linkTo:
-        project.kind === ProjectKind.Video
-          ? `/editor/${project.id}`
-          : `/projects/${project.id}`,
+      linkTo: projectEditorHref(project),
     });
   }
 

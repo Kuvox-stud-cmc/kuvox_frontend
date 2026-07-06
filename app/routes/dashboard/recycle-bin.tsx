@@ -14,7 +14,7 @@ import { getSession } from "~/lib/session.server";
 import type { Route } from "./+types/recycle-bin";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Recycle Bin Â· Kuvox" }];
+  return [{ title: "Recycle Bin Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

@@ -25,6 +25,7 @@ import {
     type MediaDto,
     type ProjectDto,
 } from "~/lib/api";
+import { projectEditorHref } from "~/lib/project-routes";
 import { useLiveMedia } from "~/lib/media-realtime";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 
@@ -191,7 +192,7 @@ function AvatarStack({ collaborators }: { collaborators: string[] }) {
 }
 
 function projectHref(project: ProjectDto, basePath: string) {
-    return project.kind === ProjectKind.Video ? `/editor/${project.id}` : basePath;
+    return projectEditorHref(project);
 }
 
 function ProjectCard({

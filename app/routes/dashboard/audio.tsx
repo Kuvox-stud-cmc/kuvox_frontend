@@ -115,7 +115,7 @@ function paginationPages(currentPage: number, pageCount: number): Array<number |
 }
 
 export function meta() {
-  return [{ title: "Audio Â· Kuvox" }];
+  return [{ title: "Audio - Kuvox" }];
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -268,7 +268,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-/* â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+// Sub-components
 
 
 
@@ -667,7 +667,7 @@ function AudioTable({
   );
 }
 
-/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+// Main component
 
 export default function Audio() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1014,7 +1014,7 @@ export default function Audio() {
       {loaderData.error && <ErrorBanner message={loaderData.error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
-      {/* â”€â”€ Stats Grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon="music_note"
@@ -1044,7 +1044,7 @@ export default function Audio() {
         />
       </div>
 
-      {/* â”€â”€ Quick Preview (Featured Player) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Quick Preview (Featured Player) */}
       <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-headline-md font-bold text-on-surface">
@@ -1214,7 +1214,7 @@ export default function Audio() {
         </div>
       </section>
 
-      {/* â”€â”€ All Audio (Table) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* All Audio (Table) */}
       <section
         id="section-all"
         ref={sectionAllRef}
@@ -1255,7 +1255,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* â”€â”€ Music Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Music Section */}
       <section
         id="section-music"
         ref={sectionMusicRef}
@@ -1272,7 +1272,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* â”€â”€ SFX Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* SFX Section */}
       <section
         id="section-sfx"
         ref={sectionSfxRef}
@@ -1289,7 +1289,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* â”€â”€ Voiceovers Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Voiceovers Section */}
       <section
         id="section-voiceovers"
         ref={sectionVoiceoversRef}
@@ -1306,7 +1306,7 @@ export default function Audio() {
         />
       </section>
 
-      {/* â”€â”€ Import Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Import Modal */}
       <MediaUploadModal
         open={importOpen}
         onClose={() => setImportOpen(false)}

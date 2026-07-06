@@ -12,6 +12,7 @@ import {
   SectionHeader,
 } from "~/components/dashboard/section";
 import { ProjectKind, projectKindLabel, type ProjectDto } from "~/lib/api";
+import { projectEditorHref } from "~/lib/project-routes";
 
 export interface WorkspaceActionData {
   ok?: boolean;
@@ -202,7 +203,7 @@ function ProjectCard({ project, canWrite }: { project: ProjectDto; canWrite: boo
   const isVideo = project.kind === ProjectKind.Video;
   return (
     <div className="group flex flex-col justify-between rounded-xl border border-outline-variant bg-surface-container-low p-4 transition-colors hover:border-primary/40">
-      <Link to={isVideo ? `/editor/${project.id}` : `/projects/${project.id}`} className="block">
+      <Link to={projectEditorHref(project)} className="block">
         <div className="flex items-start justify-between gap-2">
           <span className="material-symbols-outlined text-primary">
             {isVideo ? "movie" : "image"}

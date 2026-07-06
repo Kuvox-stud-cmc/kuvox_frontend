@@ -54,7 +54,7 @@ export async function action({ request }: Route.ActionArgs) {
       } catch {
         // No JSON body — fall back to the dashboard below.
       }
-      return redirect(projectId ? `/editor/${projectId}` : "/dashboard");
+      return redirect(projectId ? `/editor/video/${projectId}` : "/dashboard");
     }
 
     reqLog.warn({ status: response.status }, "first project creation returned non-ok");

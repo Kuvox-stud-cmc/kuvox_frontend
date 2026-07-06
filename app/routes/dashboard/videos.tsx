@@ -38,7 +38,7 @@ import {
 import type { Route } from "./+types/videos";
 
 export function meta() {
-  return [{ title: "Videos Â· Kuvox" }];
+  return [{ title: "Videos - Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -169,7 +169,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 function formatDuration(value: number | string | null): string {
   const sec = Number(value);
-  if (!sec) return "â€”";
+  if (!sec) return "-";
   const min = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
@@ -219,10 +219,10 @@ function VideoCard({
 }) {
   const pipelineState = resolveMediaPipeline(video, pipeline);
   const status = pipelineState.stage === "failed" ? "failed" : video.status.toLowerCase();
-  const res = video.width && video.height ? `${video.width}x${video.height}` : "â€”";
-  const fpsStr = "â€”";
+  const res = video.width && video.height ? `${video.width}x${video.height}` : "-";
+  const fpsStr = "-";
 
-  /* â”€â”€ List view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  // List view
   if (listView) {
     return (
       <div
@@ -273,7 +273,7 @@ function VideoCard({
         </div>
         <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
           {video.durationSeconds != null && <span>{formatDuration(video.durationSeconds)}</span>}
-          {res !== "â€”" && (
+          {res !== "-" && (
             <>
               <span className="h-1 w-1 rounded-full bg-outline-variant" />
               <span>{res}</span>
@@ -296,7 +296,7 @@ function VideoCard({
     );
   }
 
-  /* â”€â”€ Grid view: Failed card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  // Grid view: Failed card
   if (status === "failed") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-error/40">
@@ -343,7 +343,7 @@ function VideoCard({
     );
   }
 
-  /* â”€â”€ Grid view: Uploading card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  // Grid view: Uploading card
   if (status === "uploading" || status === "uploaded") {
     return (
       <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
@@ -406,7 +406,7 @@ function VideoCard({
     );
   }
 
-  /* â”€â”€ Grid view: Ready / Processing card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  // Grid view: Ready / Processing card
   return (
     <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <VideoPreviewFrame
@@ -506,7 +506,7 @@ function CreateNewCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+// Main component
 
 export default function Videos({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
@@ -600,7 +600,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
       {loaderData.error && <ErrorBanner message={loaderData.error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
-      {/* â”€â”€ Hero Drop Zone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Hero Drop Zone */}
       <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-outline-variant bg-surface-container-low p-10 transition-colors hover:border-primary/30">
         {/* Decorative gradient blobs */}
         <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-primary/5 blur-3xl" />
@@ -647,7 +647,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         </div>
       </div>
 
-      {/* â”€â”€ Metrics Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Metrics Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           icon="videocam"
@@ -688,7 +688,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         />
       </div>
 
-      {/* â”€â”€ Recent Projects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Recent Projects */}
       <section>
         <SectionHeader title="Recent Projects" actionTo="/dashboard/videos?view=recent" />
 
@@ -774,7 +774,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         )}
       </section>
 
-      {/* â”€â”€ Import Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Import Modal */}
       <MediaUploadModal
         open={importOpen}
         onClose={() => setImportOpen(false)}

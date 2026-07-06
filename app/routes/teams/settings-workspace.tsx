@@ -28,7 +28,7 @@ import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/settings-workspace";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Studio workspace settings Â· Kuvox" }];
+  return [{ title: "Studio workspace settings Kuvox" }];
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {

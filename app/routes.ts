@@ -129,6 +129,8 @@ export default [
   ]),
 
   // ── Editor (CLIENT-ONLY: clientLoader + HydrateFallback, Redux-scoped) ──────
+  route("editor/video/:projectId", `${routesFolder.EDITOR}/video.tsx`),
+  route("editor/image/:projectId", `${routesFolder.EDITOR}/image.tsx`),
   route("editor/:projectId", `${routesFolder.EDITOR}/editor.tsx`),
 
   // ── Settings ────────────────────────────────────────────────────────────────

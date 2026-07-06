@@ -17,7 +17,7 @@ import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/settings-profile";
 
 function legacyMeta() {
-  return [{ title: "Studio profile settings Â· Kuvox" }];
+  return [{ title: "Studio profile settings Kuvox" }];
 }
 
 function LegacyTeamProfileSettings() {

@@ -43,13 +43,14 @@ import {
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { projectEditorHref } from "~/lib/project-routes";
 import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/home";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Team Â· Kuvox" }];
+  return [{ title: "Team Kuvox" }];
 }
 
 const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
@@ -160,7 +161,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 function projectHref(project: ProjectDto, studioId: string) {
-  return project.kind === ProjectKind.Video ? `/editor/${project.id}` : `/teams/${studioId}/projects`;
+  return projectEditorHref(project);
 }
 
 function formatUpdatedAt(value: string) {

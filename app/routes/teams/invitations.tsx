@@ -29,7 +29,7 @@ import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/invitations";
 
 function legacyMeta() {
-  return [{ title: "Studio invitations Â· Kuvox" }];
+  return [{ title: "Studio invitations Kuvox" }];
 }
 
 function LegacyTeamInvitations() {

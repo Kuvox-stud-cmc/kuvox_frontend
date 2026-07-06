@@ -18,7 +18,7 @@ namespace Route {
 }
 
 export function meta() {
-  return [{ title: "Team media Â· Kuvox" }];
+  return [{ title: "Team media Kuvox" }];
 }
 
 const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });

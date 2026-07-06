@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { Provider } from "react-redux";
+import { redirect } from "react-router";
 
 import { EditorSkeleton } from "~/components/editor/editor-skeleton";
 import { EditorWorkspace } from "~/components/editor/editor-workspace";
+import { ProjectKind } from "~/lib/api";
+import { getProject } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
+import { getSession } from "~/lib/session.server";
 import { makeStore } from "~/store";
 
 import type { Route } from "./+types/editor";
@@ -20,7 +24,18 @@ export function meta(_: Route.MetaArgs) {
  */
 export async function loader({ request, params }: Route.LoaderArgs) {
   await requireUser(request);
-  return { projectId: params.projectId };
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+  if (!accessToken) {
+    throw redirect("/login");
+  }
+
+  const project = await getProject(accessToken, params.projectId);
+  throw redirect(
+    project.kind === ProjectKind.Image
+      ? `/editor/image/${project.id}`
+      : `/editor/video/${project.id}`,
+  );
 }
 
 /**
@@ -28,12 +43,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
  * `HydrateFallback` on the server/initial load and only mount the component (and the
  * Redux store) in the browser, after this runs.
  */
-export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
-  const { projectId } = await serverLoader();
-  // TODO: fetch project + timeline from the API here (client-side).
-  return { projectId };
+function LegacyEditorRoute() {
+  return null;
 }
-clientLoader.hydrate = true as const;
 
 /** Server-rendered (and initial-hydration) fallback for this client-only route. */
 export function HydrateFallback() {
@@ -46,7 +58,7 @@ export default function EditorRoute({ loaderData }: Route.ComponentProps) {
 
   return (
     <Provider store={store}>
-      <EditorWorkspace projectId={loaderData.projectId} />
+      <EditorWorkspace projectId={(loaderData as { projectId?: string } | undefined)?.projectId ?? ""} />
     </Provider>
   );
 }

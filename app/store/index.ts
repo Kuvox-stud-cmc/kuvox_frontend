@@ -4,7 +4,7 @@ import { editorReducer } from "./slices/editor-slice";
 
 /**
  * The Redux store is scoped to the **client-only editor route**. It is created
- * per mount (see `app/routes/editor/editor.tsx`) so there is no SSR store to
+ * per mount (see `app/routes/editor/video.tsx`) so there is no SSR store to
  * serialize/hydrate — the rest of the app stays server-rendered without Redux.
  */
 export function makeStore() {

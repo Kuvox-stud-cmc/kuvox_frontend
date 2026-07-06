@@ -17,7 +17,7 @@ import { requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/settings-notifications";
 
 function legacyMeta() {
-  return [{ title: "Studio notification settings Â· Kuvox" }];
+  return [{ title: "Studio notification settings Kuvox" }];
 }
 
 function LegacyTeamNotificationSettings() {

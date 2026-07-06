@@ -36,13 +36,14 @@ import {
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { projectEditorHref } from "~/lib/project-routes";
 import { handleResourceAction } from "~/lib/resource-actions.server";
 import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/home";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Dashboard Â· Kuvox" }];
+  return [{ title: "Dashboard - Kuvox" }];
 }
 
 function count<T>(result: PromiseSettledResult<{ totalCount: number }>): number {
@@ -173,7 +174,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-/* â”€â”€ Mock data (to be replaced by real API integration) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+// Mock data (to be replaced by real API integration)
 
 const MOCK_AI_SUGGESTIONS = [
   { id: "ai1", icon: "mic", title: "Remove silence", description: "Save 12s" },
@@ -191,7 +192,7 @@ const MOCK_AI_SUGGESTIONS = [
   },
 ];
 
-/* â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+// Sub-components
 
 function formatStatus(status: string) {
   return status
@@ -212,7 +213,7 @@ function formatUpdatedAt(updatedAt: string) {
 }
 
 function projectHref(project: ProjectDto) {
-  return project.kind === ProjectKind.Video ? `/editor/${project.id}` : "/dashboard/projects";
+  return projectEditorHref(project);
 }
 
 function projectStatusBadge(status: string) {
@@ -242,7 +243,7 @@ function formatDueDate(dueDate: string | null) {
   return `Due ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date)}`;
 }
 
-/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+// Main component
 
 function ProjectCard({ project, index }: { project: ProjectDto; index: number }) {
   return (
@@ -305,7 +306,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
       {error && <ErrorBanner message={error} />}
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
-      {/* â”€â”€ Hero Welcome â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Hero Welcome */}
       <section className="flex items-end justify-between">
         <div>
           <h1 className="text-headline-lg font-bold text-on-surface">
@@ -325,7 +326,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         </button>
       </section>
 
-      {/* â”€â”€ Stats Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Stats Row */}
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
@@ -364,7 +365,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
 
       </div>
 
-      {/* â”€â”€ Continue Editing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Continue Editing */}
       <section>
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-headline-md font-bold text-on-surface">Continue Editing</h2>
@@ -389,7 +390,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         )}
       </section>
 
-      {/* â”€â”€ Three Column Middle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Three Column Middle */}
       <div className="grid grid-cols-12 gap-8">
         {currentWork.length > 0 && (
           <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-8">
@@ -420,7 +421,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
                       {item.title}
                     </h4>
                     <p className="truncate text-label-sm text-on-surface-variant">
-                      {taskKindLabel(item.kind)} · {item.projectName ?? "Studio task"} · {formatDueDate(item.dueDate)}
+                      {taskKindLabel(item.kind)} - {item.projectName ?? "Studio task"} - {formatDueDate(item.dueDate)}
                     </p>
                   </div>
                   <StatusBadge
@@ -480,7 +481,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         </div>
       </div>
 
-      {/* â”€â”€ Bottom Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Bottom Section */}
       <div className="grid grid-cols-12 gap-8">
         {/* Recent Projects (real data) */}
         <div className="col-span-12 lg:col-span-9">
@@ -496,7 +497,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
           </div>
           {recent.length === 0 ? (
             <p className="mt-3 rounded-xl border border-dashed border-outline-variant bg-surface-container-low px-4 py-8 text-center text-body-sm text-on-surface-variant">
-              No projects yet â€” create one to get started.
+              No projects yet - create one to get started.
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-4">

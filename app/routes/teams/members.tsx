@@ -30,7 +30,7 @@ import { requireStudioAccess, requireStudioAdminAccess } from "./access.server";
 import type { Route } from "./+types/members";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Team members Â· Kuvox" }];
+  return [{ title: "Team members Kuvox" }];
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -230,7 +230,7 @@ export default function TeamMembers({ loaderData, actionData }: Route.ComponentP
               disabled={navigation.state === "submitting"}
               className={primaryButtonClass()}
             >
-              {navigation.state === "submitting" ? "Invitingâ€¦" : "Invite"}
+              {navigation.state === "submitting" ? "Inviting" : "Invite"}
             </button>
           </div>
         </Form>

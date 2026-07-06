@@ -9,6 +9,10 @@ export class ProjectsApi extends BaseApiModule {
     return this.list<ProjectDto>(token, API_ROUTES.PROJECTS, ws, log);
   }
 
+  getProject(token: string, id: string, log?: RequestLogger): Promise<ProjectDto> {
+    return this.get<ProjectDto>(token, `${API_ROUTES.PROJECTS}/${id}`, log);
+  }
+
   createProject(token: string, ws: Workspace, input: { kind: number; name: string; description?: string | null }, log?: RequestLogger): Promise<ProjectDto> {
     return this.create(token, API_ROUTES.PROJECTS, ws, {
       kind: input.kind,
@@ -55,6 +59,7 @@ export const projectsApi = new ProjectsApi(apiClient);
 
 // Backward compatible exports
 export const listProjects = (t: string, w: Workspace, l?: RequestLogger) => projectsApi.listProjects(t, w, l);
+export const getProject = (t: string, id: string, l?: RequestLogger) => projectsApi.getProject(t, id, l);
 export const createProject = (t: string, w: Workspace, i: { kind: number; name: string; description?: string | null }, l?: RequestLogger) => projectsApi.createProject(t, w, i, l);
 export const listSharedProjects = (t: string, l?: RequestLogger) => projectsApi.listSharedProjects(t, l);
 export const listProjectTrash = (t: string, w: Workspace, l?: RequestLogger) => projectsApi.listProjectTrash(t, w, l);

@@ -1,8 +1,8 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 /**
- * Media-type sub-mode for the editor (the red "Video editing" / "Image editing"
- * nodes in the sitemap are modes within the editor page, not routes).
+ * Legacy media-type flag retained while the video editor scaffold is refactored.
+ * Video and image projects now have separate editor routes.
  */
 export type MediaMode = "video" | "image";
 export type EditorMode = "manual" | "ai";

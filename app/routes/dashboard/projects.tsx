@@ -22,7 +22,7 @@ import { getSession } from "~/lib/session.server";
 import type { Route } from "./+types/projects";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Projects Â· Kuvox" }];
+  return [{ title: "Projects Kuvox" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

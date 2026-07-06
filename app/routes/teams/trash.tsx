@@ -14,7 +14,7 @@ import { getSession } from "~/lib/session.server";
 import type { Route } from "./+types/trash";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: "Team trash Â· Kuvox" }];
+  return [{ title: "Team trash Kuvox" }];
 }
 
 const studioWs = (studioId: string): Workspace => ({ kind: "studio", studioId });
