@@ -211,6 +211,30 @@ export interface ItemAccessMemberDto {
   canManage: boolean;
 }
 
+export interface ImageCompositionDto {
+  projectId: string;
+  documentJson: unknown | null;
+  revisionNumber: number | string;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+}
+
+export interface SaveImageCompositionRequest {
+  documentJson: unknown;
+  operationsJson: unknown[];
+  baseRevisionNumber: number;
+}
+
+export interface ImageCompositionRevisionDto {
+  id: string;
+  projectId: string;
+  revisionNumber: number | string;
+  documentJson: unknown;
+  operationsJson: unknown;
+  createdAt: string;
+  createdByUserId: string;
+}
+
 export function projectKindLabel(kind: number): string {
   return kind === ProjectKind.Image ? "Image" : "Video";
 }
@@ -251,6 +275,37 @@ export type ProjectDto = components["schemas"]["ProjectDto"];
 
 /** Mirrors `Media.Dtos.MediaDto`. */
 export type MediaDto = components["schemas"]["MediaDto"];
+
+export type ProjectMediaAvailability =
+  | "available"
+  | "processing"
+  | "failed"
+  | "deleted"
+  | "inaccessible"
+  | "missing";
+
+export interface ProjectMediaDto {
+  mediaId: string;
+  kind: number | null;
+  availability: ProjectMediaAvailability;
+  filename: string | null;
+  ownerId: string | null;
+  ownerKind: number | null;
+  status: string | null;
+  storageKey: string | null;
+  sizeBytes: number | null;
+  canonicalStorageKey: string | null;
+  proxyStorageKey: string | null;
+  thumbnailStorageKey: string | null;
+  errorMessage: string | null;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+  frameRate: number | null;
+  shotCount?: number | null;
+  createdAt: string | null;
+}
 
 /** Mirrors `Projects.Dtos.ProjectTrashItemDto`. */
 export type ProjectTrashItem = components["schemas"]["ProjectTrashItemDto"];
@@ -519,4 +574,3 @@ export interface CreateAlbumDto {
   kind: number;
   materialSymbol: string;
 }
-

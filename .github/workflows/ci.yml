@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify editor assertions
+        run: |
+          npm run verify:editor-cache
+          npm run verify:editor-load
+          npm run verify:editor-media
+          npm run verify:editor-preview
+          npm run verify:editor-state
+          npm run verify:editor-tools
+          npm run verify:editor-timeline
+
+      - name: Verify video assertions
+        run: |
+          npm run verify:video-performance
+          npm run verify:video-keyboard-accessibility
+          npm run verify:video-ui-polish
+          npm run verify:video-ai-planner
+          npm run verify:video-export
+          npm run verify:video-render-schema
+          npm run verify:video-observability
+          npm run verify:video-retrieval
+          npm run verify:video-recovery
+          npm run verify:video-operations
+          npm run verify:video-testing-strategy
+          npm run verify:video-mvp-cutline
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Video component tests
+        run: npm run test:video-components
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore

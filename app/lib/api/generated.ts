@@ -66,6 +66,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/timelines/projects/{projectId}/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TimelineDocumentDto"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SaveTimelineDocumentRequest"];
+                    "text/json": components["schemas"]["SaveTimelineDocumentRequest"];
+                    "application/*+json": components["schemas"]["SaveTimelineDocumentRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TimelineDocumentDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/timelines/{id}/revisions": {
         parameters: {
             query?: never;
@@ -127,7 +191,13 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RenderTimelineRequest"];
+                    "text/json": components["schemas"]["RenderTimelineRequest"];
+                    "application/*+json": components["schemas"]["RenderTimelineRequest"];
+                };
+            };
             responses: {
                 /** @description OK */
                 200: {
@@ -4091,12 +4161,22 @@ export interface components {
             timelineId: string;
             /** Format: uuid */
             revisionId: null | string;
+            /** Format: int32 */
+            revisionNumber: null | number | string;
             status: string;
             outputStorageKey: null | string;
+            outputUrl: null | string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        RenderTimelineRequest: {
+            /** Format: uuid */
+            timelineId: string;
+            /** Format: int32 */
+            revisionNumber: number | string;
+            settings: unknown;
         };
         ResendVerificationRequest: {
             email: string;
@@ -4116,6 +4196,16 @@ export interface components {
         ShareProjectRequest: {
             email: string;
             role: components["schemas"]["ProjectRole"];
+        };
+        SaveTimelineDocumentRequest: {
+            documentJson: unknown;
+            operationsJson: unknown;
+            /** Format: int32 */
+            baseRevisionNumber: number | string;
+            /** Format: int32 */
+            documentSchemaVersion: number | string;
+            source: null | string;
+            label: null | string;
         };
         StudioAuditCategory: number;
         StudioAuditLogEntryDto: {
@@ -4281,6 +4371,25 @@ export interface components {
             updatedAt: string;
         };
         TaskMilestoneStatus: number;
+        TimelineDocumentDto: {
+            /** Format: uuid */
+            projectId: string;
+            /** Format: uuid */
+            timelineId: string;
+            /** Format: uuid */
+            revisionId: string;
+            documentJson: unknown;
+            /** Format: int32 */
+            revisionNumber: number | string;
+            /** Format: int32 */
+            documentSchemaVersion: number | string;
+            source: null | string;
+            label: null | string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            updatedByUserId: string;
+        };
         TimelineDto: {
             /** Format: uuid */
             id: string;

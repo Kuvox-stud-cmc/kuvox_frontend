@@ -6,13 +6,14 @@
 export function EditorSkeleton() {
   return (
     <div className="flex h-screen w-full animate-pulse flex-col bg-background">
-      <div className="h-toolbar-width border-b border-outline-variant bg-surface" />
+      <div className="h-toolbar-height border-b border-outline-variant bg-surface" />
       <div className="flex min-h-0 flex-1">
-        <div className="hidden w-60 border-r border-outline-variant bg-surface xl:block 2xl:w-sidebar-width" />
+        <div className="hidden w-video-library-width min-w-video-library-min max-w-video-library-max border-r border-outline-variant bg-surface lg:block" />
         <div className="flex-1 bg-surface-container-lowest" />
-        <div className="hidden w-14 border-l border-outline-variant bg-surface xl:block" />
+        <div className="hidden w-video-tool-rail-width border-l border-outline-variant bg-surface lg:block" />
+        <div className="hidden w-video-inspector-width border-l border-outline-variant bg-surface-container-lowest lg:block" />
       </div>
-      <div className="h-[clamp(220px,32vh,292px)] border-t border-outline-variant bg-surface" />
+      <div className="h-video-timeline-default min-h-video-timeline-min max-h-video-timeline-max border-t border-outline-variant bg-surface" />
     </div>
   );
 }

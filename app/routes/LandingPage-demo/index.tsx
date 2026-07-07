@@ -18,10 +18,8 @@ import { FinalCTA } from "./components/final-cta";
 import { Footer } from "./components/footer";
 import "./landing.css";
 
-import type { Route } from "./+types/index";
-
 // Must match TOTAL_EXTRA_VH in hero-sequence (7 frames × 1.3 = 9.1)
-export function meta(_: Route.MetaArgs) {
+export function meta() {
   return [
     { title: "KUVOX — AI-Powered Video & Image Editing" },
     {
@@ -52,7 +50,7 @@ export function meta(_: Route.MetaArgs) {
   ];
 }
 
-export const links: Route.LinksFunction = () => [
+export const links = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",

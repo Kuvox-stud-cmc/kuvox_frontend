@@ -1,0 +1,989 @@
+import { type MediaDto, type ProjectMediaDto } from "~/lib/api";
+
+import {
+  createEditorCorrelationId,
+  logVideoEditorEvent,
+  withEditorCorrelationHeaders,
+} from "./editor-observability.client";
+import { mediaReadiness } from "./editor-media";
+import { roundTime } from "./editor-timeline";
+import {
+  validateVideoProjectDocument,
+  type VideoCrop,
+  type VideoProjectDocument,
+  type VideoMediaReference,
+  type VideoTextStyle,
+  type VideoTimelineItem,
+  type VideoTrack,
+  type VideoTransform,
+} from "./video-document";
+
+export type VideoExportPreset = "h264-720p" | "h264-1080p" | "h264-4k" | "prores-master";
+export type VideoExportFormat = "mp4" | "mov";
+export type VideoExportResolution = "1280x720" | "1920x1080" | "3840x2160" | "current";
+export type VideoExportQuality = "draft" | "standard" | "high";
+export type VideoRenderJobStatus =
+  | "idle"
+  | "validating"
+  | "syncing"
+  | "queued"
+  | "rendering"
+  | "completed"
+  | "failed"
+  | "backend-unavailable";
+
+export interface VideoExportSettings {
+  preset: VideoExportPreset;
+  format: VideoExportFormat;
+  resolution: VideoExportResolution;
+  width: number;
+  height: number;
+  frameRate: number;
+  quality: VideoExportQuality;
+  destinationLabel: string;
+}
+
+export interface VideoExportValidationIssue {
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+  itemId?: string;
+  trackId?: string;
+  mediaId?: string;
+}
+
+export interface VideoExportValidationResult {
+  ok: boolean;
+  errors: VideoExportValidationIssue[];
+  warnings: VideoExportValidationIssue[];
+  manifest?: VideoRenderManifest;
+}
+
+export interface VideoRenderJob {
+  id: string;
+  timelineId: string;
+  revisionNumber: number | null;
+  status: Exclude<VideoRenderJobStatus, "idle" | "validating" | "syncing" | "backend-unavailable">;
+  outputUrl: string | null;
+  outputStorageKey: string | null;
+  message: string | null;
+}
+
+export interface RequestVideoRenderJobInput {
+  timelineId: string;
+  revisionNumber: number;
+  settings: VideoExportSettings;
+}
+
+export interface VideoRenderCanonicalSource {
+  variant: "canonical";
+  url: string;
+  storageKey: string;
+}
+
+export interface VideoRenderMediaSource {
+  mediaId: string;
+  kind: VideoMediaReference["kind"];
+  name: string;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+  mimeType?: string;
+  canonical: VideoRenderCanonicalSource;
+}
+
+export interface VideoRenderTransform {
+  x: number;
+  y: number;
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+}
+
+export interface VideoRenderCrop {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface VideoRenderVisualItem {
+  itemId: string;
+  trackId: string;
+  type: "video" | "image" | "overlay";
+  mediaId: string;
+  shotId?: string;
+  timelineStart: number;
+  duration: number;
+  sourceIn?: number;
+  sourceOut?: number;
+  speed?: number;
+  layerOrder: number;
+  transform: VideoRenderTransform;
+  crop?: VideoRenderCrop;
+  opacity: number;
+}
+
+export interface VideoRenderAudioItem {
+  itemId: string;
+  trackId: string;
+  mediaId: string;
+  timelineStart: number;
+  duration: number;
+  sourceIn: number;
+  sourceOut: number;
+  speed: number;
+  volume: number;
+  muted: boolean;
+  fades: {
+    fadeInDuration: number;
+    fadeOutDuration: number;
+  };
+  layerOrder: number;
+}
+
+export interface VideoRenderTextOverlay {
+  itemId: string;
+  trackId: string;
+  text: string;
+  timelineStart: number;
+  duration: number;
+  style: VideoTextStyle;
+  transform: VideoRenderTransform;
+  opacity: number;
+  layerOrder: number;
+}
+
+export interface VideoRenderManifest {
+  schemaVersion: 1;
+  projectId: string;
+  settings: VideoExportSettings;
+  durationSeconds: number;
+  mediaSources: VideoRenderMediaSource[];
+  visualItems: VideoRenderVisualItem[];
+  audioItems: VideoRenderAudioItem[];
+  textOverlays: VideoRenderTextOverlay[];
+}
+
+export type VideoRenderManifestBuildResult =
+  | {
+      ok: true;
+      manifest: VideoRenderManifest;
+      errors: [];
+      warnings: VideoExportValidationIssue[];
+    }
+  | {
+      ok: false;
+      manifest?: undefined;
+      errors: VideoExportValidationIssue[];
+      warnings: VideoExportValidationIssue[];
+    };
+
+export class VideoRenderRequestError extends Error {
+  readonly status: number | null;
+  readonly response: Response | null;
+
+  constructor(message: string, options: { status?: number | null; response?: Response | null } = {}) {
+    super(message);
+    this.name = "VideoRenderRequestError";
+    this.status = options.status ?? null;
+    this.response = options.response ?? null;
+  }
+}
+
+const exportPresets = ["h264-720p", "h264-1080p", "h264-4k", "prores-master"] as const;
+const exportFormats = ["mp4", "mov"] as const;
+const exportResolutions = ["1280x720", "1920x1080", "3840x2160", "current"] as const;
+const exportQualities = ["draft", "standard", "high"] as const;
+const exportFrameRates = [24, 25, 30, 60] as const;
+
+const storageKeyOutputFields = ["outputStorageKey", "storageKey", "objectStorageKey"] as const;
+const authenticatedOutputUrlFields = ["outputUrl", "downloadUrl", "authenticatedOutputUrl", "url"] as const;
+
+export function createDefaultVideoExportSettings(
+  document: VideoProjectDocument | null | undefined,
+  projectName: string,
+): VideoExportSettings {
+  const preset = isOneOf(document?.settings.exportPreset, exportPresets)
+    ? document.settings.exportPreset
+    : "h264-1080p";
+  const dimensions = dimensionsForPreset(preset, document);
+  const frameRate = exportFrameRates.includes(document?.settings.frameRate as never)
+    ? document?.settings.frameRate ?? 30
+    : 30;
+
+  return {
+    preset,
+    format: preset === "prores-master" ? "mov" : "mp4",
+    resolution: resolutionForDimensions(dimensions.width, dimensions.height, document),
+    width: dimensions.width,
+    height: dimensions.height,
+    frameRate,
+    quality: preset === "h264-720p" ? "draft" : "standard",
+    destinationLabel: `${sanitizeLabel(projectName || document?.name || "Untitled video")} ${preset}`,
+  };
+}
+
+export function resolveVideoExportDimensions(
+  document: VideoProjectDocument | null | undefined,
+  resolution: VideoExportResolution,
+): { width: number; height: number } {
+  if (resolution === "1280x720") return { width: 1280, height: 720 };
+  if (resolution === "1920x1080") return { width: 1920, height: 1080 };
+  if (resolution === "3840x2160") return { width: 3840, height: 2160 };
+  return {
+    width: positiveIntegerOrFallback(document?.settings.width, 1920),
+    height: positiveIntegerOrFallback(document?.settings.height, 1080),
+  };
+}
+
+export function validateVideoExport(
+  document: VideoProjectDocument | null | undefined,
+  media: MediaDto[],
+  settings: VideoExportSettings,
+  projectMedia?: ProjectMediaDto[],
+): VideoExportValidationResult {
+  const errors: VideoExportValidationIssue[] = [];
+  const warnings: VideoExportValidationIssue[] = [];
+  const validation = validateVideoProjectDocument(document);
+
+  if (!validation.ok) {
+    collectMissingDocumentMediaIssues(document, errors);
+    errors.push({
+      severity: "error",
+      code: "invalid-document",
+      message: validation.errors.length > 0
+        ? `Video document is not exportable: ${validation.errors.join(" ")}`
+        : "Video document is missing.",
+    });
+    return { ok: false, errors, warnings };
+  }
+
+  validateSettings(settings, errors);
+
+  const mediaById = new Map(media.map((item) => [item.id, item]));
+  const projectMediaById = new Map((projectMedia ?? []).map((item) => [item.mediaId, item]));
+  const enforceProjectMediaAssociation = projectMedia !== undefined;
+
+  for (const track of validation.document.tracks) {
+    if (track.hidden) continue;
+    if (track.kind === "audio" && track.muted) continue;
+
+    for (const item of track.items) {
+      if (item.duration <= 0) continue;
+      if (!isMediaBackedItem(item)) continue;
+      if (item.type === "audio" && item.muted) continue;
+
+      validateReferencedMedia(
+        item,
+        track,
+        validation.document.media[item.mediaId],
+        mediaById.get(item.mediaId),
+        projectMediaById.get(item.mediaId),
+        enforceProjectMediaAssociation,
+        errors,
+      );
+    }
+  }
+
+  const manifestResult = buildVideoRenderManifestFromValidDocument(
+    validation.document,
+    media,
+    settings,
+    projectMedia,
+  );
+  errors.push(...manifestResult.errors);
+  warnings.push(...manifestResult.warnings);
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    ...(errors.length === 0 && manifestResult.ok ? { manifest: manifestResult.manifest } : {}),
+  };
+}
+
+export function buildVideoRenderManifest(input: {
+  document: VideoProjectDocument | null | undefined;
+  media: MediaDto[];
+  settings: VideoExportSettings;
+  projectMedia?: ProjectMediaDto[];
+}): VideoRenderManifestBuildResult {
+  const errors: VideoExportValidationIssue[] = [];
+  const validation = validateVideoProjectDocument(input.document);
+
+  if (!validation.ok) {
+    collectMissingDocumentMediaIssues(input.document, errors);
+    errors.push({
+      severity: "error",
+      code: "invalid-document",
+      message: validation.errors.length > 0
+        ? `Video document is not exportable: ${validation.errors.join(" ")}`
+        : "Video document is missing.",
+    });
+    return { ok: false, errors, warnings: [] };
+  }
+
+  validateSettings(input.settings, errors);
+  const result = buildVideoRenderManifestFromValidDocument(
+    validation.document,
+    input.media,
+    input.settings,
+    input.projectMedia,
+  );
+  errors.push(...result.errors);
+
+  if (errors.length > 0 || !result.ok) {
+    return { ok: false, errors, warnings: result.warnings };
+  }
+
+  return {
+    ok: true,
+    manifest: result.manifest,
+    errors: [],
+    warnings: result.warnings,
+  };
+}
+
+function buildVideoRenderManifestFromValidDocument(
+  document: VideoProjectDocument,
+  media: MediaDto[],
+  settings: VideoExportSettings,
+  projectMedia?: ProjectMediaDto[],
+): VideoRenderManifestBuildResult {
+  const errors: VideoExportValidationIssue[] = [];
+  const warnings: VideoExportValidationIssue[] = [];
+  const loadedMediaById = new Map(media.map((item) => [item.id, item]));
+  const projectMediaById = new Map((projectMedia ?? []).map((item) => [item.mediaId, item]));
+  const mediaSourcesById = new Map<string, VideoRenderMediaSource>();
+  const visualItems: VideoRenderVisualItem[] = [];
+  const audioItems: VideoRenderAudioItem[] = [];
+  const textOverlays: VideoRenderTextOverlay[] = [];
+  let hasVisibleVisualMediaBackedItem = false;
+
+  for (const transition of document.transitions) {
+    errors.push({
+      severity: "error",
+      code: "unsupported-transition",
+      message: `Transition ${transition.id} is not supported by the V-013 renderer manifest.`,
+    });
+  }
+
+  for (const effect of document.effects) {
+    if (!effect.enabled) continue;
+    errors.push({
+      severity: "error",
+      code: "unsupported-effect",
+      message: `Effect ${effect.id} is not supported by the V-013 renderer manifest.`,
+    });
+  }
+
+  document.tracks.forEach((track, trackIndex) => {
+    if (track.items.length > 0 && track.hidden) {
+      warnings.push({
+        severity: "warning",
+        code: "hidden-track-excluded",
+        trackId: track.id,
+        message: `${track.label} is hidden and will be excluded from export.`,
+      });
+    }
+
+    if (track.hidden) return;
+
+    if (track.kind === "audio" && track.items.length > 0 && track.muted) {
+      warnings.push({
+        severity: "warning",
+        code: "muted-audio-track-excluded",
+        trackId: track.id,
+        message: `${track.label} is muted and will be excluded from export.`,
+      });
+      return;
+    }
+
+    for (const item of track.items) {
+      if (item.duration <= 0) continue;
+
+      if (item.type === "text") {
+        textOverlays.push({
+          itemId: item.id,
+          trackId: track.id,
+          text: item.text,
+          timelineStart: roundTime(item.timelineStart),
+          duration: roundTime(item.duration),
+          style: { ...item.style },
+          transform: renderTransform(item.transform),
+          opacity: 1,
+          layerOrder: item.layerOrder,
+        });
+        continue;
+      }
+
+      if (!isMediaBackedItem(item)) continue;
+
+      const documentMedia = document.media[item.mediaId];
+      const loadedMedia = loadedMediaById.get(item.mediaId);
+      const source = canonicalRenderSourceForMedia(
+        item.mediaId,
+        loadedMedia,
+        projectMediaById.get(item.mediaId),
+      );
+
+      if (isVisualMediaBackedItem(item)) {
+        hasVisibleVisualMediaBackedItem = true;
+      }
+
+      if (!documentMedia || !source) {
+        errors.push({
+          severity: "error",
+          code: "missing-canonical-source",
+          itemId: item.id,
+          trackId: track.id,
+          mediaId: item.mediaId,
+          message: `${documentMedia?.name ?? item.mediaId} is missing a canonical render source.`,
+        });
+        continue;
+      }
+
+      mediaSourcesById.set(item.mediaId, renderMediaSource(documentMedia, source));
+
+      if (item.type === "audio") {
+        if (item.muted) {
+          warnings.push({
+            severity: "warning",
+            code: "muted-audio-item-excluded",
+            itemId: item.id,
+            trackId: track.id,
+            mediaId: item.mediaId,
+            message: `${documentMedia.name} is muted and will be excluded from export audio.`,
+          });
+          continue;
+        }
+
+        audioItems.push({
+          itemId: item.id,
+          trackId: track.id,
+          mediaId: item.mediaId,
+          timelineStart: roundTime(item.timelineStart),
+          duration: roundTime(item.duration),
+          sourceIn: roundTime(item.sourceIn),
+          sourceOut: roundTime(item.sourceOut),
+          speed: 1,
+          volume: roundTime(item.volume),
+          muted: false,
+          fades: {
+            fadeInDuration: roundTime(item.fades.fadeInDuration),
+            fadeOutDuration: roundTime(item.fades.fadeOutDuration),
+          },
+          layerOrder: trackIndex,
+        });
+        continue;
+      }
+
+      visualItems.push({
+        itemId: item.id,
+        trackId: track.id,
+        type: item.type,
+        mediaId: item.mediaId,
+        ...(item.type === "video" && item.shotId ? { shotId: item.shotId } : {}),
+        timelineStart: roundTime(item.timelineStart),
+        duration: roundTime(item.duration),
+        ...(item.type === "video"
+          ? {
+              sourceIn: roundTime(item.sourceIn),
+              sourceOut: roundTime(item.sourceOut),
+              speed: roundTime(item.speed),
+              crop: renderCrop(item.crop),
+            }
+          : {}),
+        layerOrder: "layerOrder" in item ? item.layerOrder : trackIndex,
+        transform: renderTransform(item.transform),
+        opacity: roundTime(item.opacity),
+      });
+    }
+  });
+
+  if (!hasVisibleVisualMediaBackedItem) {
+    errors.push({
+      severity: "error",
+      code: "no-visible-visual-media",
+      message: "Add at least one visible video, image, or overlay item before exporting.",
+    });
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors, warnings };
+  }
+
+  const sortedVisualItems = [...visualItems].sort(compareRenderItems);
+  const sortedAudioItems = [...audioItems].sort(compareRenderItems);
+  const sortedTextOverlays = [...textOverlays].sort(compareRenderItems);
+  const durationSeconds = roundTime(Math.max(
+    0,
+    ...sortedVisualItems.map(itemEnd),
+    ...sortedAudioItems.map(itemEnd),
+    ...sortedTextOverlays.map(itemEnd),
+  ));
+
+  return {
+    ok: true,
+    errors: [],
+    warnings,
+    manifest: {
+      schemaVersion: 1,
+      projectId: document.projectId,
+      settings: { ...settings },
+      durationSeconds,
+      mediaSources: [...mediaSourcesById.values()].sort((a, b) => a.mediaId.localeCompare(b.mediaId)),
+      visualItems: sortedVisualItems,
+      audioItems: sortedAudioItems,
+      textOverlays: sortedTextOverlays,
+    },
+  };
+}
+
+export async function requestVideoRenderJob(input: RequestVideoRenderJobInput): Promise<VideoRenderJob> {
+  let response: Response;
+  const correlationId = createEditorCorrelationId("render");
+  logVideoEditorEvent("editor.render.request.start", {
+    timelineId: input.timelineId,
+    revisionNumber: input.revisionNumber,
+    correlationId,
+  });
+  try {
+    response = await fetch(`/bff/timelines/${encodeURIComponent(input.timelineId)}/render`, {
+      method: "POST",
+      headers: withEditorCorrelationHeaders({ "Content-Type": "application/json", Accept: "application/json" }, correlationId),
+      body: JSON.stringify({
+        timelineId: input.timelineId,
+        revisionNumber: input.revisionNumber,
+        settings: input.settings,
+      }),
+    });
+  } catch (error) {
+    logVideoEditorEvent("editor.render.request.backend-unavailable", {
+      timelineId: input.timelineId,
+      revisionNumber: input.revisionNumber,
+      correlationId,
+      reason: error instanceof Error ? error.message : "Render backend could not be reached.",
+    }, "error");
+    throw new VideoRenderRequestError(
+      error instanceof Error ? error.message : "Render backend could not be reached.",
+      { status: null },
+    );
+  }
+
+  if (!response.ok) {
+    const eventName = [404, 501, 502, 504].includes(response.status)
+      ? "editor.render.request.backend-unavailable"
+      : "editor.render.request.failure";
+    logVideoEditorEvent(eventName, {
+      timelineId: input.timelineId,
+      revisionNumber: input.revisionNumber,
+      correlationId,
+      status: response.status,
+    }, "error");
+    throw new VideoRenderRequestError(await readRenderJobError(response), {
+      status: response.status,
+      response,
+    });
+  }
+
+  const job = normalizeVideoRenderJob(await response.json());
+  logVideoEditorEvent("editor.render.request.success", {
+    timelineId: input.timelineId,
+    revisionNumber: input.revisionNumber,
+    renderJobId: job.id,
+    renderJobStatus: job.status,
+    correlationId,
+  });
+  return job;
+}
+
+export function normalizeVideoRenderJob(payload: unknown): VideoRenderJob {
+  const body = isRecord(payload) ? payload : {};
+  const nestedJob = isRecord(body.job) ? body.job : {};
+  const source = Object.keys(nestedJob).length > 0 ? nestedJob : body;
+  const rawStatus = String(source.status ?? source.state ?? "queued").toLowerCase();
+  const status = normalizeRenderStatus(rawStatus);
+  const outputUrl = firstString(source, authenticatedOutputUrlFields);
+  const outputStorageKey = firstString(source, storageKeyOutputFields);
+
+  return {
+    id: String(source.id ?? source.jobId ?? ""),
+    timelineId: String(source.timelineId ?? body.timelineId ?? ""),
+    revisionNumber: numberOrNull(source.revisionNumber ?? body.revisionNumber),
+    status,
+    outputUrl: isAuthenticatedOutputUrl(outputUrl) ? outputUrl : null,
+    outputStorageKey,
+    message: typeof source.message === "string"
+      ? source.message
+      : typeof source.error === "string"
+        ? source.error
+        : null,
+  };
+}
+
+export function isRenderBackendUnavailable(errorOrResponse: unknown): boolean {
+  if (errorOrResponse instanceof VideoRenderRequestError) {
+    return errorOrResponse.status === null || [404, 501, 502, 504].includes(errorOrResponse.status);
+  }
+
+  if (typeof Response !== "undefined" && errorOrResponse instanceof Response) {
+    return [404, 501, 502, 504].includes(errorOrResponse.status);
+  }
+
+  if (errorOrResponse instanceof TypeError) return true;
+  if (errorOrResponse instanceof Error && /network|failed to fetch|timeout|timed out/i.test(errorOrResponse.message)) {
+    return true;
+  }
+
+  if (isRecord(errorOrResponse) && typeof errorOrResponse.status === "number") {
+    return [404, 501, 502, 504].includes(errorOrResponse.status);
+  }
+
+  return false;
+}
+
+function validateSettings(settings: VideoExportSettings, errors: VideoExportValidationIssue[]): void {
+  if (!isOneOf(settings.preset, exportPresets)) {
+    errors.push({ severity: "error", code: "invalid-preset", message: "Choose a supported export preset." });
+  }
+
+  if (!isOneOf(settings.format, exportFormats)) {
+    errors.push({ severity: "error", code: "invalid-format", message: "Choose MP4 or MOV." });
+  }
+
+  if (!isOneOf(settings.resolution, exportResolutions)) {
+    errors.push({ severity: "error", code: "invalid-resolution", message: "Choose a supported export resolution." });
+  }
+
+  if (!Number.isInteger(settings.width) || settings.width <= 0 || !Number.isInteger(settings.height) || settings.height <= 0) {
+    errors.push({ severity: "error", code: "invalid-dimensions", message: "Export dimensions must be positive whole pixels." });
+  }
+
+  if (!exportFrameRates.includes(settings.frameRate as never)) {
+    errors.push({ severity: "error", code: "invalid-frame-rate", message: "Choose 24, 25, 30, or 60 fps." });
+  }
+
+  if (!isOneOf(settings.quality, exportQualities)) {
+    errors.push({ severity: "error", code: "invalid-quality", message: "Choose draft, standard, or high quality." });
+  }
+}
+
+function validateReferencedMedia(
+  item: Extract<VideoTimelineItem, { mediaId: string }>,
+  track: VideoTrack,
+  documentMedia: VideoMediaReference | undefined,
+  loadedMedia: MediaDto | undefined,
+  projectMedia: ProjectMediaDto | undefined,
+  enforceProjectMediaAssociation: boolean,
+  errors: VideoExportValidationIssue[],
+): void {
+  if (!documentMedia) {
+    errors.push({
+      severity: "error",
+      code: "missing-document-media",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `Timeline item ${item.id} references media ${item.mediaId}, but it is missing from the video document.`,
+    });
+    return;
+  }
+
+  if (enforceProjectMediaAssociation && !projectMedia) {
+    errors.push({
+      severity: "error",
+      code: "unassociated-project-media",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} is not associated with this project.`,
+    });
+    return;
+  }
+
+  if (projectMedia?.availability === "deleted") {
+    errors.push({
+      severity: "error",
+      code: "deleted-project-media",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} was deleted and cannot be exported.`,
+    });
+    return;
+  }
+
+  if (projectMedia?.availability === "inaccessible") {
+    errors.push({
+      severity: "error",
+      code: "inaccessible-project-media",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} is no longer accessible and cannot be exported.`,
+    });
+    return;
+  }
+
+  if (projectMedia?.availability === "missing") {
+    errors.push({
+      severity: "error",
+      code: "missing-project-media",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} is missing from project media and cannot be exported.`,
+    });
+    return;
+  }
+
+  if (projectMedia?.availability === "processing") {
+    errors.push({
+      severity: "error",
+      code: "media-processing",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} is still processing and cannot be exported yet.`,
+    });
+    return;
+  }
+
+  if (projectMedia?.availability === "failed") {
+    errors.push({
+      severity: "error",
+      code: "media-failed",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} failed processing and cannot be exported.`,
+    });
+    return;
+  }
+
+  if (!loadedMedia) {
+    errors.push({
+      severity: "error",
+      code: "missing-project-media",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} is not present in the loaded project media.`,
+    });
+    return;
+  }
+
+  const readiness = mediaReadiness(loadedMedia);
+  if (readiness === "processing") {
+    errors.push({
+      severity: "error",
+      code: "media-processing",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} is still processing and cannot be exported yet.`,
+    });
+  }
+
+  if (readiness === "failed") {
+    errors.push({
+      severity: "error",
+      code: "media-failed",
+      itemId: item.id,
+      trackId: track.id,
+      mediaId: item.mediaId,
+      message: `${documentMedia.name} failed processing and cannot be exported.`,
+    });
+  }
+
+}
+
+function isMediaBackedItem(item: VideoTimelineItem): item is Extract<VideoTimelineItem, { mediaId: string }> {
+  return "mediaId" in item;
+}
+
+function isVisualMediaBackedItem(
+  item: VideoTimelineItem,
+): item is Extract<VideoTimelineItem, { type: "video" | "image" | "overlay" }> {
+  return item.type === "video" || item.type === "image" || item.type === "overlay";
+}
+
+function canonicalRenderSourceForMedia(
+  mediaId: string,
+  loadedMedia: MediaDto | undefined,
+  projectMedia: ProjectMediaDto | undefined,
+): VideoRenderCanonicalSource | null {
+  const storageKey = nonEmptyString(loadedMedia?.canonicalStorageKey) ?? nonEmptyString(projectMedia?.canonicalStorageKey);
+  if (!storageKey) return null;
+
+  return {
+    variant: "canonical",
+    storageKey,
+    url: mediaObjectUrl(mediaId, "canonical", storageKey),
+  };
+}
+
+function renderMediaSource(
+  media: VideoMediaReference,
+  canonical: VideoRenderCanonicalSource,
+): VideoRenderMediaSource {
+  return omitUndefined({
+    mediaId: media.id,
+    kind: media.kind,
+    name: media.name,
+    durationSeconds: media.duration === undefined ? undefined : roundTime(media.duration),
+    width: media.width,
+    height: media.height,
+    mimeType: media.mimeType,
+    canonical,
+  });
+}
+
+function renderTransform(transform: VideoTransform): VideoRenderTransform {
+  return {
+    x: roundTime(transform.x),
+    y: roundTime(transform.y),
+    scaleX: roundTime(transform.scaleX),
+    scaleY: roundTime(transform.scaleY),
+    rotation: roundTime(transform.rotation),
+  };
+}
+
+function renderCrop(crop: VideoCrop): VideoRenderCrop {
+  return {
+    top: roundTime(crop.top),
+    right: roundTime(crop.right),
+    bottom: roundTime(crop.bottom),
+    left: roundTime(crop.left),
+  };
+}
+
+function compareRenderItems(
+  a: { timelineStart: number; layerOrder: number; itemId: string },
+  b: { timelineStart: number; layerOrder: number; itemId: string },
+): number {
+  return a.timelineStart - b.timelineStart || a.layerOrder - b.layerOrder || a.itemId.localeCompare(b.itemId);
+}
+
+function itemEnd(item: { timelineStart: number; duration: number }): number {
+  return roundTime(item.timelineStart + item.duration);
+}
+
+function mediaObjectUrl(mediaId: string, variant: "canonical", cacheKey: string): string {
+  return `/bff/media/${encodeURIComponent(mediaId)}/object/${variant}?v=${encodeURIComponent(cacheKey)}`;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function omitUndefined<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function collectMissingDocumentMediaIssues(
+  document: unknown,
+  errors: VideoExportValidationIssue[],
+): void {
+  if (!isRecord(document) || !isRecord(document.media) || !Array.isArray(document.tracks)) return;
+  const mediaIds = new Set(Object.keys(document.media));
+
+  for (const track of document.tracks) {
+    if (!isRecord(track) || !Array.isArray(track.items)) continue;
+    const trackId = typeof track.id === "string" ? track.id : undefined;
+    for (const item of track.items) {
+      if (!isRecord(item) || typeof item.mediaId !== "string" || mediaIds.has(item.mediaId)) continue;
+      errors.push({
+        severity: "error",
+        code: "missing-document-media",
+        itemId: typeof item.id === "string" ? item.id : undefined,
+        trackId,
+        mediaId: item.mediaId,
+        message: `Timeline item ${typeof item.id === "string" ? item.id : "unknown"} references media ${item.mediaId}, but it is missing from the video document.`,
+      });
+    }
+  }
+}
+
+function dimensionsForPreset(
+  preset: VideoExportPreset,
+  document: VideoProjectDocument | null | undefined,
+): { width: number; height: number } {
+  if (preset === "h264-720p") return { width: 1280, height: 720 };
+  if (preset === "h264-4k") return { width: 3840, height: 2160 };
+  if (preset === "prores-master") return resolveVideoExportDimensions(document, "current");
+  return { width: 1920, height: 1080 };
+}
+
+function resolutionForDimensions(
+  width: number,
+  height: number,
+  document: VideoProjectDocument | null | undefined,
+): VideoExportResolution {
+  if (width === 1280 && height === 720) return "1280x720";
+  if (width === 1920 && height === 1080) return "1920x1080";
+  if (width === 3840 && height === 2160) return "3840x2160";
+  if (width === document?.settings.width && height === document.settings.height) return "current";
+  return "current";
+}
+
+function normalizeRenderStatus(
+  status: string,
+): Exclude<VideoRenderJobStatus, "idle" | "validating" | "syncing" | "backend-unavailable"> {
+  if (["rendering", "running", "processing", "in-progress", "in_progress"].includes(status)) return "rendering";
+  if (["completed", "complete", "succeeded", "success", "done"].includes(status)) return "completed";
+  if (["failed", "error", "cancelled", "canceled"].includes(status)) return "failed";
+  return "queued";
+}
+
+async function readRenderJobError(response: Response): Promise<string> {
+  try {
+    const body = await response.json();
+    return String(body?.detail || body?.error || body?.message || `Render request failed with ${response.status}.`);
+  } catch {
+    return `Render request failed with ${response.status}.`;
+  }
+}
+
+function firstString<T extends readonly string[]>(source: Record<string, unknown>, keys: T): string | null {
+  for (const key of keys) {
+    if (typeof source[key] === "string" && source[key].trim().length > 0) return source[key].trim();
+  }
+  return null;
+}
+
+function isAuthenticatedOutputUrl(url: string | null): boolean {
+  if (!url) return false;
+  if (url.startsWith("/bff/") || url.startsWith("/api/")) return true;
+
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.startsWith("/bff/") || parsed.pathname.startsWith("/api/");
+  } catch {
+    return false;
+  }
+}
+
+function positiveIntegerOrFallback(value: unknown, fallback: number): number {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function numberOrNull(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function sanitizeLabel(value: string): string {
+  return value.trim().replace(/\s+/g, " ") || "Untitled video";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOneOf<T extends readonly string[]>(value: unknown, values: T): value is T[number] {
+  return typeof value === "string" && values.includes(value);
+}
