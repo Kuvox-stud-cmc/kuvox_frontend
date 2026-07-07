@@ -89,8 +89,8 @@ export function ComparisonSection() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="relative z-20 overflow-hidden py-32">
-      <div className="mx-auto max-w-7xl px-6 lg:px-12">
+    <section ref={sectionRef} className="pond-content-section relative z-20 overflow-hidden py-32">
+      <div className="pond-content-safe mx-auto max-w-7xl px-6 lg:px-12">
         <div ref={headerRef} className="mb-16 max-w-4xl">
           <p className="mb-5 text-sm font-medium text-[#63d9a8]">
             Creative control stays human.
@@ -109,7 +109,7 @@ export function ComparisonSection() {
         <div className="grid items-stretch gap-5 lg:grid-cols-[1fr_112px_1fr] lg:gap-0">
           <div
             ref={leftCardRef}
-            className="rounded-2xl border border-red-300/10 bg-[#181313] p-7 sm:p-9"
+            className="rounded-2xl border border-red-300/15 bg-[#181313]/85 p-7 backdrop-blur-xl sm:p-9"
           >
             <div className="mb-8 flex items-center justify-between gap-4">
               <h3 className="text-lg font-medium text-white/65">Traditional editing</h3>
@@ -119,7 +119,7 @@ export function ComparisonSection() {
             </div>
             <ul className="space-y-3">
               {traditional.map((item, index) => (
-                <li key={item} className="flex items-center gap-4 rounded-xl bg-black/15 px-4 py-3 text-sm text-white/50">
+                <li key={item} className="flex items-center gap-4 rounded-xl bg-black/10 px-4 py-3 text-sm text-white/50">
                   <span className="text-xs text-red-200/45">0{index + 1}</span>
                   <span>{item}</span>
                 </li>
@@ -144,7 +144,7 @@ export function ComparisonSection() {
 
           <div
             ref={rightCardRef}
-            className="relative overflow-hidden rounded-2xl border border-[#63d9a8]/20 bg-[#101813] p-7 sm:p-9"
+            className="relative overflow-hidden rounded-2xl border border-[#63d9a8]/20 bg-[#101813]/85 p-7 backdrop-blur-xl sm:p-9"
           >
             <span className="ai-scan-line absolute inset-x-0 top-0 h-px bg-[#63d9a8]/60" aria-hidden="true" />
             <div className="mb-8 flex items-center justify-between gap-4">

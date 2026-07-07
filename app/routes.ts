@@ -9,6 +9,9 @@ import {
 import { routesFolder } from './const/routes-name';
 
 export default [
+  // ── Standalone Landing Demo ─────────────────────────────────────────────────
+  route("landing-demo", "routes/LandingPage-demo/index.tsx"),
+
   // ── Public marketing pages (SSR) under a shared header/footer ──────────────
   layout("components/marketing/marketing-layout.tsx", [
     index("routes/home.tsx"),
