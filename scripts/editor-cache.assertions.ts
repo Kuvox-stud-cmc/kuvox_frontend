@@ -9,6 +9,8 @@ import {
   buildEditorCacheScope,
   coerceVideoTimelineDraft,
   createMediaObjectCacheRecord,
+  createOperationLogRecord,
+  createUndoCheckpointRecord,
   isEditorCacheRecordExpired,
   mediaStorageSignature,
   planEditorCacheCleanup,
@@ -17,6 +19,11 @@ import {
   serializeVideoTimelineDraft,
   type CleanupCandidate,
 } from "../app/lib/editor/editor-cache";
+import {
+  applyVideoOperationBatch,
+  createVideoOperationBatch,
+  type MoveItemOperation,
+} from "../app/lib/editor/video-operations";
 import type { MediaDto } from "../app/lib/api";
 
 function main(): void {
@@ -25,8 +32,52 @@ function main(): void {
   assertInvalidDraftClassification();
   assertTtlClassification();
   assertCleanupPlanning();
+  assertOperationLogAndUndoCheckpointRecords();
   assertMediaObjectMetadataOnly();
   assertMediaStorageSignature();
+}
+
+function assertOperationLogAndUndoCheckpointRecords(): void {
+  const scope = buildEditorCacheScope({ userId: "user-1" });
+  const document = createMockVideoProjectDocument("cache-history", "Cache History");
+  const batch = createVideoOperationBatch({
+    id: "cache-batch",
+    source: "manual",
+    timestamp: "2026-02-02T10:00:00.000Z",
+    label: "Move beach",
+    operations: [moveBeachOperation()],
+  });
+  const result = applyVideoOperationBatch(document, batch);
+  assert.equal(result.ok, true, result.errors?.join("; "));
+
+  const logRecord = createOperationLogRecord({
+    scope,
+    projectId: document.projectId,
+    batch,
+    result,
+    now: 100,
+  });
+  assert.equal(logRecord.projectId, "cache-history");
+  assert.equal(logRecord.batch.id, "cache-batch");
+  assert.equal(logRecord.result?.historyEntry?.id, "cache-batch");
+  assert.equal(logRecord.revision, result.document.history.revision);
+  assert.deepEqual(logRecord.result?.appliedOperationIds, ["cache-move-beach"]);
+
+  const checkpointRecord = createUndoCheckpointRecord({
+    scope,
+    projectId: document.projectId,
+    operationId: batch.id,
+    timestamp: batch.timestamp,
+    checkpoint: document,
+    undo: result.undo,
+    historyEntry: result.historyEntry,
+    now: 100,
+  });
+  assert.equal(checkpointRecord.ok, true);
+  assert.equal(checkpointRecord.ok && checkpointRecord.value.operationId, "cache-batch");
+  assert.equal(checkpointRecord.ok && checkpointRecord.value.checkpoint.projectId, "cache-history");
+  assert.deepEqual(checkpointRecord.ok && checkpointRecord.value.undo, result.undo);
+  assert.deepEqual(checkpointRecord.ok && checkpointRecord.value.historyEntry, result.historyEntry);
 }
 
 function assertNamespaceBuilders(): void {
@@ -161,6 +212,19 @@ function assertMediaStorageSignature(): void {
   } as MediaDto;
 
   assert.equal(mediaStorageSignature(media), "raw.mp4|canonical.mp4|proxy.mp4|thumb.jpg");
+}
+
+function moveBeachOperation(): MoveItemOperation {
+  return {
+    id: "cache-move-beach",
+    source: "manual",
+    timestamp: "2026-02-02T10:00:00.000Z",
+    label: "Move beach",
+    affectedEntityIds: ["tl-beach"],
+    type: "moveItem",
+    itemId: "tl-beach",
+    timelineStart: 12,
+  };
 }
 
 function candidates(projectId: string, count: number): CleanupCandidate[] {

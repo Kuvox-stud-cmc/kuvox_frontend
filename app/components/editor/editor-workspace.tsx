@@ -14,7 +14,6 @@ import { EditorTopBar } from "./editor-top-bar";
 import { MediaLibraryPanel } from "./media-library-panel";
 import {
   assistantMessages,
-  assistantSuggestions,
   editorProject,
   workspaceMediaAssets,
 } from "./mock-editor-data";
@@ -36,6 +35,7 @@ export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
   const dispatch = useAppDispatch();
   const editorMode = useAppSelector(selectEditorMode);
   const { height: timelineHeight, open: timelineOpen } = useAppSelector(selectTimelinePanelState);
+  const cacheScope = { userId: "mock-user", ownerKind: "user" as const, ownerId: "mock-user" };
 
   useEffect(() => {
     dispatch(projectOpened(projectId));
@@ -59,7 +59,12 @@ export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
         />
         <PreviewPanel project={editorProject} />
         {editorMode === "ai" ? (
-          <AiAssistantPanel messages={assistantMessages} suggestions={assistantSuggestions} />
+          <AiAssistantPanel
+            messages={assistantMessages}
+            projectId={projectId}
+            cacheScope={cacheScope}
+            media={workspaceMediaAssets}
+          />
         ) : (
           <ToolRail />
         )}

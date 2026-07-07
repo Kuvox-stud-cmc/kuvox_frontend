@@ -276,6 +276,37 @@ export type ProjectDto = components["schemas"]["ProjectDto"];
 /** Mirrors `Media.Dtos.MediaDto`. */
 export type MediaDto = components["schemas"]["MediaDto"];
 
+export type ProjectMediaAvailability =
+  | "available"
+  | "processing"
+  | "failed"
+  | "deleted"
+  | "inaccessible"
+  | "missing";
+
+export interface ProjectMediaDto {
+  mediaId: string;
+  kind: number | null;
+  availability: ProjectMediaAvailability;
+  filename: string | null;
+  ownerId: string | null;
+  ownerKind: number | null;
+  status: string | null;
+  storageKey: string | null;
+  sizeBytes: number | null;
+  canonicalStorageKey: string | null;
+  proxyStorageKey: string | null;
+  thumbnailStorageKey: string | null;
+  errorMessage: string | null;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+  frameRate: number | null;
+  shotCount?: number | null;
+  createdAt: string | null;
+}
+
 /** Mirrors `Projects.Dtos.ProjectTrashItemDto`. */
 export type ProjectTrashItem = components["schemas"]["ProjectTrashItemDto"];
 
@@ -543,4 +574,3 @@ export interface CreateAlbumDto {
   kind: number;
   materialSymbol: string;
 }
-

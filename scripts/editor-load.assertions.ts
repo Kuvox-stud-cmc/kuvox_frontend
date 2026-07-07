@@ -54,7 +54,10 @@ function assertCorruptDraftFallsBack(): void {
   assert.equal(resolved.source, "empty");
   assert.equal(resolved.document.name, "Server");
   assert.equal(resolved.syncStatus, "clean");
-  assert.deepEqual(resolved.warnings, ["Draft cache corrupt."]);
+  assert.deepEqual(resolved.warnings, [
+    "Draft cache corrupt.",
+    "Local video draft cache corrupt. Loaded the server copy instead.",
+  ]);
 }
 
 function assertConflictDetection(): void {

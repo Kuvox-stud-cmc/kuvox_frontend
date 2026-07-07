@@ -4,6 +4,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import tls from "node:tls";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createCookieSessionStorage } from "react-router";
 
@@ -13,6 +14,10 @@ const API_URL =
   process.env.VITE_API_URL ||
   process.env.API_URL ||
   "http://localhost:5280";
+const AI_SERVICE_URL =
+  process.env.VITE_AI_SERVICE_URL ||
+  process.env.AI_SERVICE_URL ||
+  "http://localhost:8000";
 
 const DEV_SESSION_SECRET = "dev-only-session-secret-change-me";
 const SESSION_SECRET =
@@ -45,18 +50,21 @@ export function installProxyHandlers(appOrServer, maybeServer) {
   app.use("/bff/projects", async (req, res, next) => {
     const pathname = incomingPathname(req, "/bff/projects");
     const imageCompositionRoute = parseProjectImageCompositionRoute(pathname);
-    if (!imageCompositionRoute) {
+    const projectMediaRoute = parseProjectMediaRoute(pathname);
+    const videoTimelineRoute = parseProjectVideoTimelineRoute(pathname);
+    const route = imageCompositionRoute ?? projectMediaRoute ?? videoTimelineRoute;
+    if (!route) {
       next();
       return;
     }
 
-    if (req.method !== "GET" && req.method !== "PUT") {
-      res.setHeader("Allow", "GET, PUT");
-      sendJson(res, 405, { error: "Method not allowed." });
+    if (!route.methods.includes(req.method)) {
+      res.setHeader("Allow", route.methods.join(", "));
+      sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
       return;
     }
 
-    await proxyHttp(req, res, imageCompositionRoute.targetPath);
+    await proxyHttp(req, res, route.targetPath);
   });
 
   app.use("/bff/media", async (req, res, next) => {
@@ -69,11 +77,59 @@ export function installProxyHandlers(appOrServer, maybeServer) {
 
     if (req.method !== "GET" && req.method !== "HEAD") {
       res.setHeader("Allow", "GET, HEAD");
-      sendJson(res, 405, { error: "Method not allowed." });
+      sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
       return;
     }
 
     await proxyHttp(req, res, objectRoute.targetPath);
+  });
+
+  app.use("/bff/timelines", async (req, res, next) => {
+    const pathname = incomingPathname(req, "/bff/timelines");
+    const renderRoute = parseTimelineRenderRoute(pathname);
+    const performanceRoute = parseTimelinePerformanceRoute(pathname);
+    const route = renderRoute ?? performanceRoute;
+    if (!route) {
+      next();
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "POST");
+      sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
+      return;
+    }
+
+    await proxyHttp(req, res, route.targetPath);
+  });
+
+  app.use("/bff/ai", async (req, res, next) => {
+    const pathname = incomingPathname(req, "/bff/ai");
+    const retrievalRoute = parseAiRetrievalRoute(pathname);
+    if (retrievalRoute) {
+      if (req.method !== "POST") {
+        res.setHeader("Allow", "POST");
+        sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
+        return;
+      }
+
+      await handleAiVideoEditorRetrieval(req, res);
+      return;
+    }
+
+    const planningRoute = parseAiPlanningRoute(pathname);
+    if (!planningRoute) {
+      next();
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "POST");
+      sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
+      return;
+    }
+
+    await proxyHttp(req, res, planningRoute.targetPath, { baseUrl: AI_SERVICE_URL });
   });
 
   app.use("/hubs/media", async (req, res) => {
@@ -90,15 +146,16 @@ export function installProxyHandlers(appOrServer, maybeServer) {
   });
 }
 
-async function proxyHttp(req, res, targetPath) {
+async function proxyHttp(req, res, targetPath, options = {}) {
+  const correlation = proxyCorrelation(req);
   const auth = await accessTokenFromRequest(req);
   if (!auth.token) {
-    sendJson(res, 401, { error: auth.error }, auth.setCookie);
+    sendJson(res, 401, { error: auth.error }, auth.setCookie, correlation);
     return;
   }
 
-  const target = targetUrl(req.url, targetPath);
-  const headers = proxyHeaders(req.headers, auth.token, target);
+  const target = targetUrl(req.url, targetPath, options.baseUrl ?? API_URL);
+  const headers = proxyHeaders(req.headers, auth.token, target, correlation);
   const transport = target.protocol === "https:" ? https : http;
   const start = performance.now();
 
@@ -111,22 +168,34 @@ async function proxyHttp(req, res, targetPath) {
     (upstreamRes) => {
       const statusCode = upstreamRes.statusCode ?? 502;
       const contentType = headerValue(upstreamRes.headers["content-type"]) ?? "unknown";
-      console.log(
-        `[kuvox-proxy] ${req.method} ${target.pathname}${target.search} -> ${statusCode} ${contentType} (${Math.round(
-          performance.now() - start,
-        )}ms)`,
-      );
-      res.writeHead(statusCode, responseHeaders(upstreamRes.headers, auth.setCookie));
+      logProxyEvent("info", {
+        event: "bff.proxy",
+        method: req.method,
+        targetRoute: target.pathname,
+        status: statusCode,
+        contentType,
+        durationMs: Math.round(performance.now() - start),
+        requestId: correlation.requestId,
+        editorCorrelationId: correlation.editorCorrelationId,
+      });
+      res.writeHead(statusCode, responseHeaders(upstreamRes.headers, auth.setCookie, correlation));
       upstreamRes.pipe(res);
     },
   );
 
   upstream.on("error", (error) => {
-    console.warn(
-      `[kuvox-proxy] ${req.method} ${target.pathname} failed: ${error.message}`,
-    );
+    logProxyEvent("warn", {
+      event: "bff.proxy.failure",
+      method: req.method,
+      targetRoute: target.pathname,
+      status: 502,
+      durationMs: Math.round(performance.now() - start),
+      requestId: correlation.requestId,
+      editorCorrelationId: correlation.editorCorrelationId,
+      error: error.message,
+    });
     if (!res.headersSent) {
-      sendJson(res, 502, { error: `Proxy request failed: ${error.message}` });
+      sendJson(res, 502, { error: `Proxy request failed: ${error.message}` }, auth.setCookie, correlation);
       return;
     }
     res.end();
@@ -139,6 +208,133 @@ async function proxyHttp(req, res, targetPath) {
   req.pipe(upstream);
 }
 
+async function handleAiVideoEditorRetrieval(req, res) {
+  const correlation = proxyCorrelation(req);
+  const start = performance.now();
+  const auth = await accessTokenFromRequest(req);
+  if (!auth.token) {
+    sendJson(res, 401, { error: auth.error }, auth.setCookie, correlation);
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJson(res, 400, { error: error instanceof Error ? error.message : "Invalid JSON body." }, auth.setCookie, correlation);
+    return;
+  }
+
+  const projectId = stringOrEmpty(body?.projectId);
+  const query = stringOrEmpty(body?.query);
+  if (!projectId) {
+    sendJson(res, 400, { error: "projectId is required." }, auth.setCookie, correlation);
+    return;
+  }
+
+  try {
+    const projectMedia = await fetchJsonFromApi(
+      `/api/projects/${encodeURIComponent(projectId)}/media?pageSize=500`,
+      auth.token,
+      correlation,
+    );
+    const mediaIds = trustedVideoMediaIds(projectMedia);
+    const aiResponse = await fetchJsonFromAiService("/retrieval/video-editor", {
+      projectId,
+      mediaIds,
+      query,
+      modalities: normalizeModalities(body?.modalities),
+      topK: normalizeTopK(body?.topK),
+      expandGraph: body?.expandGraph !== false,
+    }, correlation);
+
+    logProxyEvent("info", {
+      event: "bff.ai.retrieval",
+      method: req.method,
+      targetRoute: "/retrieval/video-editor",
+      status: 200,
+      durationMs: Math.round(performance.now() - start),
+      requestId: correlation.requestId,
+      editorCorrelationId: correlation.editorCorrelationId,
+      projectId,
+      mediaCount: mediaIds.length,
+      topK: normalizeTopK(body?.topK),
+      modalities: normalizeModalities(body?.modalities),
+    });
+    sendJson(res, 200, aiResponse, auth.setCookie, correlation);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Semantic retrieval failed.";
+    logProxyEvent("warn", {
+      event: "bff.ai.retrieval.failure",
+      method: req.method,
+      targetRoute: "/retrieval/video-editor",
+      status: 502,
+      durationMs: Math.round(performance.now() - start),
+      requestId: correlation.requestId,
+      editorCorrelationId: correlation.editorCorrelationId,
+      projectId,
+      error: message,
+    });
+    sendJson(res, 502, { error: message }, auth.setCookie, correlation);
+  }
+}
+
+async function fetchJsonFromApi(pathname, token, correlation) {
+  const target = new URL(API_URL);
+  target.pathname = pathname;
+  target.search = "";
+  const queryIndex = pathname.indexOf("?");
+  if (queryIndex >= 0) {
+    target.pathname = pathname.slice(0, queryIndex);
+    target.search = pathname.slice(queryIndex);
+  }
+  const response = await fetch(target, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "x-request-id": correlation.requestId,
+      "x-kuvox-editor-correlation-id": correlation.editorCorrelationId,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Project media lookup returned ${response.status}.`);
+  }
+  return await response.json();
+}
+
+async function fetchJsonFromAiService(pathname, body, correlation) {
+  const target = new URL(AI_SERVICE_URL);
+  target.pathname = pathname;
+  target.search = "";
+  const response = await fetch(target, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "x-request-id": correlation.requestId,
+      "x-kuvox-editor-correlation-id": correlation.editorCorrelationId,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`AI retrieval returned ${response.status}.`);
+  }
+  return await response.json();
+}
+
+async function readJsonBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.from(chunk));
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    return {};
+  }
+  return JSON.parse(raw);
+}
+
 async function proxyWebSocket(req, socket, head, targetPath) {
   const auth = await accessTokenFromRequest(req, { allowRefresh: false });
   if (!auth.token) {
@@ -148,7 +344,7 @@ async function proxyWebSocket(req, socket, head, targetPath) {
     return;
   }
 
-  const target = targetUrl(req.url, targetPath);
+  const target = targetUrl(req.url, targetPath, API_URL);
   const isSecure = target.protocol === "https:";
   const port = Number(target.port) || (isSecure ? 443 : 80);
   const host = target.hostname;
@@ -157,7 +353,7 @@ async function proxyWebSocket(req, socket, head, targetPath) {
     : net.connect(port, host);
 
   upstream.once(isSecure ? "secureConnect" : "connect", () => {
-    const headers = proxyHeaders(req.headers, auth.token, target);
+    const headers = proxyHeaders(req.headers, auth.token, target, proxyCorrelation(req));
     headers.host = target.host;
     headers.connection = "Upgrade";
     headers.upgrade = "websocket";
@@ -186,8 +382,8 @@ async function proxyWebSocket(req, socket, head, targetPath) {
   });
 }
 
-function targetUrl(originalUrl, targetPath) {
-  const api = new URL(API_URL);
+function targetUrl(originalUrl, targetPath, baseUrl = API_URL) {
+  const api = new URL(baseUrl);
   const incoming = new URL(originalUrl ?? targetPath, "http://frontend.local");
   api.pathname = targetPath;
   api.search = incoming.search;
@@ -224,16 +420,123 @@ function parseProjectImageCompositionRoute(pathname) {
 
   return {
     targetPath: `/api/projects/${match[1]}/image-composition`,
+    methods: ["GET", "PUT"],
   };
 }
 
-function proxyHeaders(originalHeaders, token, target) {
+function parseProjectMediaRoute(pathname) {
+  const match = /^\/bff\/projects\/([^/]+)\/media$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: `/api/projects/${match[1]}/media`,
+    methods: ["GET", "POST"],
+  };
+}
+
+function parseProjectVideoTimelineRoute(pathname) {
+  const match = /^\/bff\/projects\/([^/]+)\/video-timeline$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: `/api/timelines/projects/${match[1]}/current`,
+    methods: ["GET", "PUT"],
+  };
+}
+
+function parseTimelineRenderRoute(pathname) {
+  const match = /^\/bff\/timelines\/([^/]+)\/render$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: `/api/timelines/${match[1]}/render`,
+  };
+}
+
+function parseTimelinePerformanceRoute(pathname) {
+  const match = /^\/bff\/timelines\/projects\/([^/]+)\/performance$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: `/api/timelines/projects/${match[1]}/performance`,
+  };
+}
+
+function parseAiPlanningRoute(pathname) {
+  const match = /^\/bff\/ai\/planning\/video-editor$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: "/planning/video-editor",
+  };
+}
+
+function parseAiRetrievalRoute(pathname) {
+  const match = /^\/bff\/ai\/retrieval\/video-editor$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: "/retrieval/video-editor",
+  };
+}
+
+function trustedVideoMediaIds(projectMediaResponse) {
+  const items = Array.isArray(projectMediaResponse?.items) ? projectMediaResponse.items : [];
+  return items
+    .filter((item) =>
+      item &&
+      typeof item === "object" &&
+      item.kind === 0 &&
+      String(item.availability ?? "").toLowerCase() === "available" &&
+      String(item.status ?? "").toLowerCase() === "ready" &&
+      typeof item.mediaId === "string" &&
+      item.mediaId.length > 0,
+    )
+    .map((item) => item.mediaId);
+}
+
+function normalizeModalities(value) {
+  const allowed = new Set(["visual", "transcript", "audio", "ocr"]);
+  if (!Array.isArray(value)) {
+    return ["transcript", "ocr"];
+  }
+  const modalities = value.filter((item) => typeof item === "string" && allowed.has(item));
+  return modalities.length > 0 ? Array.from(new Set(modalities)) : ["transcript", "ocr"];
+}
+
+function normalizeTopK(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 8;
+  }
+  return Math.min(50, Math.max(1, Math.trunc(numeric)));
+}
+
+function stringOrEmpty(value) {
+  return typeof value === "string" ? value : "";
+}
+
+function proxyHeaders(originalHeaders, token, target, correlation) {
   const headers = { ...originalHeaders };
   delete headers.cookie;
   delete headers.host;
   delete headers.connection;
   headers.host = target.host;
   headers.authorization = `Bearer ${token}`;
+  headers["x-request-id"] = correlation.requestId;
+  headers["x-kuvox-editor-correlation-id"] = correlation.editorCorrelationId;
   return headers;
 }
 
@@ -330,12 +633,14 @@ async function refreshAccessToken(refreshToken) {
   return tokens;
 }
 
-function responseHeaders(upstreamHeaders, setCookie) {
+function responseHeaders(upstreamHeaders, setCookie, correlation) {
+  const headers = { ...upstreamHeaders };
+  headers["x-request-id"] = correlation.requestId;
+  headers["x-kuvox-editor-correlation-id"] = correlation.editorCorrelationId;
   if (!setCookie) {
-    return upstreamHeaders;
+    return headers;
   }
 
-  const headers = { ...upstreamHeaders };
   const upstreamSetCookie = headers["set-cookie"];
   headers["set-cookie"] = upstreamSetCookie
     ? [...asArray(upstreamSetCookie), setCookie]
@@ -355,14 +660,35 @@ function headerValue(value) {
   return value;
 }
 
-function sendJson(res, statusCode, body, setCookie) {
-  console.warn(`[kuvox-proxy] returning ${statusCode}: ${body.error}`);
+function sendJson(res, statusCode, body, setCookie, correlation = null) {
+  if (body.error) {
+    console.warn(`[kuvox-proxy] returning ${statusCode}: ${body.error}`);
+  }
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json");
+  if (correlation) {
+    res.setHeader("x-request-id", correlation.requestId);
+    res.setHeader("x-kuvox-editor-correlation-id", correlation.editorCorrelationId);
+  }
   if (setCookie) {
     res.setHeader("Set-Cookie", setCookie);
   }
   res.end(JSON.stringify(body));
+}
+
+function proxyCorrelation(req) {
+  const requestId = headerValue(req.headers["x-request-id"]) || randomUUID();
+  const editorCorrelationId = headerValue(req.headers["x-kuvox-editor-correlation-id"]) || requestId;
+  req.headers["x-request-id"] = requestId;
+  req.headers["x-kuvox-editor-correlation-id"] = editorCorrelationId;
+  return { requestId, editorCorrelationId };
+}
+
+function logProxyEvent(level, fields) {
+  const safeFields = Object.fromEntries(
+    Object.entries(fields).filter(([key]) => !/authorization|cookie|token|session|secret/i.test(key)),
+  );
+  console[level === "warn" ? "warn" : "log"]("[kuvox-proxy]", safeFields);
 }
 
 function loadLocalEnv() {

@@ -1,5 +1,5 @@
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
-import { activeToolChanged, selectToolRailState } from "~/store/slices/editor-slice";
+import { activeToolChanged, selectToolRailState, textItemCreated } from "~/store/slices/editor-slice";
 
 import { EditorIcon } from "./editor-ui";
 
@@ -9,7 +9,7 @@ export function ToolRail() {
 
   return (
     <aside
-      className="z-40 flex h-full w-14 shrink-0 flex-col border-l border-outline-variant bg-surface"
+      className="z-40 hidden h-full w-video-tool-rail-width shrink-0 flex-col border-l border-outline-variant bg-surface lg:flex"
       aria-label="Editor tools"
     >
       <div className="flex flex-col items-center gap-2 p-2">
@@ -28,9 +28,14 @@ export function ToolRail() {
               aria-pressed={tool.disabled ? undefined : tool.active}
               aria-disabled={tool.disabled}
               onClick={() => {
-                if (!tool.disabled) dispatch(activeToolChanged(tool.id));
+                if (tool.disabled) return;
+                if (tool.id === "text") {
+                  dispatch(textItemCreated({ preset: "caption" }));
+                  return;
+                }
+                dispatch(activeToolChanged(tool.id));
               }}
-              className={`flex h-10 w-10 items-center justify-center rounded-[4px] text-label-md font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+              className={`flex h-10 w-10 items-center justify-center rounded-[4px] text-label-md font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface motion-reduce:transition-none ${
                 tool.disabled
                   ? "cursor-not-allowed text-on-surface-variant/40"
                   : tool.active

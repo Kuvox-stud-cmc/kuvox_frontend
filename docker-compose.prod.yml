@@ -1,0 +1,206 @@
+# Production compose for the Kuvox Droplet.
+# Place this at /opt/kuvox/docker-compose.prod.yml on the server.
+# Environment variables are loaded from /opt/kuvox/.env
+
+services:
+  # ---- Application services ---------------------------------------------------
+  kuvox-frontend:
+    image: ghcr.io/${GITHUB_OWNER}/kuvox-frontend:${FRONTEND_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      # Bound to localhost only - the host Nginx reverse proxy fronts it with TLS.
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      VITE_API_URL: ${VITE_API_URL:-http://kuvox-api:5000}
+      API_URL: ${API_URL:-http://kuvox-api:5000}
+      VITE_AI_SERVICE_URL: ${VITE_AI_SERVICE_URL:-http://kuvox-ai:8000}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://kuvox-ai:8000}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+    depends_on:
+      - kuvox-api
+      - kuvox-ai
+    networks:
+      - kuvox
+
+  kuvox-api:
+    image: ghcr.io/${GITHUB_OWNER}/kuvox-api:${API_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      # Bound to localhost only - the host Nginx reverse proxy fronts it with TLS.
+      - "127.0.0.1:5000:5000"
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - kuvox
+
+  kuvox-ai:
+    image: ghcr.io/${GITHUB_OWNER}/kuvox-ai:${AI_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file: .env
+    volumes:
+      # Persists the embedded Kuzu graph DB + model files across redeploys.
+      - kuzu-data:/app/data
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      seaweedfs-master:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_healthy
+      seaweedfs-s3:
+        condition: service_healthy
+      seaweedfs-filer:
+        condition: service_healthy
+    networks:
+      - kuvox
+
+  # ---- Infrastructure services ------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kuvox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-kuvox}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kuvox}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - kuvox
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - kuvox
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - kuvox
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-kuvox}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kuvox
+
+  seaweedfs-master:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9333:9333"    # Master HTTP
+      - "127.0.0.1:19333:19333"    # Master gRPC
+    command: master -mdir=/data
+    volumes:
+      - seaweedfs_master:/data
+    networks:
+      - kuvox
+
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8123:8123"
+    command: volume -mserver=seaweedfs-master:9333 -dir=/data -port=8123
+    volumes:
+      - seaweedfs_volume:/data
+    depends_on:
+      - seaweedfs-master
+    networks:
+      - kuvox
+
+  seaweedfs-s3:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8333:8333"    # S3-compatible API endpoint
+    command: s3 -config=/etc/seaweedfs/s3.json -filer=seaweedfs-filer:8888
+    volumes:
+      - ./infra/seaweedfs:/etc/seaweedfs:ro
+    depends_on:
+      - seaweedfs-filer
+    networks:
+      - kuvox
+
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8888"
+    command: filer -master=seaweedfs-master:9333
+    volumes:
+      - seaweedfs_filer:/data
+    depends_on:
+      - seaweedfs-master
+    networks:
+      - kuvox
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  redis-data:
+  rabbitmq-data:
+  seaweedfs_master:
+  seaweedfs_volume:
+  seaweedfs_filer:
+  kuzu-data:
+
+networks:
+  kuvox:
+    driver: bridge

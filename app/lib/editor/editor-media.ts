@@ -12,6 +12,7 @@ import type {
   VideoTrack,
 } from "./video-document";
 import { findCompatibleTrack, roundTime } from "./editor-timeline";
+import type { VideoEditorShotSearchResult } from "./video-retrieval";
 import type {
   AddAudioItemOperation,
   AddMediaToTimelineOperation,
@@ -201,6 +202,92 @@ export function buildAddMediaToTimelineOperation({
   };
 }
 
+export function buildAddRetrievedShotToTimelineOperation({
+  document,
+  result,
+  mediaReference,
+  now,
+  placement,
+}: {
+  document: VideoProjectDocument;
+  result: VideoEditorShotSearchResult;
+  mediaReference: VideoMediaReference;
+  now: string | Date;
+  placement?: {
+    trackId?: string;
+    timelineStart?: number;
+  };
+}): AddMediaToTimelineBuildResult {
+  if (mediaReference.kind !== "video") {
+    return { ok: false, reason: "Retrieved shots can only be added from video media." };
+  }
+
+  if (result.endSeconds <= result.startSeconds) {
+    return { ok: false, reason: "Retrieved shot timing is invalid." };
+  }
+
+  if (mediaReference.duration !== undefined && result.endSeconds > mediaReference.duration) {
+    return { ok: false, reason: "Retrieved shot extends beyond the source media duration." };
+  }
+
+  const timestamp = typeof now === "string" ? now : now.toISOString();
+  const documentWithMedia = {
+    ...document,
+    media: {
+      ...document.media,
+      [mediaReference.id]: mediaReference,
+    },
+  };
+  const targetTrack = findCompatibleTrack(documentWithMedia, "video", placement?.trackId);
+  if (!targetTrack) {
+    return { ok: false, reason: "No compatible video track is available." };
+  }
+
+  const duration = roundTime(result.endSeconds - result.startSeconds);
+  const itemId = createShotTimelineItemId(result, timestamp);
+  const item: VideoClipTimelineItem = {
+    id: itemId,
+    type: "video",
+    mediaId: mediaReference.id,
+    shotId: result.shotId,
+    timelineStart: roundTime(placement?.timelineStart ?? 0),
+    duration,
+    sourceIn: roundTime(result.startSeconds),
+    sourceOut: roundTime(result.endSeconds),
+    speed: 1,
+    transform: {
+      x: 0,
+      y: 0,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+    },
+    crop: {
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    },
+    opacity: 1,
+  };
+
+  return {
+    ok: true,
+    mediaReference,
+    operation: {
+      id: `add-shot-${slugId(result.shotId)}-${slugTimestamp(timestamp)}`,
+      source: "ai",
+      timestamp,
+      label: `Add semantic shot ${result.shotId}`,
+      affectedEntityIds: [mediaReference.id, result.shotId, itemId],
+      forceCheckpoint: true,
+      type: "addMediaToTimeline",
+      trackId: targetTrack.id,
+      item,
+    },
+  };
+}
+
 function videoMediaKind(media: MediaDto): VideoMediaKind {
   if (media.kind === MediaKind.Audio) return "audio";
   if (media.kind === MediaKind.Image) return "image";
@@ -288,6 +375,15 @@ function numberOrUndefined(value: number | string | null | undefined): number | 
 
 function createTimelineItemId(media: MediaDto, timestamp: string): string {
   return `tl-${videoMediaKind(media)}-${media.id}-${slugTimestamp(timestamp)}`;
+}
+
+function createShotTimelineItemId(result: VideoEditorShotSearchResult, timestamp: string): string {
+  return `tl-shot-${slugId(result.shotId)}-${slugTimestamp(timestamp)}`;
+}
+
+function slugId(value: string): string {
+  const compact = value.replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
+  return compact || "shot";
 }
 
 function slugTimestamp(timestamp: string): string {

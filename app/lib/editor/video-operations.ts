@@ -16,6 +16,7 @@ import type {
   VideoTransform,
 } from "./video-document";
 import { validateVideoProjectDocument } from "./video-document";
+import { validateAudioFadesForDuration } from "./editor-audio";
 
 export type VideoOperationSource = "manual" | "ai";
 
@@ -1089,6 +1090,9 @@ function validateAddItem(
     if (isMediaTimelineItem(item)) {
       validateMediaRange(document, item, errors);
     }
+    if (item.type === "audio") {
+      errors.push(...validateAudioFadesForDuration(item, `${item.id}.fades`));
+    }
   } else if (expectedMediaKinds.length > 0) {
     errors.push("Item must reference media.");
   }
@@ -1188,6 +1192,9 @@ function validateSplitOperation(
     if (isMediaTimelineItem(item)) {
       validateMediaRange(document, item, errors);
     }
+    if (item.type === "audio") {
+      errors.push(...validateAudioFadesForDuration(item, `${item.id}.fades`));
+    }
   }
 
   const replacementItems = operation.items.map((item) => cloneJson(item));
@@ -1235,6 +1242,10 @@ function validatePotentialItem(
   updatedItem: VideoTimelineItem,
   errors: string[],
 ): void {
+  if (updatedItem.type === "audio") {
+    errors.push(...validateAudioFadesForDuration(updatedItem, `${location.item.id}.fades`));
+  }
+
   validatePotentialDocument(
     document,
     {

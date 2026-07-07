@@ -126,7 +126,7 @@ export function EditorModalLayer() {
     return null;
   }
 
-  if (activeModal === "import-media" || activeModal === "fullscreen") {
+  if (activeModal === "import-media" || activeModal === "fullscreen" || activeModal === "export") {
     return null;
   }
 
@@ -137,13 +137,6 @@ export function EditorModalLayer() {
       body: "Mock import is ready. Drop zones, cloud import, and upload progress will connect here later.",
       action: "Add mock clip",
       toast: "Mock clip added to the library",
-    },
-    export: {
-      icon: "ios_share",
-      title: "Export Preview",
-      body: "Mock export settings are staged for H.264 1080p with captions burned in.",
-      action: "Start mock export",
-      toast: "Mock export queued",
     },
     fullscreen: {
       icon: "fullscreen",

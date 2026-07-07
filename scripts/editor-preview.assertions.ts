@@ -10,6 +10,7 @@ import {
 } from "../app/lib/editor/editor-preview";
 import {
   createMockVideoProjectDocument,
+  type AudioTimelineItem,
   type ImageOverlayTimelineItem,
   type TextTimelineItem,
   type VideoClipTimelineItem,
@@ -19,11 +20,94 @@ import {
 function main(): void {
   assertActiveVideoClipResolvesAtPlayhead();
   assertTrimAndSpeedMapToSourceTime();
+  assertActiveAudioPlansResolveAndMixAtPlayhead();
+  assertAudioSoloMuteAndFadePlanning();
   assertImageAndTextOverlaysResolveInActiveRange();
   assertProxyUrlIsPreferred();
   assertMissingMediaReturnsWarningState();
   assertFrameStepClampsAtTimelineEdges();
   assertFrameBoundsAndSafeGuidesAreComputed();
+}
+
+function assertActiveAudioPlansResolveAndMixAtPlayhead(): void {
+  const base = withPreviewUrls(createMockVideoProjectDocument("preview", "Preview"));
+  const standalone: AudioTimelineItem = {
+    id: "tl-standalone-music",
+    type: "audio",
+    mediaId: "audio-music",
+    timelineStart: 7,
+    duration: 6,
+    sourceIn: 2,
+    sourceOut: 8,
+    volume: 0.5,
+    muted: false,
+    fades: { fadeInDuration: 0, fadeOutDuration: 0 },
+  };
+  const audioTrack = base.tracks.find((track) => track.id === "a1");
+  assert.ok(audioTrack);
+  const document: VideoProjectDocument = {
+    ...base,
+    tracks: base.tracks.map((track) =>
+      track.id === "a1" ? { ...track, items: [...track.items, standalone] } : track,
+    ),
+  };
+
+  const plan = createProgramMonitorPlan({ document, currentTime: 8, previewVolume: 0.8 });
+  assert.deepEqual(plan.activeAudio.map((audio) => audio.item.id), ["tl-audio-main", "tl-standalone-music"]);
+  assert.equal(plan.primaryAudio?.item.id, "tl-audio-main");
+
+  const linked = plan.activeAudio.find((audio) => audio.item.id === "tl-audio-main");
+  const music = plan.activeAudio.find((audio) => audio.item.id === "tl-standalone-music");
+  assert.equal(linked?.role, "linked");
+  assert.equal(music?.role, "standalone");
+  assert.equal(linked?.trackId, "a1");
+  assert.equal(linked?.sourceTime, 6);
+  assert.equal(music?.sourceTime, 3);
+  assert.equal(music?.effectiveVolume, 0.4);
+}
+
+function assertAudioSoloMuteAndFadePlanning(): void {
+  const base = withPreviewUrls(createMockVideoProjectDocument("preview", "Preview"));
+  const fadeItem: AudioTimelineItem = {
+    id: "tl-fade",
+    type: "audio",
+    mediaId: "audio-music",
+    timelineStart: 5,
+    duration: 10,
+    sourceIn: 0,
+    sourceOut: 10,
+    volume: 0.8,
+    muted: false,
+    fades: { fadeInDuration: 2, fadeOutDuration: 4 },
+  };
+  const document: VideoProjectDocument = {
+    ...base,
+    tracks: [
+      ...base.tracks,
+      {
+        id: "a2",
+        kind: "audio",
+        label: "A2",
+        locked: false,
+        hidden: false,
+        muted: false,
+        items: [fadeItem],
+      },
+    ],
+  };
+
+  const fadingIn = createProgramMonitorPlan({ document, currentTime: 6, previewVolume: 0.5, soloedAudioTrackIds: ["a2"] });
+  assert.equal(fadingIn.activeAudio.length, 1);
+  assert.equal(fadingIn.activeAudio[0].item.id, "tl-fade");
+  assert.equal(fadingIn.activeAudio[0].fadeGain, 0.5);
+  assert.equal(fadingIn.activeAudio[0].effectiveVolume, 0.2);
+
+  const fadingOut = createProgramMonitorPlan({ document, currentTime: 13, previewVolume: 1, soloedAudioTrackIds: ["a2"] });
+  assert.equal(fadingOut.activeAudio[0].fadeGain, 0.5);
+  assert.equal(fadingOut.activeAudio[0].effectiveVolume, 0.4);
+
+  const muted = createProgramMonitorPlan({ document, currentTime: 6, previewMuted: true, soloedAudioTrackIds: ["a2"] });
+  assert.equal(muted.activeAudio[0].muted, true);
 }
 
 function assertActiveVideoClipResolvesAtPlayhead(): void {
@@ -76,6 +160,7 @@ function assertImageAndTextOverlaysResolveInActiveRange(): void {
       fontFamily: "Inter",
       fontSize: 52,
       color: "#ffffff",
+      backgroundColor: "#000000",
       textAlign: "center",
     },
     transform: { x: 0, y: 260, scaleX: 1, scaleY: 1, rotation: 0 },
@@ -116,6 +201,15 @@ function assertImageAndTextOverlaysResolveInActiveRange(): void {
     plan.overlays.map((overlay) => overlay.item.id),
     ["tl-caption", "tl-logo", "tl-title"],
   );
+  const titleOverlay = plan.overlays.find((overlay) => overlay.item.id === "tl-title");
+  assert.equal(titleOverlay?.kind, "text");
+  assert.equal(titleOverlay?.kind === "text" ? titleOverlay.item.style.backgroundColor : undefined, "#000000");
+
+  const beforeOverlays = createProgramMonitorPlan({ document, currentTime: 4 });
+  assert.deepEqual(beforeOverlays.overlays.map((overlay) => overlay.item.id), []);
+
+  const afterTitle = createProgramMonitorPlan({ document, currentTime: 10 });
+  assert.equal(afterTitle.overlays.some((overlay) => overlay.item.id === "tl-title"), false);
 }
 
 function assertProxyUrlIsPreferred(): void {

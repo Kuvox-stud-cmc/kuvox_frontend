@@ -5,11 +5,15 @@ import {
   modalOpened,
   popoverToggled,
   searchQueryChanged,
+  selectCanRedo,
+  selectCanUndo,
   selectChromeState,
   selectEditorSyncChromeState,
   timelineToggled,
   type EditorSyncStatus,
   type EditorMode,
+  videoRedoRequested,
+  videoUndoRequested,
 } from "~/store/slices/editor-slice";
 
 import type { EditorProjectMock } from "./mock-editor-data";
@@ -20,7 +24,7 @@ interface EditorTopBarProps {
 }
 
 const modes: Array<{ value: EditorMode; label: string; icon?: string }> = [
-  { value: "manual", label: "Manual" },
+  { value: "manual", label: "Manual", icon: "edit" },
   { value: "ai", label: "AI Agent", icon: "auto_awesome" },
 ];
 
@@ -28,10 +32,12 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
   const dispatch = useAppDispatch();
   const { editorMode, searchQuery } = useAppSelector(selectChromeState);
   const { syncStatus, pendingSyncCount } = useAppSelector(selectEditorSyncChromeState);
+  const canUndo = useAppSelector(selectCanUndo);
+  const canRedo = useAppSelector(selectCanRedo);
   const syncCopy = syncStatusCopy(syncStatus, pendingSyncCount);
 
   return (
-    <header className="z-50 grid h-toolbar-width shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-outline-variant bg-surface px-3 2xl:px-4">
+    <header className="z-50 grid h-toolbar-height shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-outline-variant bg-surface px-2 lg:gap-3 lg:px-3 2xl:px-4">
       <div className="flex min-w-0 items-center gap-2 2xl:gap-3">
         <EditorIconButton
           icon="video_library"
@@ -39,7 +45,7 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
           className="h-8 w-8"
           onClick={() => dispatch(libraryToggled())}
         />
-        <span className="text-headline-md font-bold tracking-tight text-primary">Kuvox</span>
+        <span className="shrink-0 text-headline-md font-bold tracking-tight text-primary">Kuvox</span>
         <div className="hidden h-6 w-px bg-outline-variant sm:block" />
         <div className="hidden min-w-0 sm:block">
           <span className="block truncate text-body-sm text-on-surface">{project.name}</span>
@@ -49,7 +55,7 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex min-w-0 items-center justify-center gap-2 2xl:gap-3">
         <div className="flex items-center rounded-[6px] border border-outline-variant bg-surface-container-low p-1">
           {modes.map((mode) => {
             const active = editorMode === mode.value;
@@ -57,17 +63,18 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
               <button
                 key={mode.value}
                 type="button"
+                aria-label={`${mode.label} editing mode`}
+                aria-pressed={active}
                 onClick={() => dispatch(editorModeChanged(mode.value))}
-                className={`flex h-8 items-center gap-1 rounded-[4px] px-2.5 text-label-md font-semibold transition-colors duration-150 sm:px-4 ${
+                title={`${mode.label} editing mode`}
+                className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-[4px] px-2 text-label-md font-semibold transition-colors duration-150 motion-reduce:transition-none xl:px-3 2xl:px-4 ${
                   active
                     ? "bg-surface-container-highest text-on-surface shadow-sm"
                     : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
-                {mode.icon ? (
-                  <EditorIcon className="text-[16px]">{mode.icon}</EditorIcon>
-                ) : null}
-                {mode.label}
+                <EditorIcon className="text-[16px]">{mode.icon ?? "edit"}</EditorIcon>
+                <span className="hidden whitespace-nowrap xl:inline">{mode.label}</span>
               </button>
             );
           })}
@@ -78,8 +85,10 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
             search
           </EditorIcon>
           <input
-            className="h-8 w-60 rounded-[4px] border border-outline-variant bg-surface-container-low py-1 pl-9 pr-3 text-body-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant focus:border-primary focus:ring-1 focus:ring-primary"
+            className="h-8 w-60 rounded-[4px] border border-outline-variant bg-surface-container-low py-1 pl-9 pr-3 text-body-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant focus:border-primary focus:ring-1 focus:ring-primary motion-reduce:transition-none"
             placeholder="Search tools or media..."
+            aria-label="Search tools or media"
+            data-editor-shortcuts="ignore"
             type="search"
             value={searchQuery}
             onChange={(event) => dispatch(searchQueryChanged(event.target.value))}
@@ -94,10 +103,30 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
           {syncCopy.label}
         </span>
         <EditorIconButton
+          icon="undo"
+          label="Undo"
+          className="h-8 w-8"
+          disabled={!canUndo}
+          onClick={() => dispatch(videoUndoRequested())}
+        />
+        <EditorIconButton
+          icon="redo"
+          label="Redo"
+          className="h-8 w-8"
+          disabled={!canRedo}
+          onClick={() => dispatch(videoRedoRequested())}
+        />
+        <EditorIconButton
           icon="view_timeline"
           label="Toggle timeline"
           className="h-8 w-8"
           onClick={() => dispatch(timelineToggled())}
+        />
+        <EditorIconButton
+          icon="ios_share"
+          label="Export video"
+          className="h-8 w-8"
+          onClick={() => dispatch(modalOpened("export"))}
         />
         <EditorIconButton
           icon="notifications"
@@ -113,7 +142,7 @@ export function EditorTopBar({ project }: EditorTopBarProps) {
         />
         <button
           type="button"
-          className="ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-primary transition-colors hover:border-primary/50 hover:bg-surface-container-highest 2xl:ml-2"
+          className="ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-primary transition-colors hover:border-primary/50 hover:bg-surface-container-highest motion-reduce:transition-none 2xl:ml-2"
           aria-label="Open profile"
           onClick={() => dispatch(popoverToggled("profile"))}
         >

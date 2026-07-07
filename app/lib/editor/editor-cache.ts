@@ -81,6 +81,10 @@ export interface CachedVideoTimelineDraftRecord extends EditorCacheFreshness {
   documentUpdatedAt: string;
   revision: number;
   document: VideoProjectDocument;
+  serverRevisionNumber?: number;
+  lastSyncedAt?: string | null;
+  hasUnsyncedChanges?: boolean;
+  syncError?: string | null;
 }
 
 export interface CachedMediaAssetRecord extends EditorCacheFreshness {
@@ -184,6 +188,14 @@ export interface SaveMediaObjectCacheEntryInput {
   now?: number;
 }
 
+export interface SaveVideoTimelineDraftOptions {
+  now?: number;
+  serverRevisionNumber?: number;
+  lastSyncedAt?: string | null;
+  hasUnsyncedChanges?: boolean;
+  syncError?: string | null;
+}
+
 export interface EditorCacheCleanupPolicy {
   now?: number;
   undoCheckpointLimit?: number;
@@ -227,8 +239,9 @@ export interface EditorCache {
   getProjectMetadata(scope: EditorCacheScope, projectId: string, options?: { expectedUpdatedAt?: string; now?: number }): Promise<EditorCacheResult<ProjectDto>>;
   saveProjectSnapshot(input: SaveProjectSnapshotInput): Promise<EditorCacheResult<CachedProjectSnapshotRecord>>;
   getProjectSnapshot(scope: EditorCacheScope, projectId: string, options?: { now?: number }): Promise<EditorCacheResult<CachedProjectSnapshotRecord>>;
-  saveVideoTimelineDraft(document: VideoProjectDocument, scope: EditorCacheScope, options?: { now?: number }): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>>;
+  saveVideoTimelineDraft(document: VideoProjectDocument, scope: EditorCacheScope, options?: SaveVideoTimelineDraftOptions): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>>;
   getVideoTimelineDraft(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<VideoProjectDocument>>;
+  getVideoTimelineDraftRecord(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>>;
   deleteVideoTimelineDraft(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<void>>;
   saveMediaAssets(media: MediaDto[], scope: EditorCacheScope, options?: { ttlMs?: number; now?: number }): Promise<EditorCacheResult<CachedMediaAssetRecord[]>>;
   listMediaAssets(scope: EditorCacheScope, options?: { now?: number }): Promise<EditorCacheResult<MediaDto[]>>;
@@ -324,7 +337,7 @@ export async function getProjectSnapshot(
 export async function saveVideoTimelineDraft(
   document: VideoProjectDocument,
   scope: EditorCacheScope,
-  options?: { now?: number },
+  options?: SaveVideoTimelineDraftOptions,
 ): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>> {
   return withEditorCache((cache) => cache.saveVideoTimelineDraft(document, scope, options));
 }
@@ -334,6 +347,13 @@ export async function getVideoTimelineDraft(
   projectId: string,
 ): Promise<EditorCacheResult<VideoProjectDocument>> {
   return withEditorCache((cache) => cache.getVideoTimelineDraft(scope, projectId));
+}
+
+export async function getVideoTimelineDraftRecord(
+  scope: EditorCacheScope,
+  projectId: string,
+): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>> {
+  return withEditorCache((cache) => cache.getVideoTimelineDraftRecord(scope, projectId));
 }
 
 export async function deleteVideoTimelineDraft(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<void>> {
@@ -513,6 +533,60 @@ export function createMediaObjectCacheRecord(input: SaveMediaObjectCacheEntryInp
   });
 }
 
+export function createOperationLogRecord(input: {
+  scope: EditorCacheScope;
+  projectId: string;
+  batch: VideoOperationBatch;
+  result?: VideoOperationApplyResult;
+  now?: number;
+}): CachedOperationLogRecord {
+  return omitUndefined({
+    id: buildEditorCacheKey(input.scope, "operationLog", input.projectId, input.batch.id),
+    scopeProjectKey: projectScopeKey(input.scope, input.projectId),
+    scopeKey: scopeKey(input.scope),
+    scope: input.scope,
+    projectId: input.projectId,
+    timestamp: input.batch.timestamp,
+    revision: input.result?.document.history.revision,
+    batch: input.batch,
+    result: input.result,
+    cachedAt: input.now ?? Date.now(),
+  }) as CachedOperationLogRecord;
+}
+
+export function createUndoCheckpointRecord(input: {
+  scope: EditorCacheScope;
+  projectId: string;
+  operationId: string;
+  timestamp?: string;
+  checkpoint: VideoProjectDocument;
+  undo?: VideoOperationUndoPayload;
+  historyEntry?: VideoHistoryEntry;
+  now?: number;
+}): EditorCacheResult<CachedUndoCheckpointRecord> {
+  const checkpoint = serializeVideoTimelineDraft(input.checkpoint);
+  if (!checkpoint.ok) return checkpoint;
+
+  const timestamp = input.timestamp ?? checkpoint.value.updatedAt;
+  return {
+    ok: true,
+    value: omitUndefined({
+      id: buildEditorCacheKey(input.scope, "undoCheckpoint", input.projectId, input.operationId),
+      scopeProjectKey: projectScopeKey(input.scope, input.projectId),
+      scopeKey: scopeKey(input.scope),
+      scope: input.scope,
+      projectId: input.projectId,
+      operationId: input.operationId,
+      timestamp,
+      revision: checkpoint.value.history.revision,
+      checkpoint: checkpoint.value,
+      undo: input.undo,
+      historyEntry: input.historyEntry,
+      cachedAt: input.now ?? Date.now(),
+    }) as CachedUndoCheckpointRecord,
+  };
+}
+
 export function planEditorCacheCleanup(
   input: EditorCacheCleanupPlanInput,
   policy: EditorCacheCleanupPolicy = {},
@@ -638,7 +712,7 @@ class DexieEditorCache implements EditorCache {
   async saveVideoTimelineDraft(
     document: VideoProjectDocument,
     scope: EditorCacheScope,
-    options: { now?: number } = {},
+    options: SaveVideoTimelineDraftOptions = {},
   ): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>> {
     const serialized = serializeVideoTimelineDraft(document);
     if (!serialized.ok) return serialized;
@@ -654,6 +728,10 @@ class DexieEditorCache implements EditorCache {
         documentUpdatedAt: document.updatedAt,
         revision: document.history.revision,
         document: serialized.value,
+        serverRevisionNumber: options.serverRevisionNumber,
+        lastSyncedAt: options.lastSyncedAt,
+        hasUnsyncedChanges: options.hasUnsyncedChanges,
+        syncError: options.syncError,
         cachedAt,
       };
 
@@ -670,6 +748,29 @@ class DexieEditorCache implements EditorCache {
         return { ok: false, reason: "schema-mismatch" };
       }
       return coerceVideoTimelineDraft(record.document, projectId);
+    });
+  }
+
+  async getVideoTimelineDraftRecord(
+    scope: EditorCacheScope,
+    projectId: string,
+  ): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>> {
+    return this.read(async () => {
+      const record = await this.videoTimelineDrafts.get(draftKey(scope, projectId));
+      if (!record) return { ok: false, reason: "miss" };
+      if (record.documentSchemaVersion !== VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION) {
+        return { ok: false, reason: "schema-mismatch" };
+      }
+
+      const draft = coerceVideoTimelineDraft(record.document, projectId);
+      if (!draft.ok) return draft;
+      return {
+        ok: true,
+        value: {
+          ...record,
+          document: draft.value,
+        },
+      };
     });
   }
 
@@ -743,19 +844,7 @@ class DexieEditorCache implements EditorCache {
     now?: number;
   }): Promise<EditorCacheResult<CachedOperationLogRecord>> {
     return this.run(async () => {
-      const record = omitUndefined({
-        id: buildEditorCacheKey(input.scope, "operationLog", input.projectId, input.batch.id),
-        scopeProjectKey: projectScopeKey(input.scope, input.projectId),
-        scopeKey: scopeKey(input.scope),
-        scope: input.scope,
-        projectId: input.projectId,
-        timestamp: input.batch.timestamp,
-        revision: input.result?.document.history.revision,
-        batch: input.batch,
-        result: input.result,
-        cachedAt: input.now ?? Date.now(),
-      }) as CachedOperationLogRecord;
-
+      const record = createOperationLogRecord(input);
       await this.operationLog.put(record);
       return record;
     });
@@ -778,28 +867,12 @@ class DexieEditorCache implements EditorCache {
     historyEntry?: VideoHistoryEntry;
     now?: number;
   }): Promise<EditorCacheResult<CachedUndoCheckpointRecord>> {
-    const checkpoint = serializeVideoTimelineDraft(input.checkpoint);
-    if (!checkpoint.ok) return checkpoint;
+    const record = createUndoCheckpointRecord(input);
+    if (!record.ok) return record;
 
     return this.run(async () => {
-      const timestamp = input.timestamp ?? checkpoint.value.updatedAt;
-      const record = omitUndefined({
-        id: buildEditorCacheKey(input.scope, "undoCheckpoint", input.projectId, input.operationId),
-        scopeProjectKey: projectScopeKey(input.scope, input.projectId),
-        scopeKey: scopeKey(input.scope),
-        scope: input.scope,
-        projectId: input.projectId,
-        operationId: input.operationId,
-        timestamp,
-        revision: checkpoint.value.history.revision,
-        checkpoint: checkpoint.value,
-        undo: input.undo,
-        historyEntry: input.historyEntry,
-        cachedAt: input.now ?? Date.now(),
-      }) as CachedUndoCheckpointRecord;
-
-      await this.undoCheckpoints.put(record);
-      return record;
+      await this.undoCheckpoints.put(record.value);
+      return record.value;
     });
   }
 

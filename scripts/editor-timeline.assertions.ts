@@ -16,7 +16,13 @@ import {
   timelineScale,
   timeToPixel,
 } from "../app/lib/editor/editor-timeline";
-import { createMockVideoProjectDocument, type VideoClipTimelineItem } from "../app/lib/editor/video-document";
+import {
+  applyVideoOperation,
+  type DeleteItemOperation,
+  type MoveItemOperation,
+  type VideoOperationMetadata,
+} from "../app/lib/editor/video-operations";
+import { createMockVideoProjectDocument, type AudioTimelineItem, type TextTimelineItem, type VideoClipTimelineItem } from "../app/lib/editor/video-document";
 
 const timestamp = "2026-03-01T12:00:00.000Z";
 
@@ -27,8 +33,62 @@ function main(): void {
   assertDropPlanning();
   assertTrimMath();
   assertSplitCreation();
+  assertTextItemsUseTimelineOperations();
   assertLinkedExpansion();
   assertMarqueeAndRangeSelection();
+}
+
+function assertTextItemsUseTimelineOperations(): void {
+  const document = createMockVideoProjectDocument("timeline", "Timeline");
+  const textItem = document.tracks.find((track) => track.id === "t1")?.items[0] as TextTimelineItem | undefined;
+  assert.ok(textItem);
+
+  const move: MoveItemOperation = {
+    ...metadata("move-text", "Move text", [textItem.id]),
+    type: "moveItem",
+    itemId: textItem.id,
+    timelineStart: 12,
+  };
+  const moved = applyVideoOperation(document, move);
+  assert.equal(moved.ok, true, moved.errors?.join("; "));
+  const movedText = moved.document.tracks.find((track) => track.id === "t1")?.items.find((item) => item.id === textItem.id);
+  assert.equal(movedText?.timelineStart, 12);
+
+  const trim = buildTrimPlan({
+    item: textItem,
+    edge: "end",
+    pointerTime: 9,
+    frameRate: 30,
+  });
+  assert.ok(trim);
+  assert.equal(trim.operation.sourceIn, undefined);
+  assert.equal(trim.operation.sourceOut, undefined);
+  const trimmed = applyVideoOperation(document, {
+    ...metadata("trim-text", "Trim text", [textItem.id]),
+    ...trim.operation,
+  });
+  assert.equal(trimmed.ok, true, trimmed.errors?.join("; "));
+
+  const split = buildSplitOperation({
+    item: textItem,
+    playheadTime: 9,
+    frameRate: 30,
+    metadata: metadata("split-text", "Split text", [textItem.id]),
+  });
+  assert.ok(split);
+  assert.equal(split.items[0].type, "text");
+  assert.equal(split.items[1].type, "text");
+  const splitResult = applyVideoOperation(document, split);
+  assert.equal(splitResult.ok, true, splitResult.errors?.join("; "));
+
+  const deleteText: DeleteItemOperation = {
+    ...metadata("delete-text", "Delete text", [textItem.id]),
+    type: "deleteItem",
+    itemIds: [textItem.id],
+  };
+  const deleted = applyVideoOperation(document, deleteText);
+  assert.equal(deleted.ok, true, deleted.errors?.join("; "));
+  assert.equal(deleted.document.tracks.find((track) => track.id === "t1")?.items.length, 0);
 }
 
 function assertScaleConversions(): void {
@@ -175,6 +235,26 @@ function assertSplitCreation(): void {
     },
   });
   assert.equal(boundary, null);
+
+  const audioItem = document.tracks.find((track) => track.id === "a1")?.items.find((item) => item.id === "tl-audio-bed");
+  assert.ok(audioItem?.type === "audio");
+  const audioSplit = buildSplitOperation({
+    item: audioItem,
+    playheadTime: 46.4,
+    frameRate: 30,
+    metadata: {
+      id: "split-audio",
+      source: "manual",
+      timestamp,
+      label: "Split audio",
+      affectedEntityIds: [audioItem.id],
+    },
+  });
+  assert.ok(audioSplit);
+  assert.equal(audioSplit.items[0].type, "audio");
+  assert.equal(audioSplit.items[1].type, "audio");
+  assert.equal((audioSplit.items[0] as AudioTimelineItem).sourceOut, 5);
+  assert.equal((audioSplit.items[1] as AudioTimelineItem).sourceIn, 5);
 }
 
 function assertLinkedExpansion(): void {
@@ -232,6 +312,16 @@ function mediaDto(overrides: Partial<MediaDto> = {}): MediaDto {
       terminal: true,
     },
     ...overrides,
+  };
+}
+
+function metadata(id: string, label: string, affectedEntityIds: string[]): VideoOperationMetadata {
+  return {
+    id,
+    source: "manual",
+    timestamp,
+    label,
+    affectedEntityIds,
   };
 }
 

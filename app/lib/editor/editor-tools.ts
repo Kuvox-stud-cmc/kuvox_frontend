@@ -11,7 +11,7 @@ export type EditorToolId =
 
 export type TimelineEditorToolId = Extract<EditorToolId, "select" | "trim" | "split">;
 export type EditorToolAvailability = "enabled" | "disabled";
-export type EditorToolKind = "timeline" | "mode" | "future";
+export type EditorToolKind = "timeline" | "create" | "mode" | "future";
 export type EditorToolSection = "timeline" | "create" | "adjust" | "assistant";
 
 export interface EditorToolDefinition {
@@ -57,8 +57,8 @@ export const editorToolDefinitions = [
     id: "text",
     label: "Text",
     icon: "title",
-    availability: "disabled",
-    kind: "future",
+    availability: "enabled",
+    kind: "create",
     section: "create",
   },
   {

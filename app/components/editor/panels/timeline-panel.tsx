@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
 
 import {
   buildSplitOperation,
   buildTrimPlan,
+  computeTimelineContentSize,
   createItemLayouts,
+  createTimelineLayoutWindow,
   createTrackLayouts,
   expandLinkedItemIds,
   findCompatibleTrack,
@@ -20,9 +22,14 @@ import {
   type DropPlacement,
   type MarqueeRect,
   type TimelineItemLayout,
+  type TimelineViewport,
 } from "~/lib/editor/editor-timeline";
 import { createVideoOperationBatch, type VideoOperation, type VideoOperationMetadata } from "~/lib/editor/video-operations";
-import type { VideoTimelineItem, VideoTrack } from "~/lib/editor/video-document";
+import {
+  createVideoEditorPerformanceMetric,
+  queueVideoEditorPerformanceMetric,
+} from "~/lib/editor/video-performance.client";
+import type { VideoMediaReference, VideoTimelineItem, VideoTrack } from "~/lib/editor/video-document";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   activeToolChanged,
@@ -30,9 +37,11 @@ import {
   currentTimeChanged,
   selectActiveToolId,
   selectCurrentTimeSeconds,
+  selectProjectMediaAvailabilityById,
   selectSelectedItemIds,
   selectTimelinePanelState,
   selectVideoDocument,
+  selectedTextItemsDuplicated,
   snappingToggled,
   timelineHeightChanged,
   timelineItemsSelected,
@@ -58,12 +67,14 @@ type DragState =
       pointerId: number;
       startX: number;
       startY: number;
+      startedAt: number;
       initialItems: Array<{ item: VideoTimelineItem; trackId: string }>;
       activeItemId: string;
     }
   | {
       kind: "trim";
       pointerId: number;
+      startedAt: number;
       item: VideoTimelineItem;
       edge: "start" | "end";
     }
@@ -72,6 +83,7 @@ type DragState =
       pointerId: number;
       originX: number;
       originY: number;
+      startedAt: number;
     };
 
 type DragPreview =
@@ -92,6 +104,8 @@ type DragPreview =
       rect: MarqueeRect;
     };
 
+type DropPlanPreview = { trackId?: string; valid: boolean; x: number; y: number; reason?: string };
+
 const clipToneClass: Record<VideoTimelineItem["type"], string> = {
   video: "border-secondary/70 bg-secondary-container/85 text-on-secondary",
   audio: "border-outline/80 bg-surface-container-high text-on-surface",
@@ -106,6 +120,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
   const selectedItemIds = useAppSelector(selectSelectedItemIds);
   const currentTime = useAppSelector(selectCurrentTimeSeconds);
   const activeToolId = useAppSelector(selectActiveToolId);
+  const projectMediaAvailabilityById = useAppSelector(selectProjectMediaAvailabilityById);
   const {
     open: timelineOpen,
     height: timelineHeight,
@@ -117,15 +132,54 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackAreaRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<DragState | null>(null);
+  const dragPreviewFrame = useRef<number | null>(null);
+  const dropPlanFrame = useRef<number | null>(null);
+  const pendingDragPreview = useRef<DragPreview | null>(null);
+  const pendingDropPlan = useRef<DropPlanPreview | null>(null);
+  const scrollFrame = useRef<number | null>(null);
+  const pendingScroll = useRef<{ left: number; top: number } | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
-  const [dropPlan, setDropPlan] = useState<{ trackId?: string; valid: boolean; x: number; y: number; reason?: string } | null>(null);
+  const [dropPlan, setDropPlan] = useState<DropPlanPreview | null>(null);
+  const [viewport, setViewport] = useState<TimelineViewport>({
+    scrollLeft: 0,
+    scrollTop: 0,
+    width: 1,
+    height: 1,
+  });
   const scale = useMemo(() => timelineScale(timelineZoom), [timelineZoom]);
   const trackLayouts = useMemo(() => document ? createTrackLayouts(document) : [], [document]);
   const itemLayouts = useMemo(() => document ? createItemLayouts(document, scale) : [], [document, scale]);
+  const contentSize = useMemo(
+    () => document ? computeTimelineContentSize({ document, scale }) : { width: 960, height: 192 },
+    [document, scale],
+  );
+  const layoutWindow = useMemo(
+    () =>
+      document
+        ? createTimelineLayoutWindow({
+            document,
+            trackLayouts,
+            itemLayouts,
+            viewport,
+            scale,
+            contentSize,
+          })
+        : {
+            windowed: false,
+            trackLayouts,
+            itemLayouts,
+            renderedItemCount: itemLayouts.length,
+            totalItemCount: itemLayouts.length,
+            totalTrackCount: trackLayouts.length,
+            contentSize,
+          },
+    [contentSize, document, itemLayouts, scale, trackLayouts, viewport],
+  );
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
-  const trackHeight = trackLayouts.reduce((height, track) => height + track.height, 0);
   const duration = document ? timelineDuration(document) : 60;
-  const contentWidth = Math.max(900, timeToPixel(duration, scale));
+  const contentWidth = Math.max(960, timeToPixel(duration, scale), contentSize.width);
+  const hasTimelineItems = itemLayouts.length > 0;
+  const timelineTrackAreaHeight = contentSize.height;
   const playheadLeft = timeToPixel(currentTime, scale);
   const handleResizeStart = useDragResize({
     axis: "y",
@@ -144,6 +198,96 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
       y: event.clientY - rect.top,
     };
   }, []);
+
+  useEffect(() => {
+    const scrollNode = scrollRef.current;
+    if (!scrollNode) return undefined;
+
+    const updateViewportSize = () => {
+      setViewport((current) => ({
+        ...current,
+        scrollLeft: scrollNode.scrollLeft,
+        scrollTop: scrollNode.scrollTop,
+        width: Math.max(1, scrollNode.clientWidth),
+        height: Math.max(1, scrollNode.clientHeight),
+      }));
+    };
+    const observer = new ResizeObserver(updateViewportSize);
+    observer.observe(scrollNode);
+    updateViewportSize();
+
+    return () => observer.disconnect();
+  }, [timelineOpen]);
+
+  useEffect(() => () => {
+    if (dragPreviewFrame.current !== null) cancelAnimationFrame(dragPreviewFrame.current);
+    if (dropPlanFrame.current !== null) cancelAnimationFrame(dropPlanFrame.current);
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+  }, []);
+
+  const queueDragPreview = useCallback((preview: DragPreview | null) => {
+    pendingDragPreview.current = preview;
+    if (dragPreviewFrame.current !== null) return;
+    dragPreviewFrame.current = requestAnimationFrame(() => {
+      dragPreviewFrame.current = null;
+      setDragPreview(pendingDragPreview.current);
+    });
+  }, []);
+
+  const flushDragPreview = useCallback(() => {
+    if (dragPreviewFrame.current !== null) {
+      cancelAnimationFrame(dragPreviewFrame.current);
+      dragPreviewFrame.current = null;
+    }
+    setDragPreview(pendingDragPreview.current);
+    return pendingDragPreview.current;
+  }, []);
+
+  const clearDragPreview = useCallback(() => {
+    pendingDragPreview.current = null;
+    flushDragPreview();
+  }, [flushDragPreview]);
+
+  const queueDropPlan = useCallback((plan: DropPlanPreview | null) => {
+    pendingDropPlan.current = plan;
+    if (dropPlanFrame.current !== null) return;
+    dropPlanFrame.current = requestAnimationFrame(() => {
+      dropPlanFrame.current = null;
+      setDropPlan(pendingDropPlan.current);
+    });
+  }, []);
+
+  const flushDropPlan = useCallback(() => {
+    if (dropPlanFrame.current !== null) {
+      cancelAnimationFrame(dropPlanFrame.current);
+      dropPlanFrame.current = null;
+    }
+    setDropPlan(pendingDropPlan.current);
+    return pendingDropPlan.current;
+  }, []);
+
+  const clearDropPlan = useCallback(() => {
+    pendingDropPlan.current = null;
+    flushDropPlan();
+  }, [flushDropPlan]);
+
+  const scheduleScrollUpdate = useCallback((left: number, top: number, width: number, height: number) => {
+    pendingScroll.current = { left, top };
+    if (scrollFrame.current !== null) return;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      const next = pendingScroll.current;
+      if (!next) return;
+      setViewport((current) => ({
+        ...current,
+        scrollLeft: next.left,
+        scrollTop: next.top,
+        width,
+        height,
+      }));
+      dispatch(timelineScrollChanged(next));
+    });
+  }, [dispatch]);
 
   const operationMetadata = useCallback((id: string, label: string, affectedEntityIds: string[]): VideoOperationMetadata => {
     const timestamp = new Date().toISOString();
@@ -225,13 +369,17 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
     }));
   }, [clipsLinked, dispatch, document, operationMetadata, selectedItemIds]);
 
+  const duplicateSelectedText = useCallback(() => {
+    dispatch(selectedTextItemsDuplicated({}));
+  }, [dispatch]);
+
   if (!timelineOpen) {
     return (
       <footer className="z-40 flex h-10 shrink-0 items-center justify-center border-t border-outline-variant bg-surface">
         <button
           type="button"
           onClick={() => dispatch(timelineOpenChanged(true))}
-          className="flex h-8 items-center gap-2 rounded-[4px] border border-outline-variant px-3 text-label-md font-semibold uppercase text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          className="flex h-8 items-center gap-2 rounded-[4px] border border-outline-variant px-3 text-label-md font-semibold uppercase text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none"
         >
           <EditorIcon className="text-[18px]">keyboard_arrow_up</EditorIcon>
           Timeline
@@ -242,32 +390,19 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
 
   return (
     <footer
-      className="relative z-40 flex shrink-0 flex-col border-t border-outline-variant bg-surface"
+      className="relative z-40 flex min-h-video-timeline-min max-h-video-timeline-max shrink-0 flex-col border-t border-outline-variant bg-surface"
       style={{ height: timelineHeight }}
       tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          dispatch(timelineSelectionCleared());
-          setDragPreview(null);
-        }
-        if (event.key === "Delete" || event.key === "Backspace") {
-          event.preventDefault();
-          deleteSelected();
-        }
-        if (event.key.toLowerCase() === "s" && !event.metaKey && !event.ctrlKey) {
-          splitAtPlayhead(selectedItems(document, selectedItemIds));
-        }
-      }}
     >
       <div
         role="separator"
         aria-orientation="horizontal"
         title="Resize timeline"
         onPointerDown={handleResizeStart}
-        className="absolute left-0 top-[-3px] z-50 h-1.5 w-full cursor-row-resize bg-transparent transition-colors hover:bg-primary/40"
+        className="absolute left-0 top-[-3px] z-50 h-1.5 w-full cursor-row-resize bg-transparent transition-colors hover:bg-primary/40 motion-reduce:transition-none"
       />
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-outline-variant bg-surface-container-lowest px-3">
-        <div className="flex items-center gap-2">
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-outline-variant bg-surface-container-lowest px-2 lg:px-3">
+        <div className="flex min-w-0 items-center gap-1.5 lg:gap-2">
           <EditorIconButton
             icon="nest_cam_magnet_mount"
             label={snappingEnabled ? "Disable snapping" : "Enable snapping"}
@@ -293,6 +428,12 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             }}
           />
           <EditorIconButton
+            icon="content_copy"
+            label="Duplicate selected text"
+            className="h-7 w-7"
+            onClick={duplicateSelectedText}
+          />
+          <EditorIconButton
             icon="delete"
             label="Delete selected"
             className="h-7 w-7"
@@ -306,7 +447,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             onClick={() => dispatch(timelineOpenChanged(false))}
           />
         </div>
-        <label className="flex items-center gap-2">
+        <label className="hidden shrink-0 items-center gap-2 md:flex">
           <EditorIcon className="text-[16px] text-on-surface-variant">zoom_out</EditorIcon>
           <input
             className="h-1 w-32 cursor-pointer appearance-none rounded-lg bg-surface-container-high accent-primary"
@@ -316,42 +457,56 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             value={timelineZoom}
             onChange={(event) => dispatch(timelineZoomChanged(Number(event.target.value)))}
             aria-label="Timeline zoom"
+            data-editor-shortcuts="ignore"
           />
           <EditorIcon className="text-[16px] text-on-surface-variant">zoom_in</EditorIcon>
         </label>
       </div>
 
       <div className="relative flex flex-1 overflow-hidden">
-        <div className="z-10 flex w-36 shrink-0 flex-col border-r border-outline-variant bg-surface-container xl:w-40 2xl:w-44">
+        <div className="z-10 flex w-[168px] shrink-0 flex-col border-r border-outline-variant bg-surface-container">
           <div className="flex h-8 items-center border-b border-outline-variant px-2">
             <span className="text-label-sm font-semibold uppercase text-on-surface-variant">Timecode</span>
           </div>
-          {trackLayouts.map(({ track, height }) => (
-            <TrackHeader
-              key={track.id}
-              track={track}
-              height={height}
-              soloed={soloedAudioTrackIds.includes(track.id)}
-              onUpdate={(fields) => {
-                dispatch(videoOperationApplied({
-                  ...operationMetadata("update-track", "Update track", [track.id]),
-                  type: "updateTrack",
-                  trackId: track.id,
-                  ...fields,
-                }));
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <div
+              className="relative"
+              style={{
+                height: timelineTrackAreaHeight,
+                transform: `translateY(${-viewport.scrollTop}px)`,
               }}
-              onSolo={() => dispatch(trackSoloToggled(track.id))}
-            />
-          ))}
+            >
+              {layoutWindow.trackLayouts.map(({ track, top, height }) => (
+                <div key={track.id} className="absolute left-0 w-full" style={{ top, height }}>
+                  <TrackHeader
+                    track={track}
+                    height={height}
+                    soloed={soloedAudioTrackIds.includes(track.id)}
+                    onUpdate={(fields) => {
+                      dispatch(videoOperationApplied({
+                        ...operationMetadata("update-track", "Update track", [track.id]),
+                        type: "updateTrack",
+                        trackId: track.id,
+                        ...fields,
+                      }));
+                    }}
+                    onSolo={() => dispatch(trackSoloToggled(track.id))}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div
           ref={scrollRef}
           className="relative flex-1 overflow-auto bg-surface-container-lowest"
-          onScroll={(event) => dispatch(timelineScrollChanged({
-            left: event.currentTarget.scrollLeft,
-            top: event.currentTarget.scrollTop,
-          }))}
+          onScroll={(event) => scheduleScrollUpdate(
+            event.currentTarget.scrollLeft,
+            event.currentTarget.scrollTop,
+            Math.max(1, event.currentTarget.clientWidth),
+            Math.max(1, event.currentTarget.clientHeight),
+          )}
           onDragOver={(event) => {
             if (!document || !Array.from(event.dataTransfer.types).includes("application/x-kuvox-media-id")) return;
             event.preventDefault();
@@ -359,7 +514,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             if (!point) return;
             const mediaId = event.dataTransfer.getData("application/x-kuvox-media-id");
             const mediaKind = event.dataTransfer.getData("application/x-kuvox-media-kind");
-            const hit = hitTestTimeline(point.x, point.y, trackLayouts, itemLayouts);
+            const hit = hitTestTimeline(point.x, point.y, trackLayouts, layoutWindow.itemLayouts);
             const media = mediaId && mediaKind ? ({ id: mediaId, kind: mediaKind } as never) : null;
             const plan = media
               ? planMediaDrop({
@@ -369,7 +524,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                   timelineStart: pixelToTime(point.x, scale),
                 })
               : { ok: false as const, reason: "Unknown media" };
-            setDropPlan({
+            queueDropPlan({
               trackId: hit.trackId ?? undefined,
               valid: plan.ok,
               x: point.x,
@@ -378,7 +533,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             });
             event.dataTransfer.dropEffect = plan.ok ? "copy" : "none";
           }}
-          onDragLeave={() => setDropPlan(null)}
+          onDragLeave={() => clearDropPlan()}
           onDrop={(event) => {
             if (!document) return;
             const mediaId = event.dataTransfer.getData("application/x-kuvox-media-id");
@@ -386,7 +541,8 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             event.preventDefault();
             const point = pointFromDragEvent(event, trackAreaRef.current);
             if (!point) return;
-            const hit = hitTestTimeline(point.x, point.y, trackLayouts, itemLayouts);
+            flushDropPlan();
+            const hit = hitTestTimeline(point.x, point.y, trackLayouts, layoutWindow.itemLayouts);
             const placement = {
               trackId: hit.trackId ?? undefined,
               timelineStart: snapTime({
@@ -398,7 +554,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               }).time,
             };
             onMediaDrop?.(mediaId, placement.trackId ? placement as DropPlacement : undefined);
-            setDropPlan(null);
+            clearDropPlan();
           }}
         >
           <div
@@ -415,7 +571,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
           <div
             ref={trackAreaRef}
             className={`relative ${activeToolId === "trim" ? "cursor-default" : activeToolId === "split" ? "cursor-crosshair" : ""}`}
-            style={{ height: trackHeight, width: contentWidth }}
+            style={{ height: timelineTrackAreaHeight, width: contentWidth }}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               if (activeToolId !== "select") return;
@@ -426,6 +582,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                 pointerId: event.pointerId,
                 originX: point.x,
                 originY: point.y,
+                startedAt: performance.now(),
               };
               event.currentTarget.setPointerCapture(event.pointerId);
               dispatch(timelineSelectionCleared());
@@ -436,7 +593,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               const point = localPoint(event);
               if (!point) return;
               if (state.kind === "marquee") {
-                setDragPreview({
+                queueDragPreview({
                   kind: "marquee",
                   rect: {
                     left: state.originX,
@@ -448,8 +605,8 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               }
               if (state.kind === "move" && document) {
                 const deltaTime = (point.x - state.startX) / scale.pixelsPerSecond;
-                const hit = hitTestTimeline(point.x, point.y, trackLayouts, itemLayouts);
-                setDragPreview({
+                const hit = hitTestTimeline(point.x, point.y, trackLayouts, layoutWindow.itemLayouts);
+                queueDragPreview({
                   kind: "move",
                   itemIds: state.initialItems.map(({ item }) => item.id),
                   deltaTime,
@@ -472,7 +629,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                   mediaDuration: mediaDurationForItem(document, state.item),
                 });
                 if (trim) {
-                  setDragPreview({
+                  queueDragPreview({
                     kind: "trim",
                     itemId: state.item.id,
                     timelineStart: trim.operation.timelineStart,
@@ -485,19 +642,20 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               const state = dragState.current;
               dragState.current = null;
               const point = localPoint(event);
+              const latestDragPreview = flushDragPreview();
               if (!state || !point || !document) {
-                setDragPreview(null);
+                clearDragPreview();
                 return;
               }
 
-              if (state.kind === "marquee" && dragPreview?.kind === "marquee") {
-                const itemIds = marqueeSelectItems(itemLayouts, dragPreview.rect);
+              if (state.kind === "marquee" && latestDragPreview?.kind === "marquee") {
+                const itemIds = marqueeSelectItems(layoutWindow.itemLayouts, latestDragPreview.rect);
                 dispatch(timelineItemsSelected({ itemIds }));
               }
 
               if (state.kind === "move") {
                 const rawDelta = (point.x - state.startX) / scale.pixelsPerSecond;
-                const hit = hitTestTimeline(point.x, point.y, trackLayouts, itemLayouts);
+                const hit = hitTestTimeline(point.x, point.y, trackLayouts, layoutWindow.itemLayouts);
                 const activeInitial = state.initialItems.find(({ item }) => item.id === state.activeItemId);
                 const snappedStart = activeInitial
                   ? snapTime({
@@ -551,10 +709,21 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                 }
               }
 
-              setDragPreview(null);
+              if (state.kind === "move" || state.kind === "trim") {
+                queueVideoEditorPerformanceMetric(
+                  document.projectId,
+                  createVideoEditorPerformanceMetric(
+                    "timeline-drag-latency",
+                    performance.now() - state.startedAt,
+                    { document, renderedItemCount: layoutWindow.renderedItemCount },
+                  ),
+                );
+              }
+
+              clearDragPreview();
             }}
           >
-            {trackLayouts.map((layout) => (
+            {layoutWindow.trackLayouts.map((layout) => (
               <div
                 key={layout.track.id}
                 className={`absolute left-0 w-full border-b border-outline-variant bg-[linear-gradient(to_right,rgba(70,69,84,0.22)_1px,transparent_1px)] ${layout.hidden ? "opacity-45" : ""}`}
@@ -565,10 +734,13 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                 }}
               />
             ))}
-            {itemLayouts.map((layout) => (
+            {!hasTimelineItems ? <EmptyTimelineState /> : null}
+            {layoutWindow.itemLayouts.map((layout) => (
               <TimelineItemBlock
                 key={layout.item.id}
                 layout={previewLayout(layout, dragPreview, scale)}
+                media={"mediaId" in layout.item ? document?.media[layout.item.mediaId] : undefined}
+                availability={"mediaId" in layout.item ? projectMediaAvailabilityById[layout.item.mediaId]?.availability ?? "missing" : undefined}
                 selected={selectedItemIdSet.has(layout.item.id)}
                 linked={"linkedGroupId" in layout.item && Boolean(layout.item.linkedGroupId)}
                 activeToolId={activeToolId}
@@ -596,6 +768,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                     dragState.current = {
                       kind: "trim",
                       pointerId: event.pointerId,
+                      startedAt: performance.now(),
                       item: layout.item,
                       edge,
                     };
@@ -605,6 +778,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                       pointerId: event.pointerId,
                       startX: localPoint(event)?.x ?? 0,
                       startY: localPoint(event)?.y ?? 0,
+                      startedAt: performance.now(),
                       initialItems,
                       activeItemId: layout.item.id,
                     };
@@ -643,6 +817,17 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
   );
 }
 
+function EmptyTimelineState() {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[linear-gradient(to_right,rgba(70,69,84,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(70,69,84,0.2)_1px,transparent_1px)] bg-[length:48px_100%,100%_48px]">
+      <div className="rounded-[4px] border border-dashed border-outline-variant bg-surface/80 px-4 py-3 text-center">
+        <p className="text-body-sm font-semibold text-on-surface">Empty timeline</p>
+        <p className="mt-1 text-label-md text-on-surface-variant">Drag ready media here to start editing.</p>
+      </div>
+    </div>
+  );
+}
+
 function TrackHeader({
   track,
   height,
@@ -658,14 +843,14 @@ function TrackHeader({
 }) {
   return (
     <div
-      className={`group flex items-center justify-between border-b border-outline-variant px-3 transition-colors hover:bg-surface-container-high ${track.hidden ? "opacity-55" : ""}`}
+      className={`group flex items-center justify-between border-b border-outline-variant px-3 transition-colors hover:bg-surface-container-high motion-reduce:transition-none ${track.hidden ? "opacity-55" : ""}`}
       style={{ height }}
     >
       <div className="flex min-w-0 items-center gap-2">
         <EditorIcon className="text-[16px] text-on-surface-variant">{trackIcon(track.kind)}</EditorIcon>
         <span className="truncate text-label-md font-semibold text-on-surface">{track.label}</span>
       </div>
-      <div className="flex shrink-0 gap-1 opacity-100 transition-opacity xl:opacity-0 xl:group-hover:opacity-100">
+      <div className="flex shrink-0 gap-1 opacity-100 transition-opacity motion-reduce:transition-none xl:opacity-0 xl:group-hover:opacity-100">
         {track.kind === "audio" ? (
           <SmallIconButton icon="headphones" label={`Solo ${track.label}`} active={soloed} onClick={onSolo} />
         ) : null}
@@ -694,7 +879,7 @@ function SmallIconButton({
   return (
     <button
       type="button"
-      className={`flex h-5 w-5 items-center justify-center rounded-[3px] transition-colors hover:bg-surface-container-highest ${active ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
+      className={`flex h-5 w-5 items-center justify-center rounded-[3px] transition-colors hover:bg-surface-container-highest motion-reduce:transition-none ${active ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
       aria-label={label}
       title={label}
       onClick={onClick}
@@ -735,12 +920,16 @@ function Ruler({ duration, scale }: { duration: number; scale: ReturnType<typeof
 
 function TimelineItemBlock({
   layout,
+  media,
+  availability,
   selected,
   linked,
   activeToolId,
   onPointerDown,
 }: {
   layout: TimelineItemLayout;
+  media?: VideoMediaReference;
+  availability?: string;
   selected: boolean;
   linked: boolean;
   activeToolId: ReturnType<typeof selectActiveToolId>;
@@ -752,7 +941,7 @@ function TimelineItemBlock({
   return (
     <button
       type="button"
-      className={`absolute z-10 overflow-hidden rounded-[4px] border px-2 text-left text-[10px] font-mono transition-shadow hover:brightness-110 ${cursorClass} ${clipToneClass[item.type]} ${selected ? "ring-2 ring-primary" : ""}`}
+      className={`absolute z-10 overflow-hidden rounded-[4px] border px-2 text-left text-[10px] font-mono outline-none transition-shadow hover:brightness-110 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-container-lowest motion-reduce:transition-none ${cursorClass} ${clipToneClass[item.type]} ${selected ? "ring-2 ring-primary" : ""}`}
       style={{
         left: layout.left,
         top: layout.top,
@@ -760,29 +949,37 @@ function TimelineItemBlock({
         height: layout.height,
       }}
       onPointerDown={(event) => onPointerDown(event, null)}
-      title={itemLabel(item)}
+      title={itemTitle(item, media)}
+      aria-label={timelineItemAriaLabel(item, media, selected)}
+      aria-selected={selected}
     >
       <span
-        className={`absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-on-surface/10 transition-opacity ${trimActive ? "opacity-70 hover:opacity-100" : "opacity-0"}`}
+        className={`absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-on-surface/10 transition-opacity motion-reduce:transition-none ${trimActive ? "opacity-70 hover:opacity-100" : "opacity-0"}`}
         onPointerDown={(event) => onPointerDown(event, "start")}
       />
       <span
-        className={`absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-on-surface/10 transition-opacity ${trimActive ? "opacity-70 hover:opacity-100" : "opacity-0"}`}
+        className={`absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-on-surface/10 transition-opacity motion-reduce:transition-none ${trimActive ? "opacity-70 hover:opacity-100" : "opacity-0"}`}
         onPointerDown={(event) => onPointerDown(event, "end")}
       />
       {item.type === "audio" ? (
         <span
-          className="absolute inset-0 opacity-30"
+          className="absolute inset-0 opacity-35"
           style={{
-            backgroundImage: "repeating-linear-gradient(to right, #908fa0, #908fa0 2px, transparent 2px, transparent 5px)",
+            backgroundImage: media?.thumbnailUrl
+              ? `linear-gradient(to right, rgba(12,12,15,0.35), rgba(12,12,15,0.15)), url(${JSON.stringify(media.thumbnailUrl).slice(1, -1)})`
+              : "repeating-linear-gradient(to right, #908fa0, #908fa0 2px, transparent 2px, transparent 5px)",
             backgroundPosition: "center",
-            backgroundSize: "5px 60%",
-            backgroundRepeat: "repeat-x",
+            backgroundSize: media?.thumbnailUrl ? "cover" : "5px 60%",
+            backgroundRepeat: media?.thumbnailUrl ? "no-repeat" : "repeat-x",
           }}
         />
       ) : null}
-      {linked ? <EditorIcon className="absolute right-1 top-1 text-[12px] opacity-80">link</EditorIcon> : null}
-      <span className="relative block truncate pr-3">{itemLabel(item)}</span>
+      {unavailableBadge(availability) ? (
+        <span className="absolute bottom-1 right-1 rounded-[3px] bg-error-container px-1.5 py-0.5 text-[9px] font-semibold uppercase text-on-error-container">
+          {unavailableBadge(availability)}
+        </span>
+      ) : linked ? <EditorIcon className="absolute right-1 top-1 text-[12px] opacity-80">link</EditorIcon> : null}
+      <span className="relative block truncate pr-3">{itemLabel(item, media)}</span>
     </button>
   );
 }
@@ -855,9 +1052,30 @@ function pointFromDragEvent(
   };
 }
 
-function itemLabel(item: VideoTimelineItem): string {
+function itemLabel(item: VideoTimelineItem, media?: VideoMediaReference): string {
   if (item.type === "text") return item.text;
-  return item.mediaId;
+  return media?.name ?? item.mediaId;
+}
+
+function itemTitle(item: VideoTimelineItem, media?: VideoMediaReference): string {
+  if (item.type === "audio") {
+    const role = item.linkedGroupId ? "Linked clip audio" : "Standalone audio";
+    return `${itemLabel(item, media)} • ${role}`;
+  }
+
+  return itemLabel(item, media);
+}
+
+function timelineItemAriaLabel(item: VideoTimelineItem, media: VideoMediaReference | undefined, selected: boolean): string {
+  const status = selected ? "selected" : "not selected";
+  return `${item.type} timeline item, ${itemLabel(item, media)}, starts at ${formatTimelineTime(item.timelineStart)}, duration ${formatTimelineTime(item.duration)}, ${status}`;
+}
+
+function unavailableBadge(availability: string | undefined): string | null {
+  if (availability === "deleted") return "Deleted";
+  if (availability === "inaccessible") return "No access";
+  if (availability === "missing") return "Missing";
+  return null;
 }
 
 function trackIcon(kind: VideoTrack["kind"]): string {

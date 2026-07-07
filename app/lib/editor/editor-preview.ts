@@ -10,6 +10,7 @@ import type {
   VideoTimelineItem,
   VideoTransform,
 } from "./video-document";
+import { audioItemRole, computeAudioFadeGain, effectiveAudioVolume, type AudioItemRole } from "./editor-audio";
 
 export type PreviewObjectVariant = "proxy" | "canonical" | "raw";
 export type PreviewQualityPreference = VideoPreviewQuality | PreviewObjectVariant;
@@ -53,11 +54,15 @@ export type PreviewOverlayPlan = PreviewTextOverlayPlan | PreviewMediaOverlayPla
 
 export interface PreviewAudioPlan {
   item: AudioTimelineItem;
+  trackId: string;
+  role: AudioItemRole;
   media: VideoMediaReference;
   objectUrl: string | null;
   objectVariant: PreviewObjectVariant | null;
   sourceTime: number;
   volume: number;
+  fadeGain: number;
+  effectiveVolume: number;
   muted: boolean;
 }
 
@@ -68,6 +73,7 @@ export interface ProgramMonitorPlan {
   timelineDuration: number;
   activeVisual: PreviewVisualPlan | null;
   overlays: PreviewOverlayPlan[];
+  activeAudio: PreviewAudioPlan[];
   primaryAudio: PreviewAudioPlan | null;
   warnings: PreviewWarning[];
 }
@@ -77,11 +83,15 @@ export function createProgramMonitorPlan({
   currentTime,
   previewQuality = document.settings.previewQuality,
   soloedAudioTrackIds = [],
+  previewVolume = 1,
+  previewMuted = false,
 }: {
   document: VideoProjectDocument;
   currentTime: number;
   previewQuality?: PreviewQualityPreference;
   soloedAudioTrackIds?: string[];
+  previewVolume?: number;
+  previewMuted?: boolean;
 }): ProgramMonitorPlan {
   const warnings: PreviewWarning[] = [];
   const visualCandidates: PreviewVisualPlan[] = [];
@@ -117,14 +127,23 @@ export function createProgramMonitorPlan({
 
         const object = choosePreviewObjectUrl(media, previewQuality);
         warnIfMissingObject(object.url, item, media, warnings);
+        const fadeGain = computeAudioFadeGain(item, currentTime);
         audioCandidates.push({
           item,
+          trackId: track.id,
+          role: audioItemRole(item),
           media,
           objectUrl: object.url,
           objectVariant: object.variant,
           sourceTime: timelineTimeToMediaSourceTime(item, currentTime),
           volume: item.volume,
-          muted: item.muted || track.muted,
+          fadeGain,
+          effectiveVolume: effectiveAudioVolume({
+            globalVolume: previewVolume,
+            itemVolume: item.volume,
+            fadeGain,
+          }),
+          muted: previewMuted || item.muted || track.muted,
         });
         continue;
       }
@@ -189,6 +208,8 @@ export function createProgramMonitorPlan({
     });
   });
 
+  const activeAudio = audioCandidates;
+
   return {
     document,
     settings: document.settings,
@@ -196,7 +217,8 @@ export function createProgramMonitorPlan({
     timelineDuration: getTimelineDuration(document),
     activeVisual: selectTopVisual(visualCandidates),
     overlays: overlays.sort(compareOverlayOrder),
-    primaryAudio: audioCandidates[0] ?? null,
+    activeAudio,
+    primaryAudio: activeAudio[0] ?? null,
     warnings,
   };
 }
@@ -327,11 +349,13 @@ export function computeTextOverlayBounds({
   transform: VideoTransform;
 }): PreviewRect {
   const frameScale = frameBounds.width / frameWidth;
+  const baseWidth = frameBounds.width * 0.8;
+  const baseHeight = frameHeight * 0.12 * frameScale;
   return {
     x: frameBounds.x + frameBounds.width * 0.1 + transform.x * frameScale,
     y: frameBounds.y + frameBounds.height / 2 + transform.y * frameScale,
-    width: frameBounds.width * 0.8,
-    height: frameHeight * 0.12 * frameScale,
+    width: baseWidth * transform.scaleX,
+    height: baseHeight * transform.scaleY,
   };
 }
 

@@ -2,6 +2,7 @@ import { API_ROUTES } from "~/const/api-routes";
 import type {
   Workspace,
   ProjectDto,
+  ProjectMediaDto,
   ProjectTrashItem,
   PagedResult,
   ShareRequest,
@@ -11,7 +12,7 @@ import type {
 } from "../api";
 import { BaseApiModule } from "./base.server";
 import type { RequestLogger } from "../logger.server";
-import { apiClient } from "./api-client.server";
+import { apiClient, bearerAuth } from "./api-client.server";
 
 export class ProjectsApi extends BaseApiModule {
   listProjects(token: string, ws: Workspace, log?: RequestLogger): Promise<PagedResult<ProjectDto>> {
@@ -20,6 +21,18 @@ export class ProjectsApi extends BaseApiModule {
 
   getProject(token: string, id: string, log?: RequestLogger): Promise<ProjectDto> {
     return this.get<ProjectDto>(token, `${API_ROUTES.PROJECTS}/${id}`, log);
+  }
+
+  listProjectMedia(token: string, id: string, log?: RequestLogger): Promise<PagedResult<ProjectMediaDto>> {
+    return this.get<PagedResult<ProjectMediaDto>>(token, `${API_ROUTES.PROJECTS}/${id}/media?pageSize=500`, log);
+  }
+
+  attachProjectMedia(token: string, id: string, mediaIds: string[], log?: RequestLogger): Promise<ProjectMediaDto[]> {
+    return this.client.post<ProjectMediaDto[]>(
+      `${API_ROUTES.PROJECTS}/${id}/media`,
+      { mediaIds },
+      { auth: bearerAuth(token), log },
+    );
   }
 
   createProject(token: string, ws: Workspace, input: { kind: number; name: string; description?: string | null }, log?: RequestLogger): Promise<ProjectDto> {
@@ -87,6 +100,8 @@ export const projectsApi = new ProjectsApi(apiClient);
 // Backward compatible exports
 export const listProjects = (t: string, w: Workspace, l?: RequestLogger) => projectsApi.listProjects(t, w, l);
 export const getProject = (t: string, id: string, l?: RequestLogger) => projectsApi.getProject(t, id, l);
+export const listProjectMedia = (t: string, id: string, l?: RequestLogger) => projectsApi.listProjectMedia(t, id, l);
+export const attachProjectMedia = (t: string, id: string, m: string[], l?: RequestLogger) => projectsApi.attachProjectMedia(t, id, m, l);
 export const createProject = (t: string, w: Workspace, i: { kind: number; name: string; description?: string | null }, l?: RequestLogger) => projectsApi.createProject(t, w, i, l);
 export const listSharedProjects = (t: string, l?: RequestLogger) => projectsApi.listSharedProjects(t, l);
 export const listProjectTrash = (t: string, w: Workspace, l?: RequestLogger) => projectsApi.listProjectTrash(t, w, l);

@@ -35,11 +35,69 @@ const timestamp = "2026-02-01T10:00:00.000Z";
 
 function main(): void {
   assertOperationSuccesses();
+  assertHistoryEntriesForAllOperationTypes();
   assertInvalidOperationsAreNonDestructive();
   assertInverseOperationsRestoreSimpleEdits();
+  assertInspectorOperationContracts();
   assertCheckpointUndoRules();
   assertCoalescing();
   assertRevisionMetadata();
+}
+
+function assertHistoryEntriesForAllOperationTypes(): void {
+  const operations: VideoOperation[] = [
+    addMediaOperation(),
+    addImageOperation(),
+    addAudioOperation(),
+    addTextOperation(),
+    moveOperation(),
+    trimOperation(),
+    trimAudioOperation(),
+    splitOperation(),
+    splitAudioOperation(),
+    deleteOperation(),
+    deleteAudioOperation(),
+    reorderOperation(),
+    updateTrackOperation(),
+    updateTextOperation(),
+    updateAudioOperation(),
+    updateSpeedOperation(),
+    updateTransformCropOperation(),
+    settingsOperation(),
+  ];
+
+  for (const operation of operations) {
+    const result = applyVideoOperation(createDocument(), operation);
+    assert.equal(result.ok, true, `${operation.type} should apply`);
+    assert.ok(result.historyEntry, `${operation.type} should produce historyEntry`);
+    assert.ok(result.undo, `${operation.type} should produce undo payload`);
+    assert.equal(result.historyEntry?.id, operation.id);
+    assert.equal(result.historyEntry?.label, operation.label);
+    assert.deepEqual(result.historyEntry?.operationIds, [operation.id]);
+    assert.deepEqual(result.historyEntry?.affectedEntityIds, operation.affectedEntityIds);
+    assert.equal(result.historyEntry?.revision, result.document.history.revision);
+    assert.deepEqual(result.historyEntry?.undo, result.undo);
+  }
+
+  const bulkBatch = createVideoOperationBatch({
+    id: "bulk-history",
+    source: "manual",
+    timestamp,
+    label: "Bulk edit",
+    operations: [moveOperation(), updateTextOperation()],
+  });
+  const bulkResult = applyVideoOperationBatch(createDocument(), bulkBatch);
+  assert.equal(bulkResult.ok, true, bulkResult.errors?.join("; "));
+  assert.equal(bulkResult.undo?.type, "checkpoint", "bulk edits should checkpoint");
+  assert.deepEqual(bulkResult.historyEntry?.operationIds, ["move-tl-beach", "update-caption"]);
+
+  const forcedResult = applyVideoOperation(createDocument(), {
+    ...moveOperation(),
+    id: "force-checkpoint-move",
+    forceCheckpoint: true,
+  });
+  assert.equal(forcedResult.ok, true);
+  assert.equal(forcedResult.undo?.type, "checkpoint", "forceCheckpoint should checkpoint");
 }
 
 function assertOperationSuccesses(): void {
@@ -50,8 +108,11 @@ function assertOperationSuccesses(): void {
     addTextOperation(),
     moveOperation(),
     trimOperation(),
+    trimAudioOperation(),
     splitOperation(),
+    splitAudioOperation(),
     deleteOperation(),
+    deleteAudioOperation(),
     reorderOperation(),
     updateTrackOperation(),
     updateTextOperation(),
@@ -107,6 +168,13 @@ function assertInvalidOperationsAreNonDestructive(): void {
   });
   assertFailedWithoutMutation(incompatibleMedia, createDocument(), "audio media as video should fail");
 
+  const textOnVideoTrack = applyVideoOperation(createDocument(), {
+    ...addTextOperation(),
+    id: "invalid-text-track",
+    trackId: "v1",
+  });
+  assertFailedWithoutMutation(textOnVideoTrack, createDocument(), "text on video track should fail");
+
   const invalidTiming = applyVideoOperation(createDocument(), {
     ...moveOperation(),
     id: "invalid-timing",
@@ -121,10 +189,50 @@ function assertInvalidOperationsAreNonDestructive(): void {
   });
   assertFailedWithoutMutation(invalidSourceRange, createDocument(), "source range outside media should fail");
 
+  const invalidAudioVolume = applyVideoOperation(createDocument(), {
+    ...updateAudioOperation(),
+    id: "invalid-audio-volume",
+    volume: 1.2,
+  });
+  assertFailedWithoutMutation(invalidAudioVolume, createDocument(), "audio volume outside unit range should fail");
+
+  const invalidAudioFades = applyVideoOperation(createDocument(), {
+    ...updateAudioOperation(),
+    id: "invalid-audio-fades",
+    fades: { fadeInDuration: 20, fadeOutDuration: 20 },
+  });
+  assertFailedWithoutMutation(invalidAudioFades, createDocument(), "audio fades outside duration should fail");
+
+  const invalidAudioAddFades = applyVideoOperation(createDocument(), {
+    ...addAudioOperation(),
+    id: "invalid-add-audio-fades",
+    item: { ...addAudioOperation().item, id: "tl-invalid-audio-fades", fades: { fadeInDuration: 4, fadeOutDuration: 4 } },
+  });
+  assertFailedWithoutMutation(invalidAudioAddFades, createDocument(), "audio add fades outside duration should fail");
+
+  const invalidOpacity = applyVideoOperation(createDocument(), {
+    ...updateTransformCropOperation(),
+    id: "invalid-opacity",
+    opacity: -0.2,
+  });
+  assertFailedWithoutMutation(invalidOpacity, createDocument(), "opacity outside unit range should fail");
+
+  const invalidCrop = applyVideoOperation(createDocument(), {
+    ...updateTransformCropOperation(),
+    id: "invalid-crop",
+    crop: { top: 0, right: 0, bottom: 1.2, left: 0 },
+  });
+  assertFailedWithoutMutation(invalidCrop, createDocument(), "crop outside unit range should fail");
+
   const lockedTrack = createDocument();
   lockedTrack.tracks = lockedTrack.tracks.map((track) => track.id === "v1" ? { ...track, locked: true } : track);
   const lockedMove = applyVideoOperation(lockedTrack, moveOperation());
   assertFailedWithoutMutation(lockedMove, lockedTrack, "locked track move should fail");
+
+  const lockedTextTrack = createDocument();
+  lockedTextTrack.tracks = lockedTextTrack.tracks.map((track) => track.id === "t1" ? { ...track, locked: true } : track);
+  const lockedTextAdd = applyVideoOperation(lockedTextTrack, addTextOperation());
+  assertFailedWithoutMutation(lockedTextAdd, lockedTextTrack, "locked text track add should fail");
 
   const boundarySplitOperation = splitOperation();
   const boundarySplit = applyVideoOperation(createDocument(), {
@@ -142,6 +250,7 @@ function assertInverseOperationsRestoreSimpleEdits(): void {
   const reversibleOperations: VideoOperation[] = [
     moveOperation(),
     trimOperation(),
+    trimAudioOperation(),
     reorderOperation(),
     updateTrackOperation(),
     updateTextOperation(),
@@ -168,6 +277,80 @@ function assertInverseOperationsRestoreSimpleEdits(): void {
   }
 }
 
+function assertInspectorOperationContracts(): void {
+  const inspectorOperations: VideoOperation[] = [
+    { ...trimOperation(), id: "inspector-video-trim", timelineStart: 4, duration: 8, sourceIn: 1, sourceOut: 9 },
+    {
+      ...base("inspector-image-trim", "Update image timing", ["tl-added-image"]),
+      type: "trimItem",
+      itemId: "tl-added-image",
+      timelineStart: 8,
+      duration: 5,
+    },
+    {
+      ...updateTextOperation(),
+      id: "inspector-text-style",
+      timelineStart: 8,
+      duration: 10,
+      style: { fontFamily: "Inter", fontSize: 42, color: "#f8fafc", backgroundColor: "#111827", fontWeight: "bold", textAlign: "right" },
+      transform: { x: 12, y: 200, scaleX: 1.1, scaleY: 1.1, rotation: -4 },
+      layerOrder: 14,
+    },
+    {
+      ...updateAudioOperation(),
+      id: "inspector-audio-fades",
+      volume: 0.25,
+      muted: false,
+      fades: { fadeInDuration: 0.5, fadeOutDuration: 1 },
+    },
+    {
+      ...updateSpeedOperation(),
+      id: "inspector-speed",
+      speed: 0.75,
+    },
+    {
+      ...updateTransformCropOperation(),
+      id: "inspector-transform",
+      transform: { x: -20, y: 80, scaleX: 0.8, scaleY: 0.9, rotation: 8 },
+      crop: { top: 0.05, right: 0.1, bottom: 0.05, left: 0.1 },
+      opacity: 0.7,
+    },
+    {
+      ...settingsOperation(),
+      id: "inspector-project-settings",
+      settings: {
+        width: 1280,
+        height: 720,
+        aspectRatio: "16:9",
+        frameRate: 60,
+        previewQuality: "draft",
+        defaultTransitionDuration: 0.25,
+        exportPreset: "h264-720p",
+      },
+    },
+  ];
+
+  for (const operation of inspectorOperations) {
+    const document = createDocumentWithAddedImage();
+    const result = applyVideoOperation(document, operation);
+    assert.equal(result.ok, true, `${operation.id} should apply: ${result.errors?.join("; ")}`);
+    assert.equal(result.undo?.type, "inverseOperations", `${operation.id} should return inverse operations`);
+    assert.ok(result.undo.inverseOperations.length > 0, `${operation.id} should include inverse operations`);
+  }
+
+  const linkedAudioBatch = createVideoOperationBatch({
+    id: "inspector-linked-audio",
+    source: "manual",
+    timestamp,
+    label: "Mute linked audio",
+    operations: [{ ...updateAudioOperation(), id: "linked-audio-muted", muted: true }],
+  });
+  const linkedAudioResult = applyVideoOperationBatch(createDocument(), linkedAudioBatch);
+  assert.equal(linkedAudioResult.ok, true, linkedAudioResult.errors?.join("; "));
+  assert.equal(linkedAudioResult.undo?.type, "inverseOperations");
+  assert.equal(linkedAudioResult.undo.inverseOperations[0]?.type, "updateAudio");
+}
+
 function assertCheckpointUndoRules(): void {
   const deleteResult = applyVideoOperation(createDocument(), deleteOperation());
   assert.equal(deleteResult.ok, true);
@@ -176,6 +359,10 @@ function assertCheckpointUndoRules(): void {
   const splitResult = applyVideoOperation(createDocument(), splitOperation());
   assert.equal(splitResult.ok, true);
   assert.equal(splitResult.undo?.type, "checkpoint", "split should checkpoint");
+
+  const audioSplitResult = applyVideoOperation(createDocument(), splitAudioOperation());
+  assert.equal(audioSplitResult.ok, true);
+  assert.equal(audioSplitResult.undo?.type, "checkpoint", "audio split should checkpoint");
 
   const aiBatch = createVideoOperationBatch({
     id: "ai-batch",
@@ -190,6 +377,26 @@ function assertCheckpointUndoRules(): void {
   assert.equal(aiResult.undo?.type, "checkpoint", "AI batch should checkpoint");
   assert.equal(aiResult.document.history.revision, createDocument().history.revision + 1);
   assert.equal(aiResult.document.history.lastOperationId, "ai-batch");
+
+  const aiTextBatch = createVideoOperationBatch({
+    id: "ai-text-batch",
+    source: "ai",
+    timestamp,
+    label: "AI text edits",
+    commandId: "command-text",
+    operations: [
+      { ...addTextOperation(), id: "ai-add-text", source: "ai", commandId: "command-text" },
+      { ...updateTextOperation(), id: "ai-update-text", source: "ai", commandId: "command-text", text: "AI caption" },
+    ],
+  });
+  const aiTextResult = applyVideoOperationBatch(createDocument(), aiTextBatch);
+  assert.equal(aiTextResult.ok, true, aiTextResult.errors?.join("; "));
+  assert.equal(aiTextResult.undo?.type, "checkpoint", "AI text batch should checkpoint");
+  assert.equal(aiTextResult.historyEntry?.source, "ai");
+  assert.equal(aiTextResult.historyEntry?.commandId, "command-text");
+  assert.equal(aiTextResult.document.tracks.find((track) => track.id === "t1")?.items.some((item) => item.id === "tl-added-text"), true);
+  const updatedCaption = aiTextResult.document.tracks.find((track) => track.id === "t1")?.items.find((item) => item.id === "tl-caption");
+  assert.equal(updatedCaption?.type === "text" ? updatedCaption.text : undefined, "AI caption");
 }
 
 function assertCoalescing(): void {
@@ -288,6 +495,12 @@ function createDocument(): VideoProjectDocument {
   return document;
 }
 
+function createDocumentWithAddedImage(): VideoProjectDocument {
+  const imageAdded = applyVideoOperation(createDocument(), addImageOperation());
+  if (!imageAdded.ok) throw new Error(imageAdded.errors?.join("; ") ?? "image add failed");
+  return imageAdded.document;
+}
+
 function base(id: string, label: string, affectedEntityIds: string[]): VideoOperationMetadata {
   return {
     id,
@@ -376,6 +589,19 @@ function trimOperation(): TrimItemOperation {
   };
 }
 
+function trimAudioOperation(): TrimItemOperation {
+  return {
+    ...base("trim-audio-main", "Trim audio", ["tl-audio-main"]),
+    type: "trimItem",
+    itemId: "tl-audio-main",
+    edge: "end",
+    timelineStart: 2,
+    duration: 10,
+    sourceIn: 0,
+    sourceOut: 10,
+  };
+}
+
 function splitOperation(): SplitItemOperation {
   return {
     ...base("split-tl-mountain", "Split mountain", ["tl-mountain", "tl-mountain-a", "tl-mountain-b"]),
@@ -412,8 +638,46 @@ function splitOperation(): SplitItemOperation {
   };
 }
 
+function splitAudioOperation(): SplitItemOperation {
+  return {
+    ...base("split-audio-bed", "Split audio", ["tl-audio-bed", "tl-audio-bed-a", "tl-audio-bed-b"]),
+    type: "splitItem",
+    itemId: "tl-audio-bed",
+    items: [
+      {
+        id: "tl-audio-bed-a",
+        type: "audio",
+        mediaId: "audio-music",
+        timelineStart: 41.4,
+        duration: 5,
+        sourceIn: 0,
+        sourceOut: 5,
+        volume: 1,
+        muted: false,
+        fades: { fadeInDuration: 0, fadeOutDuration: 0 },
+      },
+      {
+        id: "tl-audio-bed-b",
+        type: "audio",
+        mediaId: "audio-music",
+        timelineStart: 46.4,
+        duration: 20,
+        sourceIn: 5,
+        sourceOut: 25,
+        volume: 1,
+        muted: false,
+        fades: { fadeInDuration: 0, fadeOutDuration: 0 },
+      },
+    ],
+  };
+}
+
 function deleteOperation(): DeleteItemOperation {
   return { ...base("delete-caption", "Delete caption", ["tl-caption"]), type: "deleteItem", itemIds: ["tl-caption"] };
+}
+
+function deleteAudioOperation(): DeleteItemOperation {
+  return { ...base("delete-audio", "Delete audio", ["tl-audio-bed"]), type: "deleteItem", itemIds: ["tl-audio-bed"] };
 }
 
 function reorderOperation(): ReorderItemOperation {

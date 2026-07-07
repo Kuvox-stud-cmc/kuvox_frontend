@@ -30,15 +30,15 @@ function assertRegistryShape(): void {
   );
   assert.deepEqual(
     editorToolDefinitions.filter((tool) => tool.availability === "enabled").map((tool) => tool.id),
-    ["select", "trim", "split", "ai"],
+    ["select", "trim", "split", "text", "ai"],
   );
   assert.deepEqual(
     editorToolDefinitions.filter((tool) => tool.availability === "disabled").map((tool) => tool.id),
-    ["text", "transform", "speed", "color", "audio"],
+    ["transform", "speed", "color", "audio"],
   );
   assert.equal(isEditorToolId("transform"), true);
   assert.equal(isEditorToolId("transition"), false);
-  assert.equal(isEnabledEditorToolId("text"), false);
+  assert.equal(isEnabledEditorToolId("text"), true);
   assert.equal(isEnabledEditorToolId("trim"), true);
   assert.equal(isTimelineEditorToolId("ai" as EditorToolId), false);
 }
@@ -52,7 +52,7 @@ function assertDefaultRailState(): void {
   assert.equal(rail.activeToolId, "select");
   assert.equal(rail.editorMode, "manual");
   assert.equal(rail.tools.find((tool) => tool.id === "select")?.active, true);
-  assert.equal(rail.tools.find((tool) => tool.id === "text")?.disabled, true);
+  assert.equal(rail.tools.find((tool) => tool.id === "text")?.disabled, false);
   assert.equal(rail.tools.find((tool) => tool.id === "ai")?.disabled, false);
 }
 

@@ -88,6 +88,19 @@ function assertVideoImageAndAudioOperations(): void {
   assert.equal(audio.ok && audio.operation.type, "addAudioItem");
   assert.equal(audio.ok && audio.operation.trackId, "a1");
   assert.equal(audio.ok && audio.operation.item.duration, 11);
+  assert.equal(audio.ok && audio.operation.item.type === "audio" ? audio.operation.item.volume : undefined, 1);
+  assert.equal(audio.ok && audio.operation.item.type === "audio" ? audio.operation.item.muted : undefined, false);
+  assert.equal(audio.ok && audio.operation.item.type === "audio" ? audio.operation.item.linkedGroupId : "unexpected", undefined);
+
+  const preferredAudio = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, mediaDto({ id: "audio-2", kind: MediaKind.Audio, durationSeconds: 9 })),
+    media: mediaDto({ id: "audio-2", kind: MediaKind.Audio, durationSeconds: 9 }),
+    now,
+    placement: { trackId: "a1", timelineStart: 3.4567 },
+  });
+  assert.equal(preferredAudio.ok, true);
+  assert.equal(preferredAudio.ok && preferredAudio.operation.trackId, "a1");
+  assert.equal(preferredAudio.ok && preferredAudio.operation.item.timelineStart, 3.457);
 }
 
 function assertNonReadyMediaIsNonDestructive(): void {
@@ -101,6 +114,26 @@ function assertNonReadyMediaIsNonDestructive(): void {
   assert.equal(processing.ok, false);
   assert.deepEqual(document.media, {});
   assert.equal(document.tracks.every((track) => track.items.length === 0), true);
+
+  const missingDuration = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, mediaDto({ id: "audio-missing-duration", kind: MediaKind.Audio, durationSeconds: null })),
+    media: mediaDto({ id: "audio-missing-duration", kind: MediaKind.Audio, durationSeconds: null }),
+    now: "2026-03-01T12:00:00.000Z",
+  });
+  assert.equal(missingDuration.ok, false);
+  assert.equal(missingDuration.ok ? "" : missingDuration.reason, "Ready media is missing a usable duration.");
+
+  const lockedAudioDocument = {
+    ...document,
+    tracks: document.tracks.map((track) => track.kind === "audio" ? { ...track, locked: true } : track),
+  };
+  const lockedAudio = buildAddMediaToTimelineOperation({
+    document: upsertMedia(lockedAudioDocument, mediaDto({ id: "audio-locked", kind: MediaKind.Audio, durationSeconds: 6 })),
+    media: mediaDto({ id: "audio-locked", kind: MediaKind.Audio, durationSeconds: 6 }),
+    now: "2026-03-01T12:00:00.000Z",
+  });
+  assert.equal(lockedAudio.ok, false);
+  assert.ok((lockedAudio.ok ? "" : lockedAudio.reason).includes("No compatible audio track"));
 }
 
 function assertImageFallsBackToVideoTrack(): void {

@@ -21,6 +21,7 @@ interface EditorIconButtonProps {
   icon: string;
   label: string;
   active?: boolean;
+  disabled?: boolean;
   filled?: boolean;
   className?: string;
   onClick?: () => void;
@@ -30,6 +31,7 @@ export function EditorIconButton({
   icon,
   label,
   active = false,
+  disabled = false,
   filled = false,
   className = "",
   onClick,
@@ -39,8 +41,10 @@ export function EditorIconButton({
       type="button"
       title={label}
       aria-label={label}
+      aria-pressed={active || undefined}
+      disabled={disabled}
       onClick={onClick}
-      className={`flex items-center justify-center rounded-[4px] transition-colors duration-150 ${
+      className={`flex items-center justify-center rounded-[4px] transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none ${
         active
           ? "border border-primary/35 bg-surface-container-high text-primary shadow-[inset_0_0_0_1px_rgba(192,193,255,0.08)]"
           : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"

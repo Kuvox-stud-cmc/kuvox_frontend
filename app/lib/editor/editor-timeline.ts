@@ -14,6 +14,10 @@ export const TIMELINE_HEADER_HEIGHT = 32;
 export const TIMELINE_TRACK_HEADER_WIDTH = 168;
 export const TIMELINE_MIN_ITEM_WIDTH = 18;
 export const TIMELINE_FRAME_FLOOR_SECONDS = 1 / 120;
+export const LARGE_TIMELINE_ITEM_THRESHOLD = 300;
+export const LARGE_TIMELINE_TRACK_THRESHOLD = 20;
+export const TIMELINE_HORIZONTAL_OVERSCAN_PX = 900;
+export const TIMELINE_VERTICAL_OVERSCAN_PX = 180;
 
 export interface TimelineScale {
   zoom: number;
@@ -37,6 +41,28 @@ export interface TimelineItemLayout {
   top: number;
   width: number;
   height: number;
+}
+
+export interface TimelineContentSize {
+  width: number;
+  height: number;
+}
+
+export interface TimelineViewport {
+  scrollLeft: number;
+  scrollTop: number;
+  width: number;
+  height: number;
+}
+
+export interface TimelineLayoutWindow {
+  windowed: boolean;
+  trackLayouts: TimelineTrackLayout[];
+  itemLayouts: TimelineItemLayout[];
+  renderedItemCount: number;
+  totalItemCount: number;
+  totalTrackCount: number;
+  contentSize: TimelineContentSize;
 }
 
 export interface TimelineHit {
@@ -104,6 +130,39 @@ export function timelineDuration(document: VideoProjectDocument, floor = 60): nu
   return Math.max(floor, Math.ceil(duration + 4));
 }
 
+export function countTimelineItems(document: VideoProjectDocument): number {
+  return document.tracks.reduce((count, track) => count + track.items.length, 0);
+}
+
+export function computeTimelineContentSize({
+  document,
+  scale,
+  floorDuration = 60,
+  minWidth = 960,
+  minHeight = 192,
+}: {
+  document: VideoProjectDocument;
+  scale: TimelineScale;
+  floorDuration?: number;
+  minWidth?: number;
+  minHeight?: number;
+}): TimelineContentSize {
+  return {
+    width: Math.max(minWidth, timeToPixel(timelineDuration(document, floorDuration), scale)),
+    height: Math.max(
+      minHeight,
+      document.tracks.reduce((height, track) => height + trackHeight(track.kind), 0),
+    ),
+  };
+}
+
+export function shouldWindowTimeline(document: VideoProjectDocument): boolean {
+  return (
+    countTimelineItems(document) > LARGE_TIMELINE_ITEM_THRESHOLD ||
+    document.tracks.length > LARGE_TIMELINE_TRACK_THRESHOLD
+  );
+}
+
 export function createTrackLayouts(document: VideoProjectDocument): TimelineTrackLayout[] {
   let top = 0;
   return document.tracks.map((track, trackIndex) => {
@@ -139,6 +198,63 @@ export function createItemLayouts(
   );
 }
 
+export function createTimelineLayoutWindow({
+  document,
+  trackLayouts,
+  itemLayouts,
+  viewport,
+  scale,
+  contentSize = computeTimelineContentSize({ document, scale }),
+  horizontalOverscan = TIMELINE_HORIZONTAL_OVERSCAN_PX,
+  verticalOverscan = TIMELINE_VERTICAL_OVERSCAN_PX,
+}: {
+  document: VideoProjectDocument;
+  trackLayouts: TimelineTrackLayout[];
+  itemLayouts: TimelineItemLayout[];
+  viewport: TimelineViewport;
+  scale: TimelineScale;
+  contentSize?: TimelineContentSize;
+  horizontalOverscan?: number;
+  verticalOverscan?: number;
+}): TimelineLayoutWindow {
+  const totalItemCount = itemLayouts.length;
+  const totalTrackCount = trackLayouts.length;
+  if (!shouldWindowTimeline(document)) {
+    return {
+      windowed: false,
+      trackLayouts,
+      itemLayouts,
+      renderedItemCount: itemLayouts.length,
+      totalItemCount,
+      totalTrackCount,
+      contentSize,
+    };
+  }
+
+  const left = Math.max(0, viewport.scrollLeft - horizontalOverscan);
+  const right = viewport.scrollLeft + Math.max(1, viewport.width) + horizontalOverscan;
+  const top = Math.max(0, viewport.scrollTop - verticalOverscan);
+  const bottom = viewport.scrollTop + Math.max(1, viewport.height) + verticalOverscan;
+  const visibleTrackLayouts = trackLayouts.filter((layout) =>
+    rangesIntersect(layout.top, layout.top + layout.height, top, bottom),
+  );
+  const visibleTrackIds = new Set(visibleTrackLayouts.map((layout) => layout.track.id));
+  const visibleItemLayouts = itemLayouts.filter((layout) =>
+    visibleTrackIds.has(layout.trackId) &&
+    rangesIntersect(layout.left, layout.left + layout.width, left, right),
+  );
+
+  return {
+    windowed: true,
+    trackLayouts: visibleTrackLayouts,
+    itemLayouts: visibleItemLayouts,
+    renderedItemCount: visibleItemLayouts.length,
+    totalItemCount,
+    totalTrackCount,
+    contentSize,
+  };
+}
+
 export function hitTestTimeline(
   x: number,
   y: number,
@@ -146,11 +262,22 @@ export function hitTestTimeline(
   itemLayouts: TimelineItemLayout[],
 ): TimelineHit {
   const track = trackLayouts.find((layout) => y >= layout.top && y < layout.top + layout.height);
-  const item = itemLayouts
-    .filter((layout) => layout.trackId === track?.track.id)
-    .slice()
-    .reverse()
-    .find((layout) => x >= layout.left && x <= layout.left + layout.width && y >= layout.top && y <= layout.top + layout.height);
+  let item: TimelineItemLayout | undefined;
+  if (track) {
+    for (let index = itemLayouts.length - 1; index >= 0; index -= 1) {
+      const layout = itemLayouts[index];
+      if (
+        layout.trackId === track.track.id &&
+        x >= layout.left &&
+        x <= layout.left + layout.width &&
+        y >= layout.top &&
+        y <= layout.top + layout.height
+      ) {
+        item = layout;
+        break;
+      }
+    }
+  }
 
   if (!track) {
     return { trackId: null, itemId: null, edge: null };
@@ -504,4 +631,8 @@ function rectanglesIntersect(left: MarqueeRect, right: MarqueeRect): boolean {
     left.top < right.top + right.height &&
     left.top + left.height > right.top
   );
+}
+
+function rangesIntersect(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): boolean {
+  return leftStart < rightEnd && leftEnd > rightStart;
 }
