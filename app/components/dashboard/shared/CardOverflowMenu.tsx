@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Form } from "react-router";
 
-import { ConfirmSubmitButton } from "~/components/dashboard/section";
+import { Modal, primaryButtonClass } from "~/components/dashboard/section";
 
 interface CardOverflowMenuProps {
   id: string;
@@ -27,9 +28,11 @@ export function CardOverflowMenu({
   placement = "bottom",
 }: CardOverflowMenuProps) {
   const [open, setOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const hiddenFields = Object.entries({ intent, id }).filter(([, value]) => value !== undefined && value !== null);
 
   const updateMenuPosition = () => {
     const rect = ref.current?.getBoundingClientRect();
@@ -67,52 +70,79 @@ export function CardOverflowMenu({
   }, [open, placement]);
 
   return (
-    <div
-      ref={ref}
-      className="relative inline-flex"
-      onClick={(event) => event.stopPropagation()}
-    >
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Open actions for ${itemLabel}`}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen((value) => !value);
-        }}
-        className={`shrink-0 rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${buttonClassName}`}
+    <>
+      <div
+        ref={ref}
+        className="relative inline-flex"
+        onClick={(event) => event.stopPropagation()}
       >
-        <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-      </button>
-
-      {open && menuPosition && createPortal(
-        <div
-          ref={menuRef}
-          role="menu"
-          style={{
-            position: "fixed",
-            top: menuPosition.top,
-            right: menuPosition.right,
-            transform: placement === "top" ? "translateY(-100%)" : undefined,
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`Open actions for ${itemLabel}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen((value) => !value);
           }}
-          className={`z-50 min-w-36 overflow-hidden rounded-lg border border-outline-variant bg-surface-container-low py-1 shadow-xl ${menuClassName}`}
+          className={`shrink-0 rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${buttonClassName}`}
         >
-          <ConfirmSubmitButton
-            fields={{ intent, id }}
-            title={confirmTitle}
-            message={confirmMessage}
-            confirmLabel={confirmLabel}
-            ariaLabel={`Delete ${itemLabel}`}
-            buttonClassName="flex w-full items-center gap-2 px-3 py-2 text-left text-label-md font-medium text-error transition-colors hover:bg-error/10"
+          <span className="material-symbols-outlined text-[18px]">more_horiz</span>
+        </button>
+
+        {open && menuPosition && createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{
+              position: "fixed",
+              top: menuPosition.top,
+              right: menuPosition.right,
+              transform: placement === "top" ? "translateY(-100%)" : undefined,
+            }}
+            className={`z-50 min-w-36 overflow-hidden rounded-lg border border-outline-variant bg-surface-container-low py-1 shadow-xl ${menuClassName}`}
           >
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-            Delete
-          </ConfirmSubmitButton>
-        </div>,
-        document.body,
-      )}
-    </div>
+            <button
+              type="button"
+              aria-label={`Move ${itemLabel} to Recycle Bin`}
+              onClick={() => {
+                setOpen(false);
+                setConfirmOpen(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-label-md font-medium text-error transition-colors hover:bg-error/10"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              Delete
+            </button>
+          </div>,
+          document.body,
+        )}
+      </div>
+
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={confirmTitle}>
+        <div className="text-body-sm text-on-surface-variant">{confirmMessage}</div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(false)}
+            className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
+          >
+            Cancel
+          </button>
+          <Form method="post" onSubmit={() => setConfirmOpen(false)}>
+            {hiddenFields.map(([name, value]) => (
+              <input key={name} type="hidden" name={name} value={String(value)} />
+            ))}
+            <button
+              type="submit"
+              className={primaryButtonClass("!bg-error !text-on-error hover:!bg-error/90")}
+            >
+              {confirmLabel}
+            </button>
+          </Form>
+        </div>
+      </Modal>
+    </>
   );
 }

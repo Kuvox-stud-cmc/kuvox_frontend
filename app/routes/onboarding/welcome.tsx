@@ -65,7 +65,7 @@ export default function OnboardingWelcome({ loaderData }: Route.ComponentProps) 
           to="/dashboard"
           className="text-body-sm text-on-surface-variant transition-colors hover:text-primary"
         >
-          Skip for now
+          Nah, take me to the dashboard
         </Link>
         <Link
           to="/onboarding/personalize"

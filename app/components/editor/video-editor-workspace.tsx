@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { MediaKind, OwnerKind, type MediaDto, type ProjectDto, type ProjectMediaDto } from "~/lib/api";
+import type { HeaderActionUser, HeaderNotifications } from "~/routes/dashboard/header-bar";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import {
   appendOperationLog,
@@ -46,6 +47,8 @@ import {
   mediaAssetAddedToTimeline,
   modalClosed,
   projectMediaAvailabilityLoaded,
+  libraryOpenChanged,
+  selectChromeState,
   selectEditorConflict,
   selectEditorState,
   selectEditorMode,
@@ -59,6 +62,7 @@ import {
 
 import { AiAssistantPanel } from "./ai-assistant-panel";
 import { EditorPanelErrorBoundary } from "./editor-panel-error-boundary";
+import { EditorIcon } from "./editor-ui";
 import { EditorModalLayer, EditorPopoverLayer, EditorToast } from "./editor-overlays";
 import { EditorTopBar } from "./editor-top-bar";
 import { MediaLibraryPanel } from "./media-library-panel";
@@ -78,6 +82,8 @@ import type { VideoMediaKind, VideoMediaReference, VideoProjectDocument, VideoTi
 interface VideoEditorWorkspaceProps {
   project: ProjectDto;
   userId: string;
+  user: HeaderActionUser;
+  notifications?: HeaderNotifications;
   media: MediaDto[];
   projectMedia: ProjectMediaDto[];
   mediaLoadError: string | null;
@@ -93,6 +99,8 @@ interface VideoEditorWorkspaceProps {
 export function VideoEditorWorkspace({
   project,
   userId,
+  user,
+  notifications,
   media,
   projectMedia,
   mediaLoadError,
@@ -109,6 +117,7 @@ export function VideoEditorWorkspace({
   const [draftRecovery, setDraftRecovery] = useState<DraftRecoveryState>({ state: "none" });
   const editor = useAppSelector(selectEditorState);
   const editorMode = useAppSelector(selectEditorMode);
+  const { libraryOpen } = useAppSelector(selectChromeState);
   const conflict = useAppSelector(selectEditorConflict);
   const document = useAppSelector(selectVideoDocument);
   const videoHistory = useAppSelector(selectVideoHistoryState);
@@ -399,7 +408,11 @@ export function VideoEditorWorkspace({
         } as CSSProperties
       }
     >
-      <EditorTopBar project={{ ...editorProject, id: project.id, name: project.name }} />
+      <EditorTopBar
+        project={{ ...editorProject, id: project.id, name: project.name }}
+        user={user}
+        notifications={notifications}
+      />
       {conflict ? (
         <EditorConflictBanner
           onKeepLocal={autosave.keepLocalEdits}
@@ -426,6 +439,19 @@ export function VideoEditorWorkspace({
         <div className="pointer-events-none absolute left-3 right-3 top-3 z-50 rounded-[4px] border border-outline-variant bg-surface/95 px-3 py-2 text-center text-label-md font-semibold text-on-surface-variant lg:hidden">
           Use a wider screen for full editing. Preview and timeline remain available here.
         </div>
+        {!libraryOpen ? (
+          <button
+            type="button"
+            aria-label="Open media library"
+            title="Open media library"
+            className="group relative z-40 hidden h-full w-10 shrink-0 items-center justify-center border-r border-outline-variant bg-surface text-on-surface-variant transition-colors duration-150 hover:border-primary/35 hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none lg:flex"
+            onClick={() => dispatch(libraryOpenChanged(true))}
+          >
+            <EditorIcon className="text-[22px] transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none">
+              chevron_right
+            </EditorIcon>
+          </button>
+        ) : null}
         <EditorPanelErrorBoundary label="Media library">
           <MediaLibraryPanel
             media={live.media}

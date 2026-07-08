@@ -61,22 +61,37 @@ interface PanelHeaderProps {
   title: string;
   eyebrow?: string;
   action?: ReactNode;
+  compact?: boolean;
 }
 
-export function PanelHeader({ title, eyebrow, action }: PanelHeaderProps) {
+export function PanelHeader({ title, eyebrow, action, compact = false }: PanelHeaderProps) {
   return (
-    <div className="flex h-14 items-center justify-between border-b border-outline-variant px-3">
-      <div>
-        <h2 className="text-label-md font-semibold uppercase tracking-[0.05em] text-on-surface">
-          {title}
-        </h2>
-        {eyebrow ? (
-          <p className="mt-0.5 text-label-sm uppercase tracking-wide text-on-surface-variant">
-            {eyebrow}
-          </p>
-        ) : null}
+    <div
+      className={`flex items-center justify-between gap-2 border-b border-outline-variant ${
+        compact ? "h-12 px-2" : "h-14 px-3"
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        {compact ? (
+          <div className="flex min-w-0 items-baseline">
+            <h2 className="truncate text-label-md font-semibold uppercase tracking-[0.05em] text-on-surface">
+              {title}
+            </h2>
+          </div>
+        ) : (
+          <>
+            <h2 className="truncate text-label-md font-semibold uppercase tracking-[0.05em] text-on-surface">
+              {title}
+            </h2>
+            {eyebrow ? (
+              <p className="mt-0.5 truncate text-label-sm uppercase text-on-surface-variant">
+                {eyebrow}
+              </p>
+            ) : null}
+          </>
+        )}
       </div>
-      {action}
+      {action ? <div className="shrink-0">{action}</div> : null}
     </div>
   );
 }

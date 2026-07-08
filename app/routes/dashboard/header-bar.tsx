@@ -21,12 +21,17 @@ const DEFAULT_NOTIFICATIONS: HeaderNotifications = {
   error: null,
 };
 
+const headerActionButton =
+  "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface";
+
+export interface HeaderActionUser {
+  email?: string;
+  displayName: string;
+  plan?: string;
+}
+
 interface HeaderBarProps {
-  user: {
-    email?: string;
-    displayName: string;
-    plan: string;
-  };
+  user: HeaderActionUser;
   notifications?: HeaderNotifications;
   /** When provided, renders a hamburger menu button (mobile). */
   onMenuToggle?: () => void;
@@ -37,21 +42,15 @@ export function HeaderBar({
   notifications = DEFAULT_NOTIFICATIONS,
   onMenuToggle,
 }: HeaderBarProps) {
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const initials = getInitials(user);
-  const unreadCount = Math.max(0, Number(notifications.unreadCount) || 0);
-  const badgeLabel = unreadCount > 99 ? "99+" : String(unreadCount);
-
   return (
-    <header className="flex h-14 sm:h-16 flex-shrink-0 items-center justify-between border-b border-outline-variant/50 px-4 sm:px-6 md:px-10">
-      <div className="flex items-center gap-3 min-w-0 flex-1">
+    <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-outline-variant/50 px-4 sm:h-16 sm:px-6 md:px-10">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         {/* Hamburger (mobile only) */}
         {onMenuToggle && (
           <button
             type="button"
             onClick={onMenuToggle}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface md:hidden"
+            className={`${headerActionButton} md:hidden`}
             aria-label="Open navigation menu"
           >
             <span className="material-symbols-outlined text-[22px]">menu</span>
@@ -63,122 +62,144 @@ export function HeaderBar({
       </div>
 
       {/* ── Action icons + profile ──────────────────────────────────────── */}
-      <div className="flex items-center gap-3 sm:gap-5 ml-3">
-        {/* Notifications */}
-        <div
-          className="relative"
-          onMouseEnter={() => setNotificationsOpen(true)}
-          onMouseLeave={() => setNotificationsOpen(false)}
-          onFocus={() => setNotificationsOpen(true)}
-          onBlur={(event) => {
-            const nextTarget = event.relatedTarget;
-            if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
-              setNotificationsOpen(false);
-            }
-          }}
-        >
-          <Link
-            to="/notifications"
-            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
-            aria-label={
-              unreadCount > 0
-                ? `Notifications, ${unreadCount} unread`
-                : "Notifications"
-            }
-            aria-haspopup="dialog"
-            aria-expanded={notificationsOpen}
-          >
-            <span className="material-symbols-outlined text-[22px]">notifications</span>
-            {unreadCount > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-on-primary">
-                {badgeLabel}
-              </span>
-            )}
-          </Link>
-
-          {notificationsOpen && (
-            <NotificationsPreview notifications={notifications} unreadCount={unreadCount} />
-          )}
-        </div>
-
-        {/* Help — hidden on small mobile */}
-        <Link
-          to="/help"
-          className="hidden sm:block text-on-surface-variant transition-colors hover:text-on-surface"
-          aria-label="Help"
-        >
-          <span className="material-symbols-outlined text-[22px]">help</span>
-        </Link>
-
-        {/* Settings — hidden on small mobile */}
-        <Link
-          to="/settings"
-          className="hidden sm:block text-on-surface-variant transition-colors hover:text-on-surface"
-          aria-label="Settings"
-        >
-          <span className="material-symbols-outlined text-[22px]">settings</span>
-        </Link>
-
-        {/* Profile avatar + dropdown */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setProfileOpen((v) => !v)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-container text-body-sm font-bold text-on-primary-container transition-colors hover:bg-primary-container/80"
-            aria-haspopup="menu"
-            aria-expanded={profileOpen}
-            aria-label="Profile menu"
-          >
-            {initials}
-          </button>
-
-          {profileOpen && (
-            <>
-              {/* Backdrop */}
-              <button
-                type="button"
-                onClick={() => setProfileOpen(false)}
-                className="fixed inset-0 z-10 cursor-default"
-                aria-label="Close profile menu"
-              />
-              {/* Dropdown */}
-              <div
-                role="menu"
-                className="absolute right-0 top-full z-20 mt-2 w-52 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high shadow-xl"
-              >
-                <div className="border-b border-outline-variant px-4 py-3">
-                  <p className="text-body-sm font-medium text-on-surface">
-                    {user.displayName}
-                  </p>
-                  <p className="text-label-md text-on-surface-variant">{user.plan} plan</p>
-                </div>
-                <Link
-                  to="/settings"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
-                >
-                  <span className="material-symbols-outlined text-[18px]">settings</span>
-                  Settings
-                </Link>
-                <Form method="post" action="/logout">
-                  <button
-                    type="submit"
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-body-sm text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">logout</span>
-                    Log out
-                  </button>
-                </Form>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+      <HeaderActions user={user} notifications={notifications} />
     </header>
   );
 }
 
-function getInitials(user: { displayName?: string; email?: string }): string {
+export function HeaderActions({
+  user,
+  notifications = DEFAULT_NOTIFICATIONS,
+  showHelp = true,
+}: {
+  user: HeaderActionUser;
+  notifications?: HeaderNotifications;
+  showHelp?: boolean;
+}) {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const initials = getInitials(user);
+  const unreadCount = Math.max(0, Number(notifications.unreadCount) || 0);
+  const badgeLabel = unreadCount > 99 ? "99+" : String(unreadCount);
+
+  return (
+    <div className="ml-3 flex h-9 shrink-0 items-center gap-1 sm:gap-2">
+      {/* Notifications */}
+      <div
+        className="relative flex h-9 w-9 items-center justify-center"
+        onMouseEnter={() => setNotificationsOpen(true)}
+        onMouseLeave={() => setNotificationsOpen(false)}
+        onFocus={() => setNotificationsOpen(true)}
+        onBlur={(event) => {
+          const nextTarget = event.relatedTarget;
+          if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+            setNotificationsOpen(false);
+          }
+        }}
+      >
+        <Link
+          to="/notifications"
+          className={`relative ${headerActionButton}`}
+          aria-label={
+            unreadCount > 0
+              ? `Notifications, ${unreadCount} unread`
+              : "Notifications"
+          }
+          aria-haspopup="dialog"
+          aria-expanded={notificationsOpen}
+        >
+          <span className="material-symbols-outlined text-[22px]">notifications</span>
+          {unreadCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-on-primary">
+              {badgeLabel}
+            </span>
+          )}
+        </Link>
+
+        {notificationsOpen && (
+          <NotificationsPreview notifications={notifications} unreadCount={unreadCount} />
+        )}
+      </div>
+
+      {/* Help — hidden on small mobile */}
+      {showHelp ? (
+        <Link
+          to="/help"
+          className={`${headerActionButton} hidden sm:flex`}
+          aria-label="Help"
+        >
+          <span className="material-symbols-outlined text-[22px]">help</span>
+        </Link>
+      ) : null}
+
+      {/* Settings — hidden on small mobile */}
+      <Link
+        to="/settings"
+        className={`${headerActionButton} hidden sm:flex`}
+        aria-label="Settings"
+      >
+        <span className="material-symbols-outlined text-[22px]">settings</span>
+      </Link>
+
+      {/* Profile avatar + dropdown */}
+      <div className="relative flex h-9 w-9 items-center justify-center">
+        <button
+          type="button"
+          onClick={() => setProfileOpen((v) => !v)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-container text-body-sm font-bold text-on-primary-container transition-colors hover:bg-primary-container/80"
+          aria-haspopup="menu"
+          aria-expanded={profileOpen}
+          aria-label="Profile menu"
+        >
+          {initials}
+        </button>
+
+        {profileOpen && (
+          <>
+            {/* Backdrop */}
+            <button
+              type="button"
+              onClick={() => setProfileOpen(false)}
+              className="fixed inset-0 z-10 cursor-default"
+              aria-label="Close profile menu"
+            />
+            {/* Dropdown */}
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-20 mt-2 w-52 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high shadow-xl"
+            >
+              <div className="border-b border-outline-variant px-4 py-3">
+                <p className="text-body-sm font-medium text-on-surface">
+                  {user.displayName}
+                </p>
+                <p className="text-label-md text-on-surface-variant">{user.plan ?? "Free"} plan</p>
+              </div>
+              <Link
+                to="/settings"
+                onClick={() => setProfileOpen(false)}
+                className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+              >
+                <span className="material-symbols-outlined text-[18px]">settings</span>
+                Settings
+              </Link>
+              <Form method="post" action="/logout">
+                <button
+                  type="submit"
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-body-sm text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+                >
+                  <span className="material-symbols-outlined text-[18px]">logout</span>
+                  Log out
+                </button>
+              </Form>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function getInitials(user: { displayName?: string; email?: string }): string {
   const source = user.displayName?.trim() || user.email?.trim() || "";
   if (!source) return "U";
   const words = source.includes("@")
@@ -187,7 +208,7 @@ function getInitials(user: { displayName?: string; email?: string }): string {
   return words.map((word) => word[0]?.toUpperCase() ?? "").join("") || "U";
 }
 
-function NotificationsPreview({
+export function NotificationsPreview({
   notifications,
   unreadCount,
 }: {

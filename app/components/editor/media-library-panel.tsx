@@ -32,11 +32,13 @@ const tabs: Array<{ value: LibraryTab; label: string; icon: string }> = [
   { value: "stills", label: "Images", icon: "imagesmode" },
 ];
 
-const readinessFilters: Array<{ value: MediaReadiness | "all"; label: string }> = [
-  { value: "ready", label: "Ready" },
-  { value: "processing", label: "Processing" },
-  { value: "failed", label: "Failed" },
-  { value: "all", label: "All" },
+type ReadinessFilterValue = MediaReadiness | "all";
+
+const readinessFilters: Array<{ value: ReadinessFilterValue; label: string; icon: string }> = [
+  { value: "ready", label: "Ready", icon: "check_circle" },
+  { value: "processing", label: "Processing", icon: "progress_activity" },
+  { value: "failed", label: "Failed", icon: "error" },
+  { value: "all", label: "All", icon: "filter_alt" },
 ];
 
 interface MediaLibraryPanelProps {
@@ -61,7 +63,7 @@ export function MediaLibraryPanel({
   onAddMedia,
 }: MediaLibraryPanelProps) {
   const dispatch = useAppDispatch();
-  const [readinessFilter, setReadinessFilter] = useState<MediaReadiness | "all">("ready");
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilterValue>("ready");
   const {
     activeTab,
     open: libraryOpen,
@@ -78,8 +80,12 @@ export function MediaLibraryPanel({
     () => sortedMedia(media).filter((asset) => mediaLibraryKind(asset) === activeTab),
     [activeTab, media],
   );
+  const readinessCounts = useMemo(() => countReadiness(activeTabAssets), [activeTabAssets]);
   const readinessAssets = useMemo(
-    () => activeTabAssets.filter((asset) => readinessFilter === "all" || mediaReadiness(asset) === readinessFilter),
+    () =>
+      activeTabAssets.filter(
+        (asset) => readinessFilter === "all" || mediaReadiness(asset) === readinessFilter,
+      ),
     [activeTabAssets, readinessFilter],
   );
   const emptyState = mediaLibraryEmptyState({
@@ -96,6 +102,7 @@ export function MediaLibraryPanel({
     const readiness = mediaReadiness(asset);
     return readiness === "failed" || readiness === "processing";
   }).length;
+  const compactLibraryControls = libraryWidth < 292;
 
   const handleResizeStart = useDragResize({
     axis: "x",
@@ -132,6 +139,7 @@ export function MediaLibraryPanel({
       <PanelHeader
         title="Library"
         eyebrow="Workspace Media"
+        compact={compactLibraryControls}
         action={
           <div className="flex shrink-0 items-center gap-1">
             <EditorIconButton
@@ -151,31 +159,46 @@ export function MediaLibraryPanel({
         }
       />
 
-      <div className="flex h-12 shrink-0 gap-1 border-b border-outline-variant bg-surface-container-lowest p-2">
+      <div
+        role="tablist"
+        aria-label="Media kind"
+        className={`grid shrink-0 grid-cols-3 gap-1 border-b border-outline-variant bg-surface-container-lowest p-2 ${
+          compactLibraryControls ? "h-[58px]" : "h-12"
+        }`}
+      >
         {tabs.map((tab) => {
           const active = activeTab === tab.value;
           return (
             <button
               key={tab.value}
               type="button"
+              role="tab"
               aria-label={`${tab.label} library`}
-              aria-pressed={active}
+              aria-selected={active}
               title={`${tab.label} library`}
               onClick={() => dispatch(libraryTabChanged(tab.value))}
-              className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-[4px] px-2 text-label-md font-semibold transition-colors motion-reduce:transition-none ${
+              className={`flex min-w-0 items-center justify-center rounded-[4px] border text-label-md font-semibold transition-colors motion-reduce:transition-none ${
                 active
-                  ? "border border-primary/35 bg-surface-container-high text-primary"
-                  : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-              }`}
+                  ? "border-primary/40 bg-surface-container-high text-primary"
+                  : "border-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+              } ${compactLibraryControls ? "h-full flex-col gap-0.5 px-1 py-1" : "h-8 gap-1.5 px-2"}`}
             >
-              <EditorIcon className="text-[16px]">{tab.icon}</EditorIcon>
-              <span className="truncate">{tab.label}</span>
+              <EditorIcon className={compactLibraryControls ? "text-[18px]" : "text-[16px]"}>
+                {tab.icon}
+              </EditorIcon>
+              <span
+                className={`min-w-0 max-w-full truncate ${
+                  compactLibraryControls ? "text-[10px] leading-none" : ""
+                }`}
+              >
+                {tab.label}
+              </span>
             </button>
           );
         })}
       </div>
 
-      <div className="h-[92px] shrink-0 space-y-2 border-b border-outline-variant bg-surface-container-lowest p-2">
+      <div className="shrink-0 border-b border-outline-variant bg-surface-container-lowest p-2">
         <label className="relative block">
           <EditorIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">
             search
@@ -190,25 +213,50 @@ export function MediaLibraryPanel({
           />
         </label>
 
-        <div className="grid grid-cols-4 gap-1">
-          {readinessFilters.map((filter) => {
-            const active = readinessFilter === filter.value;
-            return (
-              <button
-                key={filter.value}
-                type="button"
-                title={`${filter.label} media`}
-                onClick={() => setReadinessFilter(filter.value)}
-                className={`h-7 rounded-[4px] px-1 text-[10px] font-semibold uppercase text-on-surface-variant transition-colors motion-reduce:transition-none ${
-                  active
-                    ? "bg-primary text-on-primary"
-                    : "border border-outline-variant hover:bg-surface-container-high hover:text-on-surface"
-                }`}
-              >
-                <span className="truncate">{filter.label}</span>
-              </button>
-            );
-          })}
+        <div
+          role="radiogroup"
+          aria-label="Media readiness"
+          className="mt-2 rounded-[6px] border border-outline-variant bg-surface p-1"
+        >
+          <div className="grid grid-cols-2 gap-1">
+            {readinessFilters.map((filter) => {
+              const active = readinessFilter === filter.value;
+              const count = readinessCounts[filter.value];
+              return (
+                <button
+                  key={filter.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  title={`${filter.label} media`}
+                  onClick={() => setReadinessFilter(filter.value)}
+                  className={`flex h-9 min-w-0 items-center gap-1.5 rounded-[4px] border px-2 text-left transition-colors motion-reduce:transition-none ${
+                    active
+                      ? "border-primary/50 bg-primary/10 text-on-surface shadow-[inset_0_0_0_1px_rgba(192,193,255,0.18)]"
+                      : "border-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  }`}
+                >
+                  <EditorIcon
+                    className={`shrink-0 text-[16px] ${readinessFilterIconClass(filter.value, active)}`}
+                  >
+                    {filter.icon}
+                  </EditorIcon>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">
+                    {filter.label}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-[3px] px-1.5 py-0.5 font-mono text-[10px] ${
+                      active
+                        ? "bg-primary/15 text-primary"
+                        : "bg-surface-container-high text-on-surface-variant"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -268,13 +316,36 @@ function sortedMedia(media: MediaDto[]): MediaDto[] {
 function filteredLibraryAssets(
   media: MediaDto[],
   activeTab: LibraryTab,
-  readinessFilter: MediaReadiness | "all",
+  readinessFilter: ReadinessFilterValue,
   normalizedSearch: string,
 ): MediaDto[] {
   return sortedMedia(media)
     .filter((asset) => mediaLibraryKind(asset) === activeTab)
     .filter((asset) => readinessFilter === "all" || mediaReadiness(asset) === readinessFilter)
     .filter((asset) => !normalizedSearch || asset.filename.toLowerCase().includes(normalizedSearch));
+}
+
+function countReadiness(media: MediaDto[]): Record<ReadinessFilterValue, number> {
+  const counts: Record<ReadinessFilterValue, number> = {
+    all: media.length,
+    ready: 0,
+    processing: 0,
+    failed: 0,
+  };
+
+  for (const asset of media) {
+    counts[mediaReadiness(asset)] += 1;
+  }
+
+  return counts;
+}
+
+function readinessFilterIconClass(value: ReadinessFilterValue, active: boolean): string {
+  if (active) return "text-primary";
+  if (value === "failed") return "text-error";
+  if (value === "processing") return "text-on-surface-variant";
+  if (value === "ready") return "text-primary";
+  return "text-on-surface-variant";
 }
 
 type MediaLibraryEmptyStateModel = {

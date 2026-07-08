@@ -479,6 +479,22 @@ export interface UserPreferencesDto {
   defaultEditorMode: "manual" | "ai" | string;
 }
 
+export type UserPersonality = "creator" | "casual" | "professional";
+
+export type CreationGoal =
+  | "youtube"
+  | "social_clips"
+  | "highlights"
+  | "color_grading"
+  | "podcasts"
+  | "tutorials";
+
+export interface OnboardingProfileDto {
+  personality: UserPersonality | string;
+  creationGoals: string[];
+  onboardingCompletedAt: string | null;
+}
+
 export interface PlanLimitsDto {
   plan: string;
   storageBytes: number;
@@ -490,6 +506,7 @@ export interface PlanLimitsDto {
 export interface UserSettingsDto {
   user: SettingsUserDto;
   preferences: UserPreferencesDto;
+  onboarding: OnboardingProfileDto;
   planLimits: PlanLimitsDto;
 }
 
@@ -502,6 +519,11 @@ export interface UpdatePreferencesDto {
   productUpdatesEnabled: boolean;
   weeklyDigestEnabled: boolean;
   defaultEditorMode: string;
+}
+
+export interface UpdateOnboardingProfileDto {
+  personality: UserPersonality;
+  creationGoals: CreationGoal[];
 }
 
 export interface ChangePasswordDto {

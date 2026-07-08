@@ -1,7 +1,9 @@
 import { API_ROUTES } from "~/const/api-routes";
 import type {
   ChangePasswordDto,
+  OnboardingProfileDto,
   SettingsUserDto,
+  UpdateOnboardingProfileDto,
   UpdatePreferencesDto,
   UpdateProfileDto,
   UserPreferencesDto,
@@ -78,6 +80,10 @@ export class AuthApi {
     return this.client.patch<UserPreferencesDto>(`${API_ROUTES.AUTH}/me/preferences`, dto, { auth: bearerAuth(accessToken), log });
   }
 
+  async updateOnboardingProfile(accessToken: string, dto: UpdateOnboardingProfileDto, log?: RequestLogger): Promise<OnboardingProfileDto> {
+    return this.client.patch<OnboardingProfileDto>(`${API_ROUTES.AUTH}/me/onboarding`, dto, { auth: bearerAuth(accessToken), log });
+  }
+
   async changePassword(accessToken: string, dto: ChangePasswordDto, log?: RequestLogger): Promise<void> {
     await this.client.postVoid(`${API_ROUTES.AUTH}/me/change-password`, dto, { auth: bearerAuth(accessToken), log });
   }
@@ -118,5 +124,6 @@ export const resetPasswordRequest = (t: string, p: string, l?: RequestLogger) =>
 export const fetchSettings = (t: string, l?: RequestLogger) => authApi.fetchSettings(t, l);
 export const updateProfile = (t: string, d: UpdateProfileDto, l?: RequestLogger) => authApi.updateProfile(t, d, l);
 export const updatePreferences = (t: string, d: UpdatePreferencesDto, l?: RequestLogger) => authApi.updatePreferences(t, d, l);
+export const updateOnboardingProfile = (t: string, d: UpdateOnboardingProfileDto, l?: RequestLogger) => authApi.updateOnboardingProfile(t, d, l);
 export const changePassword = (t: string, d: ChangePasswordDto, l?: RequestLogger) => authApi.changePassword(t, d, l);
 export const resendCurrentUserVerification = (t: string, l?: RequestLogger) => authApi.resendCurrentUserVerification(t, l);

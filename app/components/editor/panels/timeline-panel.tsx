@@ -181,6 +181,18 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
   const hasTimelineItems = itemLayouts.length > 0;
   const timelineTrackAreaHeight = contentSize.height;
   const playheadLeft = timeToPixel(currentTime, scale);
+  const deletedMediaTimelineItemIds = useMemo(() => {
+    if (!document) return [];
+
+    return document.tracks.flatMap((track) => {
+      if (track.locked) return [];
+
+      return track.items.flatMap((item) => {
+        if (!("mediaId" in item)) return [];
+        return projectMediaAvailabilityById[item.mediaId]?.availability === "deleted" ? [item.id] : [];
+      });
+    });
+  }, [document, projectMediaAvailabilityById]);
   const handleResizeStart = useDragResize({
     axis: "y",
     value: timelineHeight,
@@ -309,6 +321,16 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
       affectedEntityIds: Array.from(new Set(operations.flatMap((operation) => operation.affectedEntityIds))),
     })));
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!document || deletedMediaTimelineItemIds.length === 0) return;
+
+    dispatch(videoOperationApplied({
+      ...operationMetadata("remove-deleted-media", "Remove deleted media", deletedMediaTimelineItemIds),
+      type: "deleteItem",
+      itemIds: deletedMediaTimelineItemIds,
+    }));
+  }, [deletedMediaTimelineItemIds, dispatch, document, operationMetadata]);
 
   const selectItem = useCallback((itemId: string, event: PointerEvent) => {
     if (!document) return;

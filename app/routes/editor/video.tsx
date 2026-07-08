@@ -4,8 +4,16 @@ import { Link, isRouteErrorResponse, redirect, useRevalidator } from "react-rout
 
 import { EditorSkeleton } from "~/components/editor/editor-skeleton";
 import { VideoEditorWorkspace } from "~/components/editor/video-editor-workspace";
-import { OwnerKind, ProjectKind, type MediaDto, type ProjectMediaDto, type Workspace } from "~/lib/api";
-import { getProject, getStudioClaims, listAllMedia, listProjectMedia } from "~/lib/api.server";
+import type { HeaderNotifications } from "~/routes/dashboard/header-bar";
+import { OwnerKind, ProjectKind, type MediaDto, type NotificationDto, type ProjectMediaDto, type Workspace } from "~/lib/api";
+import {
+  getProject,
+  getStudioClaims,
+  getUnreadNotificationCount,
+  listAllMedia,
+  listNotifications,
+  listProjectMedia,
+} from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { classifyEditorRecoveryError } from "~/lib/editor/editor-recovery";
 import { getSession } from "~/lib/session.server";
@@ -23,9 +31,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return {
       projectId: params.projectId,
       project: e2eProjectFixture(params.projectId),
-      user: { id: "user-e2e", email: "e2e@kuvox.local", displayName: "E2E User" },
+      user: { id: "user-e2e", email: "e2e@kuvox.local", displayName: "E2E User", plan: "Free" },
       media,
       projectMedia: [e2eProjectMediaFixture(media[0])],
+      notifications: { unreadCount: 0, items: [], error: null } satisfies HeaderNotifications,
       mediaLoadError: null,
       canWrite: true,
     };
@@ -46,11 +55,42 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let media: MediaDto[] = [];
   let projectMedia: ProjectMediaDto[] = [];
   let mediaLoadError: string | null = null;
+  const notifications: HeaderNotifications = {
+    unreadCount: 0,
+    items: [] as NotificationDto[],
+    error: null,
+  };
   try {
-    [media, projectMedia] = await Promise.all([
+    const [mediaResult, projectMediaResult, notificationsResult, unreadResult] = await Promise.allSettled([
       listAllMedia(accessToken, workspaceForProject(project)),
       listProjectMedia(accessToken, project.id).then((result) => result.items),
-    ]);
+      listNotifications(accessToken, { page: 1, pageSize: 5 }),
+      getUnreadNotificationCount(accessToken),
+    ] as const);
+
+    if (mediaResult.status === "fulfilled") {
+      media = mediaResult.value;
+    } else {
+      mediaLoadError = mediaResult.reason instanceof Error ? mediaResult.reason.message : String(mediaResult.reason);
+    }
+
+    if (projectMediaResult.status === "fulfilled") {
+      projectMedia = projectMediaResult.value;
+    } else {
+      mediaLoadError = projectMediaResult.reason instanceof Error ? projectMediaResult.reason.message : String(projectMediaResult.reason);
+    }
+
+    if (notificationsResult.status === "fulfilled") {
+      notifications.items = notificationsResult.value.items.slice(0, 5);
+    } else {
+      notifications.error = "Couldn't load notifications.";
+    }
+
+    if (unreadResult.status === "fulfilled") {
+      notifications.unreadCount = unreadResult.value.count;
+    } else {
+      notifications.error ??= "Couldn't load notification count.";
+    }
   } catch (error) {
     mediaLoadError = error instanceof Error ? error.message : String(error);
   }
@@ -61,6 +101,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     user,
     media,
     projectMedia,
+    notifications,
     mediaLoadError,
     canWrite: canWriteProject(project, getStudioClaims(accessToken)),
   };
@@ -155,6 +196,8 @@ export default function VideoEditorRoute({ loaderData }: Route.ComponentProps) {
       <VideoEditorWorkspace
         project={loaderData.project}
         userId={loaderData.user.id}
+        user={loaderData.user}
+        notifications={loaderData.notifications}
         media={loaderData.media}
         projectMedia={loaderData.projectMedia}
         mediaLoadError={loaderData.mediaLoadError}

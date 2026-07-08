@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MediaKind } from "~/lib/api";
@@ -225,10 +226,10 @@ describe("Timeline and top-bar controls", () => {
   it("selects, splits, deletes, undoes/redoes, zooms, and toggles edit tools", async () => {
     const user = userEvent.setup();
     const { store } = renderWithEditorStore(
-      <>
+      <MemoryRouter>
         <EditorTopBar project={editorProject} />
         <TimelinePanel />
-      </>,
+      </MemoryRouter>,
       { selectedItemIds: ["tl-beach"] },
     );
     act(() => {

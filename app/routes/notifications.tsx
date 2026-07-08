@@ -1,5 +1,6 @@
+import { useCallback, useRef } from "react";
 import { actionErrorMessage } from "~/lib/action-error.server";
-import { Form, Link, useNavigation } from "react-router";
+import { Form, Link, useNavigate, useNavigation } from "react-router";
 
 import { StatusBadge } from "~/components/dashboard/layout/DashboardPageLayout";
 import { ConfirmSubmitButton } from "~/components/dashboard/section";
@@ -122,7 +123,9 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function Notifications({ loaderData, actionData }: Route.ComponentProps) {
   const { notifications, unreadCount, error } = loaderData;
+  const navigate = useNavigate();
   const navigation = useNavigation();
+  const notificationsEntryIndex = useRef(getHistoryIndex());
   const busy = navigation.state === "submitting";
   const totalCount = Number(notifications.totalCount) || 0;
   const page = Number(notifications.page) || 1;
@@ -130,6 +133,20 @@ export default function Notifications({ loaderData, actionData }: Route.Componen
   const hasNotifications = notifications.items.length > 0;
   const hasPreviousPage = page > 1;
   const hasNextPage = totalPages > 0 && page < totalPages;
+  const handleBack = useCallback(() => {
+    const entryIndex = notificationsEntryIndex.current;
+    const currentIndex = getHistoryIndex();
+
+    if (entryIndex !== null && currentIndex !== null && entryIndex > 0) {
+      const delta = entryIndex - 1 - currentIndex;
+      if (delta < 0) {
+        navigate(delta);
+        return;
+      }
+    }
+
+    navigate("/dashboard");
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-surface text-on-surface">
@@ -145,10 +162,14 @@ export default function Notifications({ loaderData, actionData }: Route.Componen
               Review account, workspace, and media updates sent to your Kuvox account.
             </p>
           </div>
-          <Link to="/dashboard" className={secondarySettingsButton}>
+          <button
+            type="button"
+            onClick={handleBack}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-outline-variant bg-surface-container-low px-4 text-label-md font-semibold text-on-surface transition-colors hover:border-primary/40 hover:bg-surface-container"
+          >
             <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-            Back to dashboard
-          </Link>
+            Back
+          </button>
         </div>
       </header>
 
@@ -200,7 +221,7 @@ export default function Notifications({ loaderData, actionData }: Route.Componen
               ))}
             </div>
           ) : (
-            <EmptyNotifications />
+            <EmptyNotifications onBack={handleBack} />
           )}
         </SettingsPanel>
 
@@ -380,7 +401,7 @@ function emptyPage(page: number): PagedResult<NotificationDto> {
   return { items: [], page, pageSize: 20, totalCount: 0, totalPages: 0 };
 }
 
-function EmptyNotifications() {
+function EmptyNotifications({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-outline-variant bg-surface-container px-6 py-14 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -390,12 +411,18 @@ function EmptyNotifications() {
       <p className="mt-1 max-w-md text-body-sm text-on-surface-variant">
         Account, workspace, and media updates will appear here when there is something to review.
       </p>
-      <Link to="/dashboard" className={`mt-5 ${secondarySettingsButton}`}>
-        <span className="material-symbols-outlined text-[18px]">dashboard</span>
-        Back to dashboard
-      </Link>
+      <button type="button" onClick={onBack} className={`mt-5 ${secondarySettingsButton}`}>
+        <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+        Back
+      </button>
     </div>
   );
+}
+
+function getHistoryIndex() {
+  if (typeof window === "undefined") return null;
+  const index = window.history.state?.idx;
+  return typeof index === "number" ? index : null;
 }
 
 function PaginationLink({

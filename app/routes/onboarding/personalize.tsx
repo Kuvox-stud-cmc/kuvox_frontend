@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { Form, Link, redirect, useNavigation } from "react-router";
 
+import { actionErrorMessage } from "~/lib/action-error.server";
+import { fetchSettings, updateOnboardingProfile } from "~/lib/api.server";
+import type { CreationGoal, UserPersonality } from "~/lib/api";
 import { requireUser } from "~/lib/auth.server";
-import { createRequestLogger } from "~/lib/logger.server";
+import { createRequestLogger, withUser } from "~/lib/logger.server";
+import { getSession } from "~/lib/session.server";
 
 import type { Route } from "./+types/personalize";
 
@@ -31,41 +35,93 @@ const ROLES = [
   },
 ] as const;
 
+const ROLE_VALUES = new Set<UserPersonality>(ROLES.map((role) => role.value));
+
 const GOALS = [
-  "YouTube",
-  "Social clips",
-  "Highlights",
-  "Color grading",
-  "Podcasts",
-  "Tutorials",
+  { value: "youtube", label: "YouTube" },
+  { value: "social_clips", label: "Social clips" },
+  { value: "highlights", label: "Highlights" },
+  { value: "color_grading", label: "Color grading" },
+  { value: "podcasts", label: "Podcasts" },
+  { value: "tutorials", label: "Tutorials" },
 ] as const;
 
+const GOAL_VALUES = new Set<CreationGoal>(GOALS.map((goal) => goal.value));
+
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireUser(request);
-  return null;
+  const log = createRequestLogger(request);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+
+  if (!accessToken) {
+    return { onboarding: null };
+  }
+
+  try {
+    const settings = await fetchSettings(accessToken, reqLog);
+    return { onboarding: settings.onboarding };
+  } catch (error) {
+    reqLog.warn({ err: error }, "failed to load onboarding profile");
+    return { onboarding: null };
+  }
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const log = createRequestLogger(request);
-  await requireUser(request, log);
+  const user = await requireUser(request, log);
+  const reqLog = withUser(log, user);
+  const session = await getSession(request);
+  const accessToken = session.get("accessToken");
+
+  if (!accessToken) {
+    return { error: "Your session expired. Please sign in again." };
+  }
+
   const formData = await request.formData();
   const role = String(formData.get("role") ?? "").trim();
+  const goals = formData
+    .getAll("goals")
+    .map((goal) => String(goal).trim())
+    .filter(Boolean);
 
-  if (!role) {
+  if (!isUserPersonality(role)) {
     return { error: "Pick the option that best describes you." };
   }
 
-  // TODO: persist to a preferences endpoint when available.
-  return redirect("/onboarding/import-media");
+  const creationGoals: CreationGoal[] = [];
+  for (const goal of goals) {
+    if (!isCreationGoal(goal)) {
+      return { error: "Choose a supported creation goal." };
+    }
+
+    if (!creationGoals.includes(goal)) {
+      creationGoals.push(goal);
+    }
+  }
+
+  try {
+    await updateOnboardingProfile(accessToken, { personality: role, creationGoals }, reqLog);
+    return redirect("/onboarding/import-media");
+  } catch (error) {
+    reqLog.error({ err: error }, "onboarding personalization action failed");
+    return { error: actionErrorMessage(error) };
+  }
 }
 
-export default function Personalize({ actionData }: Route.ComponentProps) {
+export default function Personalize({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-  const [role, setRole] = useState<string>("");
-  const [goals, setGoals] = useState<string[]>([]);
+  const storedPersonality = loaderData.onboarding?.personality ?? "";
+  const initialRole: UserPersonality | "" = isUserPersonality(storedPersonality)
+    ? storedPersonality
+    : "";
+  const initialGoals = (loaderData.onboarding?.creationGoals ?? []).filter(isCreationGoal);
+  const [role, setRole] = useState<UserPersonality | "">(initialRole);
+  const [goals, setGoals] = useState<CreationGoal[]>(initialGoals);
 
-  const toggleGoal = (goal: string) =>
+  const toggleGoal = (goal: CreationGoal) =>
     setGoals((current) =>
       current.includes(goal)
         ? current.filter((g) => g !== goal)
@@ -131,12 +187,12 @@ export default function Personalize({ actionData }: Route.ComponentProps) {
           </legend>
           <div className="mt-2 flex flex-wrap gap-2">
             {GOALS.map((goal) => {
-              const selected = goals.includes(goal);
+              const selected = goals.includes(goal.value);
               return (
                 <button
                   type="button"
-                  key={goal}
-                  onClick={() => toggleGoal(goal)}
+                  key={goal.value}
+                  onClick={() => toggleGoal(goal.value)}
                   aria-pressed={selected}
                   className={`rounded-full border px-3 py-1.5 text-label-md transition-colors ${
                     selected
@@ -144,7 +200,7 @@ export default function Personalize({ actionData }: Route.ComponentProps) {
                       : "border-outline-variant bg-surface-container text-on-surface-variant hover:border-primary/50"
                   }`}
                 >
-                  {goal}
+                  {goal.label}
                 </button>
               );
             })}
@@ -177,4 +233,12 @@ export default function Personalize({ actionData }: Route.ComponentProps) {
       </Form>
     </section>
   );
+}
+
+function isUserPersonality(value: string): value is UserPersonality {
+  return ROLE_VALUES.has(value as UserPersonality);
+}
+
+function isCreationGoal(value: string): value is CreationGoal {
+  return GOAL_VALUES.has(value as CreationGoal);
 }
