@@ -1,6 +1,7 @@
 import { Link, NavLink } from "react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { SessionUser } from "~/lib/session.server";
+import { cn } from "~/lib/utils";
 
 /* ── Plain nav items ─────────────────────────────────────────────────────── */
 const NAV_LINKS = [
@@ -76,9 +77,9 @@ function NavDropdown({
   groups: { title?: string; items: { to: string; label: string; icon: string }[] }[];
 }) {
   return (
-    <div className="relative group/dd">
+    <div className="relative group/dd h-full flex items-center">
       {/* Trigger */}
-      <button className="text-label-md font-medium text-on-surface-variant group-hover/dd:text-primary transition-colors duration-300 flex items-center gap-0.5 py-4">
+      <button className="px-2 xl:px-4 py-2 text-sm font-medium text-white/70 group-hover/dd:text-white transition-colors duration-300 flex items-center gap-0.5 whitespace-nowrap">
         {label}
         <span className="material-symbols-outlined text-[15px] transition-transform duration-300 ease-out group-hover/dd:rotate-180">
           expand_more
@@ -86,27 +87,28 @@ function NavDropdown({
       </button>
 
       {/* Invisible bridge — keeps hover zone continuous */}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 h-3 w-[calc(100%+2rem)]" />
+      <div className="absolute top-full left-1/2 -translate-x-1/2 h-4 w-[calc(100%+2rem)]" />
 
       {/* Dropdown panel */}
       <div
         className="
           absolute top-[calc(100%+0.25rem)] left-1/2 -translate-x-1/2
-          min-w-[240px] py-1.5
-          bg-surface-container/90 backdrop-blur-xl
-          border border-outline-variant/60
+          p-3
+          bg-[#1a1612]/95 backdrop-blur-xl
+          border border-white/10
           rounded-xl
-          shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_1px_rgba(192,193,255,0.1)]
+          shadow-[0_8px_32px_rgba(0,0,0,0.5)]
           opacity-0 invisible scale-[0.97] -translate-y-1
           group-hover/dd:opacity-100 group-hover/dd:visible group-hover/dd:scale-100 group-hover/dd:translate-y-0
           transition-all duration-300 ease-out
           z-50 origin-top
+          flex gap-6 whitespace-nowrap
         "
       >
         {groups.map((group, gIdx) => (
-          <div key={gIdx} className={gIdx > 0 ? "border-t border-outline-variant/40 mt-1.5 pt-1.5" : ""}>
+          <div key={gIdx} className="flex flex-col">
             {group.title && (
-              <div className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant/70">
+              <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
                 {group.title}
               </div>
             )}
@@ -114,9 +116,9 @@ function NavDropdown({
               <Link
                 key={item.label + i}
                 to={item.to}
-                className="flex items-center gap-3 mx-1.5 px-3 py-2.5 rounded-lg text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/80 transition-all duration-200 group/item"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/5 transition-all duration-200 group/item"
               >
-                <span className="material-symbols-outlined text-[18px] text-on-surface-variant/60 group-hover/item:text-primary transition-colors duration-200">
+                <span className="material-symbols-outlined text-[18px] text-white/50 group-hover/item:text-white transition-colors duration-200">
                   {item.icon}
                 </span>
                 <span>{item.label}</span>
@@ -149,7 +151,7 @@ function MobileDropdown({
     <div>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between text-body-lg font-medium py-3 px-4 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors duration-200"
+        className="w-full flex items-center justify-between text-base font-medium py-3 px-4 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors duration-200"
       >
         {label}
         <span
@@ -166,11 +168,11 @@ function MobileDropdown({
           opacity: open ? 1 : 0,
         }}
       >
-        <div className="ml-4 mt-1 mb-2 flex flex-col gap-0.5 border-l border-outline-variant/40 pl-2">
+        <div className="ml-4 mt-1 mb-2 flex flex-col gap-0.5 border-l border-white/20 pl-2">
           {groups.map((group, gIdx) => (
             <div key={gIdx} className={gIdx > 0 ? "mt-2" : ""}>
               {group.title && (
-                <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant/70">
+                <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-white/50">
                   {group.title}
                 </div>
               )}
@@ -179,9 +181,9 @@ function MobileDropdown({
                   key={item.label + i}
                   to={item.to}
                   onClick={onNavigate}
-                  className="flex items-center gap-3 text-body-sm font-medium py-2.5 px-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors duration-200"
+                  className="flex items-center gap-3 text-sm font-medium py-2.5 px-3 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors duration-200"
                 >
-                  <span className="material-symbols-outlined text-[18px] text-on-surface-variant/50">
+                  <span className="material-symbols-outlined text-[18px] text-white/40">
                     {item.icon}
                   </span>
                   {item.label}
@@ -195,36 +197,64 @@ function MobileDropdown({
   );
 }
 
-/* ── Header ──────────────────────────────────────────────────────────────── */
+function getInitials(user: SessionUser | null): string {
+  const source = user?.displayName?.trim() || user?.email?.trim() || "";
+  if (!source) return "U";
+  const words = source.includes("@")
+    ? [source.slice(0, 1)]
+    : source.split(/\s+/).filter(Boolean).slice(0, 2);
+  return words.map((word) => word[0]?.toUpperCase() ?? "").join("") || "U";
+}
 
-/** Top navigation shared across the public marketing pages. */
+/* ── Header ──────────────────────────────────────────────────────────────── */
 export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const signedIn = Boolean(user);
   const initials = getInitials(user);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 50);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
     <>
-      <nav className="bg-surface/80 backdrop-blur-lg border-b border-outline-variant/60 flex justify-between items-center h-14 sm:h-16 px-4 sm:px-6 lg:px-container-padding max-w-full w-full z-50 fixed top-0 left-0 right-0">
-        {/* Left: Logo + Nav Links */}
-        <div className="flex items-center gap-4 sm:gap-8">
-          <Link
-            to="/"
-            className="text-headline-md font-bold tracking-tight text-on-surface shrink-0"
-          >
-            <img src="/logo.svg" alt="Kuvox" className="h-6 sm:h-7" />
+      <nav
+        className={cn(
+          "fixed left-1/2 -translate-x-1/2 z-50 transition-all duration-500 max-w-[calc(100vw-2rem)]",
+          scrolled ? "top-4" : "top-6"
+        )}
+      >
+        <div 
+          className="flex items-center gap-2 px-4 sm:px-6 h-14"
+          style={{
+            backdropFilter: "blur(30px)",
+            WebkitBackdropFilter: "blur(30px)",
+            background: "rgba(12, 10, 8, 0.58)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            borderRadius: "999px",
+            boxShadow: "0 8px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
+          }}
+        >
+          {/* Logo */}
+          <Link to="/" className="px-3 py-1 flex items-center gap-2 shrink-0">
+            <img src="/logo.svg" alt="Kuvox" className="h-5 sm:h-6" />
           </Link>
 
-          {/* Desktop nav */}
-          <div className="hidden lg:flex gap-3 lg:gap-5 items-center">
+          {/* Desktop Navigation */}
+          <div className="hidden lg:flex items-center gap-1">
             {NAV_LINKS.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `text-label-md font-medium transition-colors duration-300 ${isActive
-                    ? "text-primary"
-                    : "text-on-surface-variant hover:text-primary"
+                  `px-2 xl:px-4 py-2 text-sm font-medium transition-colors duration-200 whitespace-nowrap ${isActive
+                    ? "text-white"
+                    : "text-white/70 hover:text-white"
                   }`
                 }
               >
@@ -240,9 +270,9 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `text-label-md font-medium transition-colors duration-300 ${isActive
-                    ? "text-primary"
-                    : "text-on-surface-variant hover:text-primary"
+                  `px-2 xl:px-4 py-2 text-sm font-medium transition-colors duration-200 whitespace-nowrap ${isActive
+                    ? "text-white"
+                    : "text-white/70 hover:text-white"
                   }`
                 }
               >
@@ -250,157 +280,173 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
               </NavLink>
             ))}
           </div>
+
+          {/* Right: Auth + Mobile Toggle */}
+          <div className="flex items-center gap-2 shrink-0">
+            {signedIn ? (
+              <div className="hidden sm:flex items-center gap-2">
+                <Link
+                  to="/dashboard"
+                  className="ml-2 px-5 h-9 sm:h-10 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
+                >
+                  Go to dashboard
+                </Link>
+                <Link
+                  to="/dashboard"
+                  aria-label="Go to dashboard"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-[#3a3530] text-sm font-bold text-white transition-colors hover:bg-[#4a4540] border border-white/10"
+                  title={user?.displayName ?? user?.email ?? "Account"}
+                >
+                  {initials}
+                </Link>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <Link
+                  to="/login"
+                  className="hidden sm:flex px-3 xl:px-4 py-2 text-sm font-medium text-white/70 hover:text-white transition-colors duration-200 whitespace-nowrap"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/signup"
+                  className="ml-1 px-5 h-9 sm:h-10 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
+                >
+                  Get Started
+                </Link>
+              </div>
+            )}
+
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden p-2 text-white/70 hover:text-white rounded-full hover:bg-white/5 transition-colors"
+              aria-label="Toggle menu"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                {mobileMenuOpen ? (
+                  <path d="M18 6L6 18M6 6l12 12" />
+                ) : (
+                  <path d="M3 12h18M3 6h18M3 18h18" />
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Right: Auth + Mobile Toggle */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          {signedIn ? (
-            <>
-              <Link
-                to="/dashboard"
-                className="bg-primary text-on-primary px-3 sm:px-4 py-1.5 sm:py-2 rounded-sm font-medium text-label-md hover:bg-primary-fixed transition-colors duration-300 hidden sm:inline-flex"
-              >
-                Go to dashboard
-              </Link>
-              <Link
-                to="/dashboard"
-                aria-label="Go to dashboard"
-                className="hidden h-9 w-9 items-center justify-center rounded-xl bg-primary-container text-body-sm font-bold text-on-primary-container transition-colors hover:bg-primary-container/80 sm:inline-flex"
-                title={user?.displayName ?? user?.email ?? "Account"}
-              >
-                {initials}
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                className="text-on-surface-variant font-medium hover:text-primary transition-colors duration-300 text-label-md hidden lg:block"
-              >
-                Sign In
-              </Link>
-              <Link
-                to="/signup"
-                className="bg-primary text-on-primary px-3 sm:px-4 py-1.5 sm:py-2 rounded-sm font-medium text-label-md hover:bg-primary-fixed transition-colors duration-300 hidden sm:inline-flex"
-              >
-                Get Started
-              </Link>
-            </>
-          )}
-
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-surface-container-high transition-colors duration-200"
-            aria-label="Toggle menu"
+        {/* Mobile Menu Overlay */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden absolute top-full mt-3 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] max-w-sm flex flex-col gap-1 p-4 shadow-2xl"
+            style={{
+              backdropFilter: "blur(30px)",
+              WebkitBackdropFilter: "blur(30px)",
+              background: "rgba(20, 18, 16, 0.95)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: "16px",
+            }}
           >
-            <span className="material-symbols-outlined text-on-surface text-[22px]">
-              {mobileOpen ? "close" : "menu"}
-            </span>
-          </button>
-        </div>
-      </nav>
+            <div className="max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-1">
+              {NAV_LINKS.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `text-base font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
+                      ? "text-white bg-white/10"
+                      : "text-white/70 hover:text-white hover:bg-white/5"
+                    }`
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
 
-      {/* ── Mobile Menu Overlay ──────────────────────────────────────────── */}
-      <div
-        className={`fixed inset-0 top-14 z-40 bg-surface/95 backdrop-blur-xl lg:hidden overflow-y-auto transition-all duration-300 ease-out ${mobileOpen
-            ? "opacity-100 visible"
-            : "opacity-0 invisible pointer-events-none"
-          }`}
-      >
-        <div className="flex flex-col px-6 py-6 gap-1">
-          {NAV_LINKS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `text-body-lg font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
-                  ? "text-primary bg-surface-container-high"
-                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+              <MobileDropdown
+                label="Help Center"
+                groups={HELP_GROUPS}
+                onNavigate={() => setMobileMenuOpen(false)}
+              />
+              <MobileDropdown
+                label="Community"
+                groups={COMMUNITY_GROUPS}
+                onNavigate={() => setMobileMenuOpen(false)}
+              />
 
-          <MobileDropdown
-            label="Help Center"
-            groups={HELP_GROUPS}
-            onNavigate={() => setMobileOpen(false)}
-          />
-          <MobileDropdown
-            label="Community"
-            groups={COMMUNITY_GROUPS}
-            onNavigate={() => setMobileOpen(false)}
-          />
+              {NAV_TRAILING.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `text-base font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
+                      ? "text-white bg-white/10"
+                      : "text-white/70 hover:text-white hover:bg-white/5"
+                    }`
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
 
-          {NAV_TRAILING.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `text-body-lg font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
-                  ? "text-primary bg-surface-container-high"
-                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+              <hr className="border-white/10 my-3 mx-2" />
 
-          <hr className="border-outline-variant/40 my-3" />
-
-          {signedIn ? (
-            <div className="flex items-center gap-3 px-4 py-3">
-              <Link
-                to="/dashboard"
-                onClick={() => setMobileOpen(false)}
-                aria-label="Go to dashboard"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-container text-body-sm font-bold text-on-primary-container transition-colors hover:bg-primary-container/80"
-                title={user?.displayName ?? user?.email ?? "Account"}
-              >
-                {initials}
-              </Link>
-              <Link
-                to="/dashboard"
-                onClick={() => setMobileOpen(false)}
-                className="flex-1 rounded-lg bg-primary px-4 py-3 text-center text-body-lg font-medium text-on-primary transition-colors duration-300 hover:bg-primary-fixed"
-              >
-                Go to dashboard
-              </Link>
+              {signedIn ? (
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <Link
+                    to="/dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                    aria-label="Go to dashboard"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#3a3530] text-sm font-bold text-white transition-colors hover:bg-[#4a4540] border border-white/10"
+                    title={user?.displayName ?? user?.email ?? "Account"}
+                  >
+                    {initials}
+                  </Link>
+                  <Link
+                    to="/dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex-1 rounded-lg bg-white px-4 py-3 text-center text-base font-medium text-black transition-colors duration-300 hover:bg-white/90"
+                  >
+                    Go to dashboard
+                  </Link>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <Link
+                    to="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="text-base text-center font-medium py-3 px-4 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors duration-200"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    to="/signup"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="bg-white text-black py-3 px-4 rounded-lg text-base font-medium text-center hover:bg-white/90 transition-colors duration-300"
+                  >
+                    Get Started
+                  </Link>
+                </div>
+              )}
             </div>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                onClick={() => setMobileOpen(false)}
-                className="text-body-lg font-medium py-3 px-4 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors duration-200"
-              >
-                Sign In
-              </Link>
-              <Link
-                to="/signup"
-                onClick={() => setMobileOpen(false)}
-                className="bg-primary text-on-primary py-3 px-4 rounded-lg text-body-lg font-medium text-center hover:bg-primary-fixed transition-colors duration-300 mt-1"
-              >
-                Get Started
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
+      </nav>
+      {/* Spacer style for non-absolute context usage in marketing-layout */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+      `}</style>
     </>
   );
-}
-
-function getInitials(user: SessionUser | null): string {
-  const source = user?.displayName?.trim() || user?.email?.trim() || "";
-  if (!source) return "U";
-  const words = source.includes("@")
-    ? [source.slice(0, 1)]
-    : source.split(/\s+/).filter(Boolean).slice(0, 2);
-  return words.map((word) => word[0]?.toUpperCase() ?? "").join("") || "U";
 }
