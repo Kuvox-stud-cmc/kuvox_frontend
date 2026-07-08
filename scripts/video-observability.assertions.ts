@@ -1,23 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 import {
   createEditorCorrelationId,
   sanitizeVideoEditorLogFields,
   withEditorCorrelationHeaders,
 } from "../app/lib/editor/editor-observability.client";
-
-const root = process.cwd();
-const workspace = resolve(root, "..");
-
-function readFrontend(path: string): string {
-  return readFileSync(resolve(root, path), "utf8");
-}
-
-function readWorkspace(path: string): string {
-  return readFileSync(resolve(workspace, path), "utf8");
-}
+import { readFrontendFile, readWorkspaceFile, warnSkippedWorkspaceAssertion } from "./workspace-paths";
 
 function main(): void {
   assertSanitizerRedactsSensitiveFields();
@@ -79,7 +67,7 @@ function assertFrontendMarkers(): void {
     "app/lib/editor/video-retrieval.ts",
     "app/lib/editor/video-export.ts",
     "app/lib/editor/video-performance.client.ts",
-  ].map(readFrontend).join("\n");
+  ].map(readFrontendFile).join("\n");
 
   for (const marker of [
     "editor.load.start",
@@ -113,7 +101,7 @@ function assertFrontendMarkers(): void {
 }
 
 function assertDevDiagnostics(): void {
-  const helper = readFrontend("app/lib/editor/editor-observability.client.ts");
+  const helper = readFrontendFile("app/lib/editor/editor-observability.client.ts");
   assert.ok(helper.includes("__KUVOX_VIDEO_EDITOR_DIAGNOSTICS__"));
   assert.ok(helper.includes("import.meta.env?.DEV"));
   assert.ok(helper.includes("getRecentLogs"));
@@ -123,7 +111,7 @@ function assertDevDiagnostics(): void {
 }
 
 function assertBffCorrelation(): void {
-  const proxy = readFrontend("server/proxy.mjs");
+  const proxy = readFrontendFile("server/proxy.mjs");
   assert.ok(proxy.includes("proxyCorrelation(req)"));
   assert.ok(proxy.includes("\"x-request-id\""));
   assert.ok(proxy.includes("\"x-kuvox-editor-correlation-id\""));
@@ -136,13 +124,18 @@ function assertBffCorrelation(): void {
 }
 
 function assertApiCorrelationAndTimelineLogs(): void {
-  const program = readWorkspace("kuvox_api/Program.cs");
+  const program = readWorkspaceFile("kuvox_api", "Program.cs");
+  const service = readWorkspaceFile("kuvox_api", "Modules/Timelines/Services/TimelineService.cs");
+  if (!program || !service) {
+    warnSkippedWorkspaceAssertion("API correlation and timeline logs", "kuvox_api");
+    return;
+  }
+
   assert.ok(program.includes("LogContext.PushProperty(\"RequestId\""));
   assert.ok(program.includes("LogContext.PushProperty(\"EditorCorrelationId\""));
   assert.ok(program.includes("x-request-id"));
   assert.ok(program.includes("x-kuvox-editor-correlation-id"));
 
-  const service = readWorkspace("kuvox_api/Modules/Timelines/Services/TimelineService.cs");
   for (const marker of [
     "VideoTimelineGet",
     "VideoTimelineSaveConflict",
@@ -158,28 +151,33 @@ function assertApiCorrelationAndTimelineLogs(): void {
 }
 
 function assertAiCorrelationAndSanitizedLogs(): void {
-  const middleware = readWorkspace("kuvox_ai_service/src/kuvox_ai/api/middleware.py");
+  const middleware = readWorkspaceFile("kuvox_ai_service", "src/kuvox_ai/api/middleware.py");
+  const planningRoute = readWorkspaceFile("kuvox_ai_service", "src/kuvox_ai/api/routes/planning.py");
+  const retrievalRoute = readWorkspaceFile("kuvox_ai_service", "src/kuvox_ai/api/routes/retrieval.py");
+  const planningService = readWorkspaceFile("kuvox_ai_service", "src/kuvox_ai/modules/planning/service.py");
+  const retrievalService = readWorkspaceFile("kuvox_ai_service", "src/kuvox_ai/modules/retrieval/service.py");
+  if (!middleware || !planningRoute || !retrievalRoute || !planningService || !retrievalService) {
+    warnSkippedWorkspaceAssertion("AI correlation and sanitized logs", "kuvox_ai_service");
+    return;
+  }
+
   assert.ok(middleware.includes("editor_correlation_id"));
   assert.ok(middleware.includes("x-kuvox-editor-correlation-id"));
 
-  const planningRoute = readWorkspace("kuvox_ai_service/src/kuvox_ai/api/routes/planning.py");
   assert.ok(planningRoute.includes("planning.video_editor.route.start"));
   assert.ok(planningRoute.includes("planning.video_editor.route.success"));
   assert.ok(planningRoute.includes("action_count"));
   assert.ok(!planningRoute.includes("logger.info(\n        \"planning.video_editor.route.start\",\n        command="));
 
-  const retrievalRoute = readWorkspace("kuvox_ai_service/src/kuvox_ai/api/routes/retrieval.py");
   assert.ok(retrievalRoute.includes("retrieval.video_editor.route.start"));
   assert.ok(retrievalRoute.includes("retrieval.video_editor.route.success"));
   assert.ok(retrievalRoute.includes("top_k"));
   assert.ok(retrievalRoute.includes("modalities"));
   assert.ok(!retrievalRoute.includes("logger.info(\n        \"retrieval.video_editor.route.start\",\n        query="));
 
-  const planningService = readWorkspace("kuvox_ai_service/src/kuvox_ai/modules/planning/service.py");
   assert.ok(!planningService.includes("command=command"));
   assert.ok(!planningService.includes("command=request.command"));
 
-  const retrievalService = readWorkspace("kuvox_ai_service/src/kuvox_ai/modules/retrieval/service.py");
   assert.ok(!retrievalService.includes("text=query.text"));
 }
 

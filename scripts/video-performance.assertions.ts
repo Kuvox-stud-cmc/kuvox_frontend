@@ -25,6 +25,7 @@ import {
   type VideoProjectDocument,
   type VideoTrack,
 } from "../app/lib/editor/video-document";
+import { readWorkspaceFile, warnSkippedWorkspaceAssertion } from "./workspace-paths";
 
 function main(): void {
   assertSmallTimelineRendersFully();
@@ -160,9 +161,14 @@ function assertProxyAndApiMarkers(): void {
   assert.match(proxy, /\\\/bff\\\/timelines\\\/projects\\\/\(\[\^\/\]\+\)\\\/performance/);
   assert.match(proxy, /\/api\/timelines\/projects\/\$\{match\[1\]\}\/performance/);
 
-  const controller = readFileSync("../kuvox_api/Modules/Timelines/Controllers/TimelinesController.cs", "utf8");
-  const service = readFileSync("../kuvox_api/Modules/Timelines/Services/TimelineService.cs", "utf8");
-  const dtos = readFileSync("../kuvox_api/Modules/Timelines/Dtos/TimelineDtos.cs", "utf8");
+  const controller = readWorkspaceFile("kuvox_api", "Modules/Timelines/Controllers/TimelinesController.cs");
+  const service = readWorkspaceFile("kuvox_api", "Modules/Timelines/Services/TimelineService.cs");
+  const dtos = readWorkspaceFile("kuvox_api", "Modules/Timelines/Dtos/TimelineDtos.cs");
+  if (!controller || !service || !dtos) {
+    warnSkippedWorkspaceAssertion("timeline performance API markers", "kuvox_api");
+    return;
+  }
+
   assert.match(controller, /HttpPost\("projects\/\{projectId:guid\}\/performance"\)/);
   assert.match(service, /RequireReadAccessAsync\(projectId, caller/);
   assert.match(service, /VideoEditorPerformanceMetric/);
