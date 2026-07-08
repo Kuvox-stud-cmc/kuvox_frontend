@@ -29,7 +29,7 @@ for (const script of [
 assert.ok(existsSync("app/components/editor/video-components.test.tsx"), "component coverage must exist.");
 assert.ok(existsSync("e2e/video-editor.spec.ts"), "Playwright route-flow coverage must exist.");
 
-if (!workspaceFileExists("kuvox_api", "Kuvox.Api.Tests/TimelineServiceTests.cs")) {
+if (!workspaceFileExists("kuvox_api", "Tests/TimelineServiceTests.cs")) {
   warnSkippedWorkspaceAssertion("API timeline service test presence", "kuvox_api");
 }
 
