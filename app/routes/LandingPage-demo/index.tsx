@@ -12,7 +12,7 @@ import {
 import { ScrollIndicator } from "./components/scroll-indicator";
 import { FeatureOverview } from "./components/feature-cards";
 import { ComparisonSection } from "./components/comparison-section";
-import { CursorParallaxDots } from "./components/cursor-parallax-dots";
+import { LotusPond } from "./components/lotus-pond";
 import { WhatsNewSection } from "./components/whats-new-section";
 import { FinalCTA } from "./components/final-cta";
 import { Footer } from "./components/footer";
@@ -89,14 +89,16 @@ export default function LandingPageDemo() {
       <ScrollIndicator heroVh={TOTAL_EXTRA_VH} />
 
       {/* Below-the-fold content */}
-      <div className="post-museum-stage relative z-20 -mt-20 overflow-hidden sm:-mt-28">
-        <div className="relative overflow-hidden">
-          <CursorParallaxDots />
-          <div className="relative z-10">
-            <FeatureOverview />
-            <ComparisonSection />
-          </div>
-        </div>
+      <div className="lotus-pond-stage relative z-20 overflow-hidden">
+        <LotusPond>
+          <FeatureOverview />
+          <ComparisonSection />
+        </LotusPond>
+        {/* Gradient bridge — smooths the visual transition into What's New */}
+        <div
+          className="relative z-20 h-12 bg-gradient-to-b from-transparent to-[#0c0c0e]"
+          aria-hidden="true"
+        />
         <div className="relative z-20 bg-[#0c0c0e]">
           <WhatsNewSection />
         </div>

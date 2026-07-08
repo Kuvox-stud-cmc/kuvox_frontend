@@ -72,7 +72,7 @@ function FeatureVisual({ type, accent }: { type: string; accent: string }) {
           {["#e4c77f", "#73b7ff", "#b89cff", "#63d9a8"].map((color) => (
             <span
               key={color}
-              className="h-14 w-14 rounded-full ring-4 ring-[#121214]"
+              className="h-14 w-14 rounded-full ring-4 ring-white/10"
               style={{ backgroundColor: color }}
             />
           ))}
@@ -167,8 +167,8 @@ export function FeatureOverview() {
   }, []);
 
   return (
-    <section ref={sectionRef} id="features" className="relative z-20 overflow-hidden py-32">
-      <div className="mx-auto max-w-7xl px-6 lg:px-12">
+    <section ref={sectionRef} id="features" className="pond-content-section relative z-20 overflow-hidden py-32">
+      <div className="pond-content-safe mx-auto max-w-7xl px-6 lg:px-12">
         <div ref={headerRef} className="mb-16 max-w-3xl">
           <h2 className="heading-lg mb-5 text-white">
             Professional tools for <span className="text-[#e4c77f]">every stage.</span>
@@ -183,7 +183,7 @@ export function FeatureOverview() {
           {features.map((feature) => (
             <article
               key={feature.title}
-              className={`feature-card group relative min-h-[280px] overflow-hidden rounded-2xl border border-white/10 bg-white/[0.045] p-7 transition-[transform,background-color,border-color] duration-500 ease-out hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.075] sm:p-8 ${feature.span}`}
+              className={`feature-card group relative min-h-[280px] overflow-hidden rounded-2xl border border-white/15 bg-white/[0.07] p-7 backdrop-blur-md transition-[transform,background-color,border-color] duration-500 ease-out hover:-translate-y-1 hover:border-white/25 hover:bg-white/[0.12] sm:p-8 ${feature.span}`}
             >
               <div
                 className="absolute -right-12 -top-12 h-36 w-36 rounded-full opacity-10 blur-3xl transition-opacity duration-500 group-hover:opacity-20"
