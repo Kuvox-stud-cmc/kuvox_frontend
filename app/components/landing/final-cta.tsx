@@ -68,7 +68,7 @@ export function FinalCTA() {
             href="#"
             className="liquid-glass final-glass-button final-glass-button-muted px-14 py-5 text-base font-medium text-white/80"
           >
-            Contact Sales
+            Learn More
           </a>
         </div>
       </div>
