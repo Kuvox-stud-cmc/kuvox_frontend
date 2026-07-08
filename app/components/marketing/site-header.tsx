@@ -225,7 +225,7 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
     <>
       <nav
         className={cn(
-          "fixed left-1/2 -translate-x-1/2 z-50 transition-all duration-500 max-w-[calc(100vw-2rem)]",
+          "fixed inset-x-0 mx-auto w-max z-50 transition-all duration-500 max-w-[calc(100vw-2rem)]",
           scrolled ? "top-4" : "top-6"
         )}
       >
@@ -287,7 +287,7 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
               <div className="hidden sm:flex items-center gap-2">
                 <Link
                   to="/dashboard"
-                  className="ml-2 px-5 h-9 sm:h-10 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
+                  className="ml-2 px-4 h-9 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
                 >
                   Go to dashboard
                 </Link>
@@ -310,7 +310,7 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                 </Link>
                 <Link
                   to="/signup"
-                  className="ml-1 px-5 h-9 sm:h-10 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
+                  className="ml-1 px-4 h-9 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
                 >
                   Get Started
                 </Link>

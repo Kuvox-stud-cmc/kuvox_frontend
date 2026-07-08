@@ -118,7 +118,8 @@ function Preloader() {
 
 export default function Home() {
   const { user } = useLoaderData() as { user: SessionUser | null };
-  const [heroVisible, setHeroVisible] = useState(true);
+  const [heroSequenceVisible, setHeroSequenceVisible] = useState(true);
+  const [pondPortalActive, setPondPortalActive] = useState(false);
   const roomContentRef = useRef<RoomContentHandle>(null);
 
   const handleSequenceProgress = useCallback((state: HeroSequenceProgress) => {
@@ -135,18 +136,21 @@ export default function Home() {
       {/* Scroll-driven museum image sequence */}
       <HeroSequence
         onProgressChange={handleSequenceProgress}
-        onVisibilityChange={setHeroVisible}
+        onVisibilityChange={setHeroSequenceVisible}
       />
 
       {/* Room text overlay — only visible during hero scroll */}
-      <RoomContent ref={roomContentRef} visible={heroVisible} />
+      <RoomContent ref={roomContentRef} visible={heroSequenceVisible && !pondPortalActive} />
 
       {/* Scroll progress hint */}
       <ScrollIndicator heroVh={TOTAL_EXTRA_VH} />
 
       {/* Below-the-fold content */}
       <div className="lotus-pond-stage relative z-20 overflow-hidden">
-        <LotusPond>
+        <LotusPond
+          transitionImageSrc="/Landingpage/7.jpg"
+          onPortalActiveChange={setPondPortalActive}
+        >
           <FeatureOverview />
           <ComparisonSection />
         </LotusPond>

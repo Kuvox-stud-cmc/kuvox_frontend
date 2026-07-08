@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -396,19 +396,23 @@ const POND_COLORS = {
   ripple: "rgba(164, 232, 220, 0.46)",
 };
 
+const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
+const smoothstep = (value: number) => {
+  const t = clamp01(value);
+  return t * t * (3 - 2 * t);
+};
+const segment = (value: number, start: number, end: number) =>
+  smoothstep((value - start) / (end - start));
+
 // ── Water canvas ─────────────────────────────────────────────────────────
 function useWaterCanvas(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   containerRef: React.RefObject<HTMLDivElement | null>,
-  surgeProgress: number,
+  surgeRef: { current: number },
 ) {
   const ripplesRef = useRef<Ripple[]>([]);
   const mouseRef = useRef({ x: 0, y: 0 });
   const animFrameRef = useRef(0);
-  const surgeRef = useRef(surgeProgress);
-
-  // Keep surge value current without re-running effect
-  surgeRef.current = surgeProgress;
 
   const addRipple = useCallback((x: number, y: number) => {
     ripplesRef.current.push({
@@ -625,7 +629,7 @@ function useWaterCanvas(
       window.removeEventListener("resize", resize);
       container.removeEventListener("pointermove", handlePointerMove);
     };
-  }, [canvasRef, containerRef, addRipple]);
+  }, [canvasRef, containerRef, surgeRef, addRipple]);
 
   return { mouseRef, addRipple };
 }
@@ -634,11 +638,9 @@ function useWaterCanvas(
 function LotusElement({
   item,
   mouseRef,
-  surgeProgress,
 }: {
   item: LotusItem;
   mouseRef: React.RefObject<{ x: number; y: number }>;
-  surgeProgress: number;
 }) {
   const elRef = useRef<HTMLImageElement>(null);
   const posRef = useRef({ x: 0, y: 0 });
@@ -717,8 +719,6 @@ function LotusElement({
       }
     : {};
 
-  // Opacity tied to surge so lotus fades in with the water
-  const surgeOpacity = Math.min(surgeProgress * 1.5, 1);
   const baseOpacity = item.z <= 1 ? 0.65 : item.z <= 3 ? 0.85 : 0.9;
 
   return (
@@ -746,7 +746,7 @@ function LotusElement({
               ? "brightness(0.85) saturate(0.9)"
               : "brightness(0.9)"
         }`,
-        opacity: baseOpacity * surgeOpacity,
+        opacity: `calc(${baseOpacity} * var(--pond-lotus-opacity, 0))`,
         ...anchoredStyle,
       }}
     />
@@ -754,19 +754,51 @@ function LotusElement({
 }
 
 // ── Main component ───────────────────────────────────────────────────────
-export function LotusPond({ children }: { children: React.ReactNode }) {
+export function LotusPond({
+  children,
+  transitionImageSrc = "/Landingpage/7.jpg",
+  onPortalActiveChange,
+}: {
+  children: React.ReactNode;
+  transitionImageSrc?: string;
+  onPortalActiveChange?: (active: boolean) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [surgeProgress, setSurgeProgress] = useState(0);
+  const surgeRef = useRef(0);
 
-  const { mouseRef } = useWaterCanvas(canvasRef, containerRef, surgeProgress);
+  const { mouseRef } = useWaterCanvas(canvasRef, containerRef, surgeRef);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    let portalActive = false;
+
+    const setMotionVars = (progress: number, active = portalActive) => {
+      const portalDepth = segment(progress, 0, 0.8);
+      const portalFade = segment(progress, 0.86, 1);
+      const waterProgress = segment(progress, 0.72, 1);
+      const lotusProgress = segment(progress, 0.8, 1);
+      const glowProgress = segment(progress, 0.18, 0.86);
+      const portalGlow =
+        Math.sin(glowProgress * Math.PI) * (1 - segment(progress, 0.78, 1)) * 0.45;
+
+      surgeRef.current = waterProgress;
+      container.style.setProperty("--portal-opacity", `${active ? 1 - portalFade : 0}`);
+      container.style.setProperty("--portal-scale", `${1 + portalDepth * 2.05}`);
+      container.style.setProperty("--portal-y", `${portalDepth * 4}svh`);
+      container.style.setProperty("--portal-blur", `${portalDepth * 2.5}px`);
+      container.style.setProperty("--portal-glow-opacity", `${Math.max(portalGlow, 0)}`);
+      container.style.setProperty("--portal-glow-scale", `${0.6 + portalDepth * 1.25}`);
+      container.style.setProperty("--pond-waterline", `${(1 - waterProgress) * 100}%`);
+      container.style.setProperty("--pond-waterline-extra", `${(1 - waterProgress) * 46}px`);
+      container.style.setProperty("--pond-lotus-opacity", `${lotusProgress}`);
+      container.style.setProperty("--pond-edge-opacity", `${waterProgress}`);
+    };
 
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setSurgeProgress(1);
+      setMotionVars(1, false);
+      onPortalActiveChange?.(false);
       return;
     }
 
@@ -774,21 +806,43 @@ export function LotusPond({ children }: { children: React.ReactNode }) {
     const tween = gsap.to(progress, {
       value: 1,
       ease: "none",
-      onUpdate: () => setSurgeProgress(progress.value),
+      onUpdate: () => setMotionVars(progress.value),
       scrollTrigger: {
         trigger: container,
         start: "top bottom",
-        end: "top top",
-        scrub: 0.35,
+        end: "top 8%",
+        scrub: 0.65,
         invalidateOnRefresh: true,
+        onEnter: () => {
+          portalActive = true;
+          onPortalActiveChange?.(true);
+          setMotionVars(progress.value, true);
+        },
+        onEnterBack: () => {
+          portalActive = true;
+          onPortalActiveChange?.(true);
+          setMotionVars(progress.value, true);
+        },
+        onLeave: () => {
+          portalActive = false;
+          onPortalActiveChange?.(false);
+          setMotionVars(1, false);
+        },
+        onLeaveBack: () => {
+          portalActive = false;
+          onPortalActiveChange?.(false);
+          setMotionVars(0, false);
+        },
       },
     });
+    setMotionVars(0, false);
 
     return () => {
       tween.scrollTrigger?.kill();
       tween.kill();
+      onPortalActiveChange?.(false);
     };
-  }, []);
+  }, [onPortalActiveChange]);
 
   return (
     <div
@@ -796,12 +850,17 @@ export function LotusPond({ children }: { children: React.ReactNode }) {
       className="lotus-pond-container lotus-pond-visible"
       style={{ position: "relative", overflow: "hidden" }}
     >
+      {/* Portal bridge from the final hero frame into the pond */}
+      <div
+        className="lotus-pond-portal-backdrop"
+        style={{ backgroundImage: `url(${transitionImageSrc})` }}
+        aria-hidden="true"
+      />
+      <div className="lotus-pond-portal-glow" aria-hidden="true" />
+
       {/* Clear pond base, clipped to the same scroll-linked waterline */}
       <div
         className="lotus-pond-base"
-        style={{
-          clipPath: `inset(calc(${(1 - surgeProgress) * 100}% + ${(1 - surgeProgress) * 46}px) 0 0)`,
-        }}
         aria-hidden="true"
       />
 
@@ -819,7 +878,6 @@ export function LotusPond({ children }: { children: React.ReactNode }) {
             key={item.id}
             item={item}
             mouseRef={mouseRef}
-            surgeProgress={surgeProgress}
           />
         ))}
       </div>
@@ -833,7 +891,6 @@ export function LotusPond({ children }: { children: React.ReactNode }) {
       {/* Edge fade — blend into surrounding sections */}
       <div
         className="lotus-pond-edge-fade"
-        style={{ opacity: surgeProgress }}
         aria-hidden="true"
       />
     </div>
