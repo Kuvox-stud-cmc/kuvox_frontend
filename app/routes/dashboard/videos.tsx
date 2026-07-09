@@ -221,6 +221,7 @@ function VideoCard({
   const status = pipelineState.stage === "failed" ? "failed" : video.status.toLowerCase();
   const res = video.width && video.height ? `${video.width}x${video.height}` : "-";
   const fpsStr = "-";
+  const isRecent = new Date().getTime() - new Date(video.createdAt).getTime() < 24 * 60 * 60 * 1000;
 
   // List view
   if (listView) {
@@ -260,25 +261,31 @@ function VideoCard({
         </VideoPreviewFrame>
         <div className="min-w-0 flex-1">
           <h3
-            className={`truncate text-body-sm font-bold ${status === "failed" ? "text-error" : "text-on-surface"}`}
+            className={`truncate text-body-sm font-bold flex items-center gap-2 ${status === "failed" ? "text-error" : "text-on-surface"}`}
             title={video.filename}
           >
-            {video.filename}
+            <span className="truncate">{video.filename}</span>
+            {isRecent && (
+              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                Recent
+              </span>
+            )}
           </h3>
-          <p
-            className={`mt-1 text-label-md ${status === "failed" ? "text-error/70" : "text-on-surface-variant"}`}
-          >
-            {new Date(video.createdAt).toLocaleDateString()}
-          </p>
-        </div>
-        <div className="hidden items-center gap-3 text-label-sm text-on-surface-variant sm:flex">
-          {video.durationSeconds != null && <span>{formatDuration(video.durationSeconds)}</span>}
-          {res !== "-" && (
-            <>
-              <span className="h-1 w-1 rounded-full bg-outline-variant" />
-              <span>{res}</span>
-            </>
-          )}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-label-sm text-on-surface-variant">
+            <span>{new Date(video.createdAt).toLocaleDateString()}</span>
+            {video.durationSeconds != null && (
+              <>
+                <span className="h-1 w-1 rounded-full bg-outline-variant" />
+                <span>{formatDuration(video.durationSeconds)}</span>
+              </>
+            )}
+            {res !== "-" && (
+              <>
+                <span className="h-1 w-1 rounded-full bg-outline-variant" />
+                <span>{res}</span>
+              </>
+            )}
+          </div>
         </div>
         <MediaPipelineStatus media={video} pipeline={pipeline} compact />
         <IconToggleButton
@@ -317,8 +324,13 @@ function VideoCard({
           </div>
         </VideoPreviewFrame>
         <div className="p-4">
-          <h3 className="truncate text-body-sm font-bold text-error">
-            {video.filename}
+          <h3 className="truncate text-body-sm font-bold text-error flex items-center gap-2">
+            <span className="truncate">{video.filename}</span>
+            {isRecent && (
+              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                Recent
+              </span>
+            )}
           </h3>
           <p className="mt-1 text-label-md text-error/70">
             {pipelineState.detail}
@@ -374,8 +386,13 @@ function VideoCard({
         </VideoPreviewFrame>
         <div className="p-4">
           <div className="mb-2 flex items-start justify-between">
-            <h3 className="truncate text-body-sm font-bold text-on-surface">
-              {video.filename}
+            <h3 className="truncate text-body-sm font-bold text-on-surface flex items-center gap-2 min-w-0 flex-1">
+              <span className="truncate">{video.filename}</span>
+              {isRecent && (
+                <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                  Recent
+                </span>
+              )}
             </h3>
             <div className="flex items-center gap-1">
               <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
@@ -447,8 +464,13 @@ function VideoCard({
 
       <div className="p-4">
         <div className="mb-2 flex items-start justify-between">
-          <h3 className="truncate text-body-sm font-bold text-on-surface">
-            {video.filename}
+          <h3 className="truncate text-body-sm font-bold text-on-surface flex items-center gap-2 min-w-0 flex-1">
+            <span className="truncate">{video.filename}</span>
+            {isRecent && (
+              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                Recent
+              </span>
+            )}
           </h3>
           <div className="flex items-center gap-1">
             <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
@@ -526,10 +548,14 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
 
   const albumsRef = useRef<HTMLElement>(null);
+  const favoritesRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (pageView === "albums" && albumsRef.current) {
       albumsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (pageView === "favorites" && favoritesRef.current) {
+      favoritesRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [pageView]);
 
@@ -543,6 +569,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
     if (sort === "name") return a.filename.localeCompare(b.filename);
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
+  const favoriteVideos = useMemo(() => videos.filter((video) => video.isFavorite), [videos]);
   const previewVideo = previewVideoId
     ? videos.find((video) => video.id === previewVideoId) ?? null
     : null;
@@ -601,7 +628,11 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
       {actionData?.error && <ErrorBanner message={actionData.error} />}
 
       {/* Hero Drop Zone */}
-      <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-outline-variant bg-surface-container-low p-10 transition-colors hover:border-primary/30">
+      <button
+        type="button"
+        onClick={() => setImportOpen(true)}
+        className="w-full relative overflow-hidden rounded-2xl border-2 border-dashed border-outline-variant bg-surface-container-low p-10 transition-colors hover:border-primary/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      >
         {/* Decorative gradient blobs */}
         <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-primary/5 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-10 -left-10 h-48 w-48 rounded-full bg-secondary/5 blur-3xl" />
@@ -621,31 +652,8 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
           <p className="mt-2 text-label-sm text-on-surface-variant/50">
             MP4, MOV, WebM up to 4GB
           </p>
-
-          <div className="mt-8 flex gap-6">
-            {[
-              { icon: "note_add", label: "Import Files" },
-              { icon: "screen_record", label: "Record Screen" },
-              { icon: "auto_awesome", label: "AI Auto Edit" },
-            ].map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                className="group flex flex-col items-center gap-2 rounded-xl p-4 transition-colors hover:bg-surface-container"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-low transition-colors group-hover:border-primary/30 group-hover:bg-surface-container-high">
-                  <span className="material-symbols-outlined text-[20px] text-on-surface-variant transition-colors group-hover:text-primary">
-                    {action.icon}
-                  </span>
-                </div>
-                <span className="text-label-md font-medium text-on-surface-variant">
-                  {action.label}
-                </span>
-              </button>
-            ))}
-          </div>
         </div>
-      </div>
+      </button>
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -688,9 +696,9 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         />
       </div>
 
-      {/* Recent Projects */}
+      {/* All Videos */}
       <section>
-        <SectionHeader title="Recent Projects" actionTo="/dashboard/videos?view=recent" />
+        <SectionHeader title="All Videos" actionTo="/dashboard/videos?view=recent" />
 
         {videos.length === 0 ? (
           <EmptyState
@@ -771,6 +779,31 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
             limit={5}
             getAlbumTo={(album) => `/dashboard/albums/${album.id}`}
           />
+        )}
+      </section>
+
+      {/* Favorites */}
+      <section ref={favoritesRef} style={{ scrollMarginTop: "6rem" }}>
+        <SectionHeader title="Favorites" />
+        {favoriteVideos.length === 0 ? (
+          <EmptyState
+            icon="favorite_border"
+            title="No favorite videos yet"
+            hint="Mark videos as favorites to find them quickly here."
+          />
+        ) : (
+          <div className={view === "list" ? "space-y-3" : "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}>
+            {favoriteVideos.map((video, i) => (
+              <VideoCard
+                key={`fav-${video.id}`}
+                video={video}
+                index={i}
+                listView={view === "list"}
+                pipeline={live.updatesById[video.id]?.pipeline}
+                onPreview={(nextVideo) => setPreviewVideoId(nextVideo.id)}
+              />
+            ))}
+          </div>
         )}
       </section>
 
