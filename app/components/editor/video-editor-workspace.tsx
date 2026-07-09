@@ -37,11 +37,13 @@ import {
   queueVideoEditorPerformanceMetric,
 } from "~/lib/editor/video-performance.client";
 import { useLiveMedia } from "~/lib/media-realtime";
+import { uploadMediaFile } from "~/lib/media-upload.client";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   assetSelected,
   aiCommandHistoryLoaded,
   editorDocumentLoaded,
+  editorModeChanged,
   editorLoadFailed,
   editorLoadStarted,
   mediaAssetAddedToTimeline,
@@ -57,6 +59,8 @@ import {
   selectVideoDocument,
   selectVideoHistoryState,
   toastShown,
+  timelineOpenChanged,
+  textItemCreated,
   type VideoEditorHistoryFrame,
 } from "~/store/slices/editor-slice";
 
@@ -92,6 +96,9 @@ interface VideoEditorWorkspaceProps {
   canWrite: boolean;
 }
 
+type NarrowManualPane = "preview" | "timeline";
+type ResponsiveManualDrawer = "library" | "inspector" | null;
+
 /**
  * Video editor UI. Client-only: it lives under the route's Redux `<Provider>`
  * and never renders on the server.
@@ -115,6 +122,10 @@ export function VideoEditorWorkspace({
   const firstUsableRecorded = useRef(false);
   const [projectMediaRows, setProjectMediaRows] = useState(projectMedia);
   const [draftRecovery, setDraftRecovery] = useState<DraftRecoveryState>({ state: "none" });
+  const [narrowManualPane, setNarrowManualPane] = useState<NarrowManualPane>("preview");
+  const [responsiveDrawer, setResponsiveDrawer] = useState<ResponsiveManualDrawer>(null);
+  const [desktopInspectorOpen, setDesktopInspectorOpen] = useState(false);
+  const responsiveDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const editor = useAppSelector(selectEditorState);
   const editorMode = useAppSelector(selectEditorMode);
   const { libraryOpen } = useAppSelector(selectChromeState);
@@ -355,6 +366,54 @@ export function VideoEditorWorkspace({
     window.requestAnimationFrame(() => returnTarget.focus());
   }, [activeModal, activePopover]);
 
+  const closeResponsiveDrawer = useCallback(() => {
+    setResponsiveDrawer(null);
+    const returnTarget = responsiveDrawerReturnFocusRef.current;
+    responsiveDrawerReturnFocusRef.current = null;
+    if (!returnTarget || typeof window === "undefined") return;
+    window.requestAnimationFrame(() => returnTarget.focus());
+  }, []);
+
+  const openResponsiveDrawer = useCallback((
+    drawer: Exclude<ResponsiveManualDrawer, null>,
+    trigger: HTMLElement,
+  ) => {
+    responsiveDrawerReturnFocusRef.current = trigger;
+    if (drawer === "library") {
+      dispatch(libraryOpenChanged(true));
+    }
+    setResponsiveDrawer(drawer);
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (!responsiveDrawer) return;
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeResponsiveDrawer();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [closeResponsiveDrawer, responsiveDrawer]);
+
+  useEffect(() => {
+    if (!responsiveDrawer || typeof window === "undefined") return;
+    const label = responsiveDrawer === "library" ? "Media library" : "Inspector";
+    const frame = window.requestAnimationFrame(() => {
+      const panel = editorRootRef.current?.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+      panel?.querySelector<HTMLElement>("button, input, select, textarea, [tabindex='0']")?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [responsiveDrawer]);
+
+  useEffect(() => {
+    if (editorMode !== "manual" && responsiveDrawer) {
+      closeResponsiveDrawer();
+    }
+  }, [closeResponsiveDrawer, editorMode, responsiveDrawer]);
+
   const attachMediaForTimeline = useCallback(async (item: MediaDto) => {
     if (!canWrite) {
       dispatch(toastShown("View only: you cannot place media on this timeline"));
@@ -377,7 +436,7 @@ export function VideoEditorWorkspace({
     dispatch(mediaAssetAddedToTimeline(item));
   }, [attachMediaForTimeline, dispatch]);
 
-  const addDroppedMediaToTimeline = useCallback(async (mediaId: string, placement?: { trackId: string; timelineStart: number }) => {
+  const addDroppedMediaToTimeline = useCallback(async (mediaId: string, placement?: { trackId?: string; timelineStart: number }) => {
     const item = live.media.find((candidate) => candidate.id === mediaId);
     if (!item) {
       dispatch(toastShown("Media is no longer available"));
@@ -395,13 +454,44 @@ export function VideoEditorWorkspace({
     dispatch(toastShown("Media imported"));
   }, [cacheScope, dispatch, live]);
 
+  const importDroppedFiles = useCallback(async (files: File[]) => {
+    if (!canWrite) {
+      dispatch(toastShown("View only: you cannot import media"));
+      return;
+    }
+
+    const supportedFiles = files.flatMap((file) => {
+      const kind = mediaKindForFile(file);
+      return kind === null ? [] : [{ file, kind }];
+    });
+    if (supportedFiles.length === 0) {
+      dispatch(toastShown("Drop video, image, or audio files to import"));
+      return;
+    }
+
+    dispatch(toastShown(`Importing ${supportedFiles.length} file${supportedFiles.length === 1 ? "" : "s"}`));
+    for (const { file, kind } of supportedFiles) {
+      try {
+        const uploaded = await uploadMediaFile({
+          file,
+          kind,
+          filename: file.name,
+          studioId,
+        });
+        await handleUploaded(uploaded);
+      } catch (error) {
+        dispatch(toastShown(error instanceof Error ? error.message : `Could not import ${file.name}`));
+      }
+    }
+  }, [canWrite, dispatch, handleUploaded, studioId]);
+
   return (
     <div
       ref={editorRootRef}
       data-video-editor-root
       data-editor-shortcuts="scope"
       tabIndex={-1}
-      className="flex h-screen w-full flex-col overflow-hidden bg-background text-on-background"
+      className="video-editor-theme flex h-dvh w-full flex-col overflow-hidden bg-background pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-on-background"
       style={
         {
           "--editor-timeline-space": `${timelineOpen ? timelineHeight : 40}px`,
@@ -413,13 +503,11 @@ export function VideoEditorWorkspace({
         user={user}
         notifications={notifications}
         onSync={autosave.syncNow}
+        conflict={Boolean(conflict)}
+        onKeepLocal={autosave.keepLocalEdits}
+        onReloadServer={autosave.reloadServerCopy}
       />
-      {conflict ? (
-        <EditorConflictBanner
-          onKeepLocal={autosave.keepLocalEdits}
-          onReloadServer={autosave.reloadServerCopy}
-        />
-      ) : draftRecovery.state !== "none" ? (
+      {conflict ? null : draftRecovery.state !== "none" ? (
         <DraftRecoveryBanner
           recovery={draftRecovery}
           onContinue={() => setDraftRecovery({ state: "none" })}
@@ -436,58 +524,126 @@ export function VideoEditorWorkspace({
         />
       ) : null}
 
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <div className="pointer-events-none absolute left-3 right-3 top-3 z-50 rounded-[4px] border border-outline-variant bg-surface/95 px-3 py-2 text-center text-label-md font-semibold text-on-surface-variant lg:hidden">
-          Use a wider screen for full editing. Preview and timeline remain available here.
-        </div>
-        {!libraryOpen ? (
-          <button
-            type="button"
-            aria-label="Open media library"
-            title="Open media library"
-            className="group relative z-40 hidden h-full w-10 shrink-0 items-center justify-center border-r border-outline-variant bg-surface text-on-surface-variant transition-colors duration-150 hover:border-primary/35 hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none lg:flex"
-            onClick={() => dispatch(libraryOpenChanged(true))}
-          >
-            <EditorIcon className="text-[22px] transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none">
-              chevron_right
-            </EditorIcon>
-          </button>
-        ) : null}
-        <EditorPanelErrorBoundary label="Media library">
-          <MediaLibraryPanel
-            media={live.media}
-            updatesById={live.updatesById}
-            mediaLoadError={mediaLoadError}
-            mediaRetrying={mediaRetrying}
-            usingCachedMedia={Boolean(mediaLoadError && media.length === 0 && live.media.length > 0)}
-            canPlaceMedia={canWrite}
-            onRetryMediaLoad={onRetryMediaLoad}
-            onAddMedia={addMediaToTimeline}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {editorMode === "manual" ? (
+          <ResponsiveManualControls
+            activePane={narrowManualPane}
+            drawer={responsiveDrawer}
+            onPaneChange={(pane) => {
+              if (pane === "timeline") dispatch(timelineOpenChanged(true));
+              setNarrowManualPane(pane);
+            }}
+            onOpenDrawer={openResponsiveDrawer}
           />
-        </EditorPanelErrorBoundary>
-        <EditorPanelErrorBoundary label="Preview">
-          <PreviewPanel project={editorProject} />
-        </EditorPanelErrorBoundary>
-        {editorMode === "ai" ? (
-          <EditorPanelErrorBoundary label="Assistant">
-            <AiAssistantPanel
-              messages={assistantMessages}
-              projectId={project.id}
-              cacheScope={cacheScope}
+        ) : null}
+
+        <div
+          className={`relative flex min-h-0 flex-1 overflow-hidden ${
+            editorMode === "manual" && narrowManualPane === "timeline"
+              ? "max-[759px]:hidden"
+              : ""
+          }`}
+        >
+          <ManualNavigationRail />
+          {!libraryOpen ? (
+            <button
+              type="button"
+              aria-label="Open media library"
+              title="Open media library"
+              className="group relative z-40 hidden h-full w-10 shrink-0 items-center justify-center border-r border-outline-variant bg-surface text-on-surface-variant transition-colors duration-150 hover:border-primary/35 hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none min-[1180px]:flex"
+              onClick={() => dispatch(libraryOpenChanged(true))}
+            >
+              <EditorIcon className="text-[22px] transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none">
+                chevron_right
+              </EditorIcon>
+            </button>
+          ) : null}
+          <EditorPanelErrorBoundary label="Media library">
+            <MediaLibraryPanel
               media={live.media}
-              canPlanCommands={canWrite}
+              updatesById={live.updatesById}
+              mediaLoadError={mediaLoadError}
+              mediaRetrying={mediaRetrying}
+              usingCachedMedia={Boolean(mediaLoadError && media.length === 0 && live.media.length > 0)}
+              canPlaceMedia={canWrite}
+              onRetryMediaLoad={onRetryMediaLoad}
+              onAddMedia={addMediaToTimeline}
+              onImportFiles={(files) => void importDroppedFiles(files)}
+              onRequestClose={closeResponsiveDrawer}
+              className={
+                responsiveDrawer === "library"
+                  ? "absolute inset-y-0 left-0 z-40 flex w-[min(320px,88vw)] shadow-2xl min-[1180px]:relative min-[1180px]:shadow-none"
+                  : "hidden min-[1180px]:flex"
+              }
             />
           </EditorPanelErrorBoundary>
-        ) : (
-          <EditorPanelErrorBoundary label="Inspector">
-            <ToolRail />
-            <VideoInspectorPanel />
+          <EditorPanelErrorBoundary label="Preview">
+            <PreviewPanel
+              project={{
+                ...editorProject,
+                id: project.id,
+                name: project.name,
+                previewTitle: project.name,
+              }}
+              onMediaDrop={addDroppedMediaToTimeline}
+            />
           </EditorPanelErrorBoundary>
-        )}
+          {editorMode === "ai" ? (
+            <>
+              <EditorPanelErrorBoundary label="Assistant">
+                <AiAssistantPanel
+                  messages={assistantMessages}
+                  projectId={project.id}
+                  cacheScope={cacheScope}
+                  media={live.media}
+                  canPlanCommands={canWrite}
+                />
+              </EditorPanelErrorBoundary>
+              <ToolRail
+                showLabels
+                className="z-40 hidden h-full w-16 shrink-0 flex-col border-l border-outline-variant bg-surface min-[1180px]:flex"
+              />
+            </>
+          ) : (
+            <EditorPanelErrorBoundary label="Inspector">
+              <ToolRail
+                showLabels
+                inspectorOpen={desktopInspectorOpen}
+                onInspectorToggle={() => setDesktopInspectorOpen((open) => !open)}
+                className="z-40 hidden h-full w-16 shrink-0 flex-col border-l border-outline-variant bg-surface min-[1180px]:flex"
+              />
+              <VideoInspectorPanel
+                onRequestClose={closeResponsiveDrawer}
+                visibilityClassName={
+                  responsiveDrawer === "inspector"
+                    ? "absolute inset-y-0 right-0 z-40 flex shadow-2xl min-[1180px]:relative min-[1180px]:shadow-none"
+                    : desktopInspectorOpen
+                      ? "hidden min-[1180px]:flex"
+                      : "hidden"
+                }
+              />
+            </EditorPanelErrorBoundary>
+          )}
+          {editorMode === "manual" && responsiveDrawer ? (
+            <button
+              type="button"
+              aria-label="Close editor panel"
+              onClick={closeResponsiveDrawer}
+              className="absolute inset-0 z-20 bg-black/45 min-[1180px]:hidden"
+            />
+          ) : null}
+        </div>
       </div>
 
       <EditorPanelErrorBoundary label="Timeline">
-        <TimelinePanel onMediaDrop={addDroppedMediaToTimeline} />
+        <TimelinePanel
+          onMediaDrop={addDroppedMediaToTimeline}
+          className={
+            editorMode === "manual"
+              ? `${narrowManualPane === "preview" ? "max-[759px]:hidden" : ""} max-[759px]:!h-full max-[759px]:!min-h-0 max-[759px]:!max-h-none max-[759px]:flex-1`
+              : ""
+          }
+        />
       </EditorPanelErrorBoundary>
       <EditorPanelErrorBoundary label="Popover layer">
         <EditorPopoverLayer />
@@ -513,6 +669,157 @@ export function VideoEditorWorkspace({
       </EditorPanelErrorBoundary>
     </div>
   );
+}
+
+function ResponsiveManualControls({
+  activePane,
+  drawer,
+  onPaneChange,
+  onOpenDrawer,
+}: {
+  activePane: NarrowManualPane;
+  drawer: ResponsiveManualDrawer;
+  onPaneChange: (pane: NarrowManualPane) => void;
+  onOpenDrawer: (drawer: Exclude<ResponsiveManualDrawer, null>, trigger: HTMLElement) => void;
+}) {
+  return (
+    <div
+      data-responsive-manual-controls
+      className="z-40 hidden shrink-0 flex-col border-b border-outline-variant bg-surface max-[1179px]:flex"
+    >
+      <div className="flex min-h-12 items-center gap-2 px-2">
+        <button
+          type="button"
+          aria-label="Open media library"
+          aria-pressed={drawer === "library"}
+          onClick={(event) => onOpenDrawer("library", event.currentTarget)}
+          className={`flex h-11 items-center gap-2 rounded-[4px] px-3 text-label-md font-semibold transition-colors motion-reduce:transition-none ${
+            drawer === "library"
+              ? "bg-surface-container-highest text-primary"
+              : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          }`}
+        >
+          <EditorIcon className="text-[19px]">perm_media</EditorIcon>
+          <span className="hidden min-[520px]:inline">Media</span>
+        </button>
+
+        <div
+          role="tablist"
+          aria-label="Manual editor view"
+          className="mx-auto hidden items-center rounded-[6px] border border-outline-variant bg-surface-container-low p-0.5 max-[759px]:flex"
+        >
+          {(["preview", "timeline"] as const).map((pane) => (
+            <button
+              key={pane}
+              type="button"
+              role="tab"
+              aria-selected={activePane === pane}
+              onClick={() => onPaneChange(pane)}
+              className={`h-10 rounded-[4px] px-3 text-label-md font-semibold capitalize transition-colors motion-reduce:transition-none ${
+                activePane === pane
+                  ? "bg-surface-container-highest text-on-surface"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              {pane}
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          aria-label="Open inspector"
+          aria-pressed={drawer === "inspector"}
+          onClick={(event) => onOpenDrawer("inspector", event.currentTarget)}
+          className={`ml-auto flex h-11 items-center gap-2 rounded-[4px] px-3 text-label-md font-semibold transition-colors motion-reduce:transition-none max-[759px]:ml-0 ${
+            drawer === "inspector"
+              ? "bg-surface-container-highest text-primary"
+              : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          }`}
+        >
+          <span className="hidden min-[520px]:inline">Inspector</span>
+          <EditorIcon className="text-[19px]">tune</EditorIcon>
+        </button>
+      </div>
+      <ToolRail
+        orientation="horizontal"
+        className="w-full shrink-0 overflow-x-auto border-t border-outline-variant bg-surface-container-lowest"
+      />
+    </div>
+  );
+}
+
+function ManualNavigationRail() {
+  const dispatch = useAppDispatch();
+  const editorMode = useAppSelector(selectEditorMode);
+  const items = [
+    { id: "media", label: "Media", icon: "perm_media", enabled: true },
+    { id: "text", label: "Text", icon: "title", enabled: true },
+    { id: "effects", label: "Effects", icon: "auto_fix_normal", enabled: false },
+    { id: "transitions", label: "Transitions", icon: "movie_edit", enabled: false },
+    { id: "audio", label: "Audio", icon: "music_note", enabled: true },
+    { id: "elements", label: "Elements", icon: "category", enabled: false },
+  ] as const;
+
+  return (
+    <nav
+      aria-label="Editor categories"
+      className="z-40 hidden h-full w-[72px] shrink-0 flex-col items-center border-r border-outline-variant bg-surface py-3 min-[1180px]:flex"
+    >
+      <div className="flex w-full flex-col gap-1">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            disabled={!item.enabled}
+            aria-label={item.label}
+            aria-pressed={item.id === "media" || undefined}
+            onClick={() => {
+              if (item.id === "media" || item.id === "audio") {
+                dispatch(libraryOpenChanged(true));
+              } else if (item.id === "text") {
+                dispatch(textItemCreated({ preset: "caption" }));
+              }
+            }}
+            className={`flex min-h-12 w-full flex-col items-center justify-center gap-1 text-[9px] font-semibold transition-colors motion-reduce:transition-none ${
+              item.id === "media"
+                ? "bg-primary/10 text-primary"
+                : item.enabled
+                  ? "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  : "cursor-not-allowed text-on-surface-variant/30"
+            }`}
+          >
+            <EditorIcon className="text-[21px]">{item.icon}</EditorIcon>
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => dispatch(editorModeChanged("ai"))}
+        className={`mt-auto flex min-h-14 w-full flex-col items-center justify-center gap-1 border-t border-outline-variant pt-2 text-[9px] font-bold text-primary hover:bg-primary/10 ${
+          editorMode === "ai" ? "bg-primary/10" : ""
+        }`}
+        aria-label="Open AI tools"
+        aria-pressed={editorMode === "ai"}
+      >
+        <EditorIcon className="text-[21px]">smart_toy</EditorIcon>
+        AI Tools
+      </button>
+    </nav>
+  );
+}
+
+function mediaKindForFile(file: File): number | null {
+  if (file.type.startsWith("video/")) return MediaKind.Video;
+  if (file.type.startsWith("image/")) return MediaKind.Image;
+  if (file.type.startsWith("audio/")) return MediaKind.Audio;
+
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension && ["mp4", "mov", "webm", "mkv"].includes(extension)) return MediaKind.Video;
+  if (extension && ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)) return MediaKind.Image;
+  if (extension && ["mp3", "wav", "m4a", "aac", "ogg"].includes(extension)) return MediaKind.Audio;
+  return null;
 }
 
 function logEditorCacheResults(
@@ -618,38 +925,6 @@ function mergeProjectMediaRows(current: ProjectMediaDto[], rows: ProjectMediaDto
     byId.set(row.mediaId, row);
   }
   return Array.from(byId.values());
-}
-
-function EditorConflictBanner({
-  onKeepLocal,
-  onReloadServer,
-}: {
-  onKeepLocal: () => void | Promise<void>;
-  onReloadServer: () => void | Promise<void>;
-}) {
-  return (
-    <div className="z-40 flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-outline-variant bg-error-container px-3 text-on-error-container 2xl:px-4">
-      <div className="min-w-0">
-        <p className="truncate text-body-sm font-semibold">Server changed while local edits are saved</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void onKeepLocal()}
-          className="h-8 rounded-[4px] border border-on-error-container/30 px-3 text-label-md font-semibold hover:bg-on-error-container/10"
-        >
-          Keep local edits
-        </button>
-        <button
-          type="button"
-          onClick={() => void onReloadServer()}
-          className="h-8 rounded-[4px] bg-on-error-container px-3 text-label-md font-semibold text-error-container hover:opacity-90"
-        >
-          Reload server copy
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function EditorSyncFailureBanner({

@@ -8,6 +8,7 @@ import {
   type VideoProjectDocument,
   type VideoTimelineItem,
   type VideoTrack,
+  type VideoTrackKind,
   type VideoTransition,
   validateVideoProjectDocument,
 } from "~/lib/editor/video-document";
@@ -154,6 +155,7 @@ export interface EditorUiSessionState {
   timelineOpen: boolean;
   libraryWidth: number;
   timelineHeight: number;
+  inspectorWidth: number;
   activeLibraryTab: LibraryTab;
   selectedMediaId: string | null;
   timelineZoom: number;
@@ -280,6 +282,7 @@ const initialUi: EditorUiSessionState = {
   timelineOpen: true,
   libraryWidth: 280,
   timelineHeight: 292,
+  inspectorWidth: 320,
   activeLibraryTab: "clips",
   selectedMediaId: "clip-beach",
   timelineZoom: 50,
@@ -759,7 +762,10 @@ const editorSlice = createSlice({
       state.ui.libraryWidth = Math.min(360, Math.max(240, action.payload));
     },
     timelineHeightChanged(state, action: PayloadAction<number>) {
-      state.ui.timelineHeight = Math.min(420, Math.max(180, action.payload));
+      state.ui.timelineHeight = Math.min(420, Math.max(120, action.payload));
+    },
+    inspectorWidthChanged(state, action: PayloadAction<number>) {
+      state.ui.inspectorWidth = Math.min(480, Math.max(240, action.payload));
     },
     libraryTabChanged(state, action: PayloadAction<LibraryTab>) {
       state.ui.activeLibraryTab = action.payload;
@@ -1144,6 +1150,34 @@ const editorSlice = createSlice({
       state.selection.selectedItemIds = item ? [item.id] : [];
       state.selection.activeItemId = item?.id;
     },
+    trackAdded(state, action: PayloadAction<{ kind: VideoTrackKind; label: string }>) {
+      if (!state.document) return;
+      const id = `track-${action.payload.kind}-${Date.now()}`;
+      state.document.tracks.push({
+        id,
+        kind: action.payload.kind,
+        label: action.payload.label,
+        locked: false,
+        hidden: false,
+        muted: false,
+        items: [],
+      });
+      state.document.history.revision += 1;
+      state.syncStatus = "dirty";
+      state.ui.toastMessage = `Track "${action.payload.label}" added`;
+    },
+    trackDeleted(state, action: PayloadAction<string>) {
+      if (!state.document) return;
+      const trackId = action.payload;
+      const trackIndex = state.document.tracks.findIndex((t) => t.id === trackId);
+      if (trackIndex !== -1) {
+        const track = state.document.tracks[trackIndex];
+        state.document.tracks.splice(trackIndex, 1);
+        state.document.history.revision += 1;
+        state.syncStatus = "dirty";
+        state.ui.toastMessage = `Track "${track.label}" deleted`;
+      }
+    },
   },
 });
 
@@ -1173,6 +1207,7 @@ export const {
   timelineToggled,
   libraryWidthChanged,
   timelineHeightChanged,
+  inspectorWidthChanged,
   libraryTabChanged,
   assetSelected,
   clipSelected,
@@ -1181,6 +1216,8 @@ export const {
   timelineZoomChanged,
   timelineScrollChanged,
   trackSoloToggled,
+  trackAdded,
+  trackDeleted,
   playbackToggled,
   playbackPaused,
   playbackStepChanged,
@@ -1325,6 +1362,9 @@ export const selectLibraryPanelState = createSelector([selectEditorUi], (ui) => 
   activeTab: ui.activeLibraryTab,
   selectedMediaId: ui.selectedMediaId,
   searchQuery: ui.searchQuery,
+}));
+export const selectInspectorPanelState = createSelector([selectEditorUi], (ui) => ({
+  width: ui.inspectorWidth,
 }));
 export const selectChromeState = createSelector([selectEditorUi], (ui) => ({
   editorMode: ui.editorMode,

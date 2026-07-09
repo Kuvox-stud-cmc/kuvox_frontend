@@ -267,9 +267,9 @@ describe("Timeline and top-bar controls", () => {
     expect(selectEditorState(store.getState()).document?.tracks[0].items.some((item) => item.id === "tl-beach-a")).toBe(true);
     expect(selectEditorState(store.getState()).document?.tracks[0].items.some((item) => item.id === "tl-beach-b")).toBe(true);
 
-    await user.click(screen.getByRole("button", { name: /undo/i }));
+    await user.click(screen.getAllByRole("button", { name: /undo/i })[0]);
     expect(selectEditorState(store.getState()).lastHistoryAction).toBe("undo");
-    await user.click(screen.getByRole("button", { name: /redo/i }));
+    await user.click(screen.getAllByRole("button", { name: /redo/i })[0]);
     expect(selectEditorState(store.getState()).lastHistoryAction).toBe("redo");
 
     await user.click(screen.getByRole("button", { name: /delete selected/i }));

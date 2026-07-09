@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 import type {
   AudioTimelineItem,
@@ -23,12 +23,21 @@ import {
 } from "~/lib/editor/video-operations";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
+  inspectorWidthChanged,
+  selectInspectorPanelState,
   selectVideoInspectorState,
   videoOperationApplied,
   type InspectorSubject,
 } from "~/store/slices/editor-slice";
 
+import { useDragResize } from "./use-drag-resize";
 import { EditorIcon } from "./editor-ui";
+
+interface VideoInspectorPanelProps {
+  /** Display/position classes only — never width or max-width */
+  visibilityClassName?: string;
+  onRequestClose?: () => void;
+}
 
 type NumberFieldProps = {
   label: string;
@@ -57,11 +66,46 @@ const textAlignments: Array<NonNullable<VideoTextStyle["textAlign"]>> = ["left",
 const previewQualities: VideoProjectSettings["previewQuality"][] = ["draft", "balanced", "full"];
 const exportPresets = ["h264-720p", "h264-1080p", "h264-4k", "prores-master"];
 
-export function VideoInspectorPanel() {
+export function VideoInspectorPanel({
+  visibilityClassName = "hidden lg:flex",
+  onRequestClose,
+}: VideoInspectorPanelProps) {
+  const dispatch = useAppDispatch();
   const inspector = useAppSelector(selectVideoInspectorState);
+  const { width: inspectorWidth } = useAppSelector(selectInspectorPanelState);
+
+  const handleResizeStart = useDragResize({
+    axis: "x",
+    value: inspectorWidth,
+    min: 240,
+    max: 480,
+    direction: "reverse",
+    onChange: useCallback((value: number) => dispatch(inspectorWidthChanged(value)), [dispatch]),
+  });
+
+  // Label column scales linearly: 88px at 240px width → 160px at 480px width
+  const labelWidth = Math.round(88 + (inspectorWidth - 240) * (160 - 88) / (480 - 240));
 
   return (
-    <aside className="z-30 hidden h-full w-video-inspector-width min-w-video-inspector-width max-w-[336px] shrink-0 flex-col border-l border-outline-variant bg-surface-container-lowest lg:flex 2xl:w-[336px]">
+    <aside
+      className={`relative z-30 h-full shrink-0 flex-col border-l border-outline-variant bg-surface-container-lowest ${visibilityClassName}`}
+      aria-label="Inspector"
+      style={{
+        width: inspectorWidth,
+        minWidth: 240,
+        maxWidth: 480,
+        ["--inspector-label-w" as string]: `${labelWidth}px`,
+      }}
+    >
+      {/* Left-edge drag handle — stays inside the aside so parent overflow-hidden cannot clip it */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        title="Resize inspector"
+        onPointerDown={handleResizeStart}
+        className="absolute left-0 top-0 z-50 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/60 motion-reduce:transition-none"
+      />
+
       <div className="flex h-14 items-center gap-3 border-b border-outline-variant px-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-[6px] border border-outline-variant bg-surface text-on-surface-variant">
           <EditorIcon className="text-[18px]">tune</EditorIcon>
@@ -72,6 +116,16 @@ export function VideoInspectorPanel() {
             {inspectorTitle(inspector)}
           </p>
         </div>
+        {onRequestClose ? (
+          <button
+            type="button"
+            onClick={onRequestClose}
+            className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface min-[760px]:h-8 min-[760px]:w-8"
+            aria-label="Close inspector"
+          >
+            <EditorIcon className="text-[18px]">close</EditorIcon>
+          </button>
+        ) : null}
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
@@ -614,9 +668,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-label-md">
+    <div className="grid items-center gap-2 text-label-md" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
       <span className="text-on-surface-variant">{label}</span>
-      <span className="truncate text-on-surface">{value}</span>
+      <span className="truncate text-right text-on-surface pr-1">{value}</span>
     </div>
   );
 }
@@ -676,7 +730,7 @@ function NumberField({
   }
 
   return (
-    <label className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-2 text-label-md">
+    <label className="grid items-start gap-2 text-label-md" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
       <span className="pt-2 text-on-surface-variant">{label}</span>
       <span className="min-w-0">
         <span className="relative block">
@@ -748,7 +802,7 @@ function TextField({ label, value, type = "text", disabled = false, multiline = 
   } disabled:cursor-not-allowed disabled:text-on-surface-variant/50`;
 
   return (
-    <label className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-2 text-label-md">
+    <label className="grid items-start gap-2 text-label-md" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
       <span className="pt-2 text-on-surface-variant">{label}</span>
       <span className="min-w-0">
         {multiline ? (
@@ -802,7 +856,7 @@ function SelectField<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-label-md">
+    <label className="grid items-center gap-2 text-label-md" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
       <span className="text-on-surface-variant">{label}</span>
       <select
         aria-label={label}
@@ -836,7 +890,7 @@ function ToggleField({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-label-md">
+    <label className="grid items-center gap-2 text-label-md" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
       <span className="text-on-surface-variant">{label}</span>
       <button
         type="button"

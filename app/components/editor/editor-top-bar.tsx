@@ -10,7 +10,6 @@ import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   editorModeChanged,
   modalOpened,
-  searchQueryChanged,
   selectCanRedo,
   selectCanUndo,
   selectChromeState,
@@ -30,6 +29,9 @@ interface EditorTopBarProps {
   user?: HeaderActionUser;
   notifications?: HeaderNotifications;
   onSync?: () => void | Promise<void>;
+  conflict?: boolean;
+  onKeepLocal?: () => void | Promise<void>;
+  onReloadServer?: () => void | Promise<void>;
 }
 
 const modes: Array<{ value: EditorMode; label: string; icon?: string }> = [
@@ -51,11 +53,19 @@ const DEFAULT_EDITOR_NOTIFICATIONS: HeaderNotifications = {
 const editorActionButton =
   "flex h-8 w-8 items-center justify-center rounded-[4px] text-on-surface-variant transition-colors duration-150 hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none";
 
-export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notifications, onSync }: EditorTopBarProps) {
+export function EditorTopBar({
+  project,
+  user = DEFAULT_EDITOR_USER,
+  notifications,
+  onSync,
+  conflict = false,
+  onKeepLocal,
+  onReloadServer,
+}: EditorTopBarProps) {
   const dispatch = useAppDispatch();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const { editorMode, searchQuery } = useAppSelector(selectChromeState);
+  const { editorMode } = useAppSelector(selectChromeState);
   const { syncStatus, pendingSyncCount } = useAppSelector(selectEditorSyncChromeState);
   const canUndo = useAppSelector(selectCanUndo);
   const canRedo = useAppSelector(selectCanRedo);
@@ -67,23 +77,36 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
   const initials = getHeaderInitials(user);
 
   return (
-    <header className="z-50 grid h-toolbar-height shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-outline-variant bg-surface px-2 lg:gap-3 lg:px-3 2xl:px-4">
+    <header className="z-50 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 border-b border-outline-variant bg-surface px-1 min-[760px]:h-16 min-[760px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[760px]:gap-2 min-[760px]:px-3 lg:gap-3 2xl:px-5">
       <div className="flex min-w-0 items-center gap-2 2xl:gap-3">
         <Link
           to="/dashboard"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[4px] text-on-surface-variant transition-colors duration-150 hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] text-on-surface-variant transition-colors duration-150 hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none min-[760px]:h-8 min-[760px]:w-8"
           aria-label="Back to dashboard"
           title="Back to dashboard"
         >
           <EditorIcon className="text-[20px]">arrow_back</EditorIcon>
         </Link>
-        <div className="hidden h-6 w-px bg-outline-variant sm:block" />
-        <div className="min-w-0 flex gap-1.5">
-          <span className="block truncate text-label-sm font-semibold uppercase tracking-[0.08em] text-on-surface-variant">
-            Project
+        <Link to="/dashboard" className="hidden items-center min-[520px]:flex">
+          <img
+            src="/logo.svg"
+            alt="Kuvox"
+            className="h-7 w-auto object-contain"
+          />
+        </Link>
+        <div className="hidden h-7 w-px bg-outline-variant min-[760px]:block" />
+        <div className="min-w-0 max-w-28 min-[760px]:max-w-52">
+          <span className="block truncate text-body-sm font-semibold text-on-surface">{project.name}</span>
+          <span className="hidden truncate text-label-sm text-on-surface-variant min-[760px]:block">
+            {syncCopy.label}
           </span>
-          <span className="block truncate text-body-sm font-semibold uppercase text-on-surface">{project.name}</span>
         </div>
+        {conflict ? (
+          <EditorConflictBanner
+            onKeepLocal={onKeepLocal}
+            onReloadServer={onReloadServer}
+          />
+        ) : null}
       </div>
 
       <div className="flex min-w-0 items-center justify-center gap-2 2xl:gap-3">
@@ -98,7 +121,7 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
                 aria-pressed={active}
                 onClick={() => dispatch(editorModeChanged(mode.value))}
                 title={`${mode.label} editing mode`}
-                className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-[4px] px-2 text-label-md font-semibold transition-colors duration-150 motion-reduce:transition-none xl:px-3 2xl:px-4 ${
+                className={`flex h-10 min-w-10 items-center justify-center gap-1 rounded-[4px] px-2 text-label-md font-semibold transition-colors duration-150 motion-reduce:transition-none min-[760px]:h-8 min-[760px]:min-w-8 xl:px-3 2xl:px-4 ${
                   active
                     ? "bg-surface-container-highest text-on-surface shadow-sm"
                     : "text-on-surface-variant hover:text-on-surface"
@@ -111,28 +134,9 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
           })}
         </div>
 
-        <label className="relative hidden 2xl:block">
-          <EditorIcon className="absolute left-3 top-1/2 text-[18px] text-on-surface-variant -translate-y-1/2">
-            search
-          </EditorIcon>
-          <input
-            className="h-8 w-60 rounded-[4px] border border-outline-variant bg-surface-container-low py-1 pl-9 pr-3 text-body-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant focus:border-primary focus:ring-1 focus:ring-primary motion-reduce:transition-none"
-            placeholder="Search tools or media..."
-            aria-label="Search tools or media"
-            data-editor-shortcuts="ignore"
-            type="search"
-            value={searchQuery}
-            onChange={(event) => dispatch(searchQueryChanged(event.target.value))}
-          />
-        </label>
       </div>
 
       <div className="flex items-center justify-end gap-1.5">
-        <span
-          className={`hidden h-8 items-center rounded-[4px] border px-2 text-label-sm font-semibold lg:flex ${syncCopy.className}`}
-        >
-          {syncCopy.label}
-        </span>
         <EditorIconButton
           icon="save"
           label="Sync"
@@ -143,29 +147,41 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
         <EditorIconButton
           icon="undo"
           label="Undo"
-          className="h-8 w-8"
+          className="h-10 w-10 min-[760px]:h-8 min-[760px]:w-8"
           disabled={!canUndo}
           onClick={() => dispatch(videoUndoRequested())}
         />
         <EditorIconButton
           icon="redo"
           label="Redo"
-          className="h-8 w-8"
+          className="h-10 w-10 min-[760px]:h-8 min-[760px]:w-8"
           disabled={!canRedo}
           onClick={() => dispatch(videoRedoRequested())}
         />
         <EditorIconButton
           icon="view_timeline"
           label="Toggle timeline"
-          className="h-8 w-8"
+          className="hidden h-8 w-8 min-[760px]:flex"
           onClick={() => dispatch(timelineToggled())}
         />
-        <EditorIconButton
-          icon="ios_share"
-          label="Export video"
-          className="h-8 w-8"
+        <button
+          type="button"
+          aria-label="Project aspect ratio"
+          onClick={() => dispatch(modalOpened("settings"))}
+          className="hidden h-9 items-center gap-1 rounded-[6px] border border-outline-variant bg-surface-container-low px-3 text-label-md font-semibold text-on-surface-variant hover:bg-surface-container-high lg:flex"
+        >
+          16:9
+          <EditorIcon className="text-[15px]">expand_more</EditorIcon>
+        </button>
+        <button
+          type="button"
+          aria-label="Export video"
           onClick={() => dispatch(modalOpened("export"))}
-        />
+          className="flex h-10 min-w-10 items-center justify-center gap-2 rounded-[7px] bg-primary px-2 text-label-md font-bold text-on-primary shadow-[0_0_20px_rgba(139,124,255,0.24)] hover:brightness-110 min-[760px]:h-9 min-[760px]:px-4"
+        >
+          <EditorIcon className="text-[18px] min-[760px]:hidden">ios_share</EditorIcon>
+          <span className="hidden min-[760px]:inline">Export</span>
+        </button>
         <div
           className="relative hidden h-8 w-8 items-center justify-center sm:flex"
           onMouseEnter={() => setNotificationsOpen(true)}
@@ -207,7 +223,7 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
         >
           <EditorIcon className="text-[20px]">settings</EditorIcon>
         </Link>
-        <div className="relative">
+        <div className="relative hidden min-[520px]:block">
           <button
             type="button"
             className="ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-primary transition-colors hover:border-primary/50 hover:bg-surface-container-highest motion-reduce:transition-none 2xl:ml-2"
@@ -258,6 +274,41 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
         </div>
       </div>
     </header>
+  );
+}
+
+function EditorConflictBanner({
+  onKeepLocal,
+  onReloadServer,
+}: {
+  onKeepLocal?: () => void | Promise<void>;
+  onReloadServer?: () => void | Promise<void>;
+}) {
+  return (
+    <div
+      role="alert"
+      className="ml-1 hidden min-w-0 max-w-64 flex-1 flex-col gap-1 min-[1180px]:flex 2xl:max-w-80"
+    >
+      <p className="truncate text-[10px] font-semibold leading-none text-error">
+        Server changed while local edits are saved
+      </p>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => void onKeepLocal?.()}
+          className="h-5 rounded-[3px] border border-error/40 px-1.5 text-[9px] font-semibold leading-none text-error hover:bg-error-container"
+        >
+          Keep local edits
+        </button>
+        <button
+          type="button"
+          onClick={() => void onReloadServer?.()}
+          className="h-5 rounded-[3px] bg-error px-1.5 text-[9px] font-semibold leading-none text-on-error hover:opacity-90"
+        >
+          Reload server copy
+        </button>
+      </div>
+    </div>
   );
 }
 

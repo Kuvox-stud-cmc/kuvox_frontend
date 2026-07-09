@@ -29,13 +29,15 @@ import {
   createVideoEditorPerformanceMetric,
   queueVideoEditorPerformanceMetric,
 } from "~/lib/editor/video-performance.client";
-import type { VideoMediaReference, VideoTimelineItem, VideoTrack } from "~/lib/editor/video-document";
+import type { VideoMediaReference, VideoTimelineItem, VideoTrack, VideoTrackKind } from "~/lib/editor/video-document";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   activeToolChanged,
   clipsLinkedToggled,
   currentTimeChanged,
   selectActiveToolId,
+  selectCanUndo,
+  selectCanRedo,
   selectCurrentTimeSeconds,
   selectProjectMediaAvailabilityById,
   selectSelectedItemIds,
@@ -51,14 +53,21 @@ import {
   timelineZoomChanged,
   toastShown,
   trackSoloToggled,
+  trackAdded,
+  trackDeleted,
   videoOperationApplied,
+  videoUndoRequested,
+  videoRedoRequested,
 } from "~/store/slices/editor-slice";
 
 import { EditorIcon, EditorIconButton } from "../editor-ui";
 import { useDragResize } from "../use-drag-resize";
 
+import { getActiveDraggedMedia } from "~/lib/editor/editor-media";
+
 type TimelinePanelProps = {
   onMediaDrop?: (mediaId: string, placement?: DropPlacement) => void;
+  className?: string;
 };
 
 type DragState =
@@ -118,12 +127,14 @@ const clipToneClass: Record<VideoTimelineItem["type"], string> = {
   overlay: "border-primary/70 bg-primary-container/80 text-on-primary-container",
 };
 
-export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
+export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProps) {
   const dispatch = useAppDispatch();
   const document = useAppSelector(selectVideoDocument);
   const selectedItemIds = useAppSelector(selectSelectedItemIds);
   const currentTime = useAppSelector(selectCurrentTimeSeconds);
   const activeToolId = useAppSelector(selectActiveToolId);
+  const canUndo = useAppSelector(selectCanUndo);
+  const canRedo = useAppSelector(selectCanRedo);
   const projectMediaAvailabilityById = useAppSelector(selectProjectMediaAvailabilityById);
   const {
     open: timelineOpen,
@@ -150,37 +161,122 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
     width: 1,
     height: 1,
   });
+  const getDynamicTrackHeight = useCallback((kind: string) => {
+    if (timelineHeight >= 220) {
+      return kind === "text" ? 48 : 64;
+    }
+
+    if (kind === "text") {
+      if (timelineHeight < 170) return 0;
+      return 48 * (timelineHeight - 170) / 50;
+    }
+
+    if (kind === "audio") {
+      if (timelineHeight < 120) return 0;
+      if (timelineHeight >= 170) {
+        return 50 + 14 * (timelineHeight - 170) / 50;
+      }
+      return 50 * (timelineHeight - 120) / 50;
+    }
+
+    // video/image/overlay track
+    if (timelineHeight >= 170) {
+      return 50 + 14 * (timelineHeight - 170) / 50;
+    }
+    return 48 + 2 * (timelineHeight - 120) / 50;
+  }, [timelineHeight]);
+
   const scale = useMemo(() => timelineScale(timelineZoom), [timelineZoom]);
-  const trackLayouts = useMemo(() => document ? createTrackLayouts(document) : [], [document]);
-  const itemLayouts = useMemo(() => document ? createItemLayouts(document, scale) : [], [document, scale]);
-  const contentSize = useMemo(
-    () => document ? computeTimelineContentSize({ document, scale }) : { width: 960, height: 192 },
-    [document, scale],
-  );
-  const layoutWindow = useMemo(
-    () =>
-      document
-        ? createTimelineLayoutWindow({
-            document,
-            trackLayouts,
-            itemLayouts,
-            viewport,
-            scale,
-            contentSize,
-          })
-        : {
-            windowed: false,
-            trackLayouts,
-            itemLayouts,
-            renderedItemCount: itemLayouts.length,
-            totalItemCount: itemLayouts.length,
-            totalTrackCount: trackLayouts.length,
-            contentSize,
-          },
-    [contentSize, document, itemLayouts, scale, trackLayouts, viewport],
-  );
+
+  const trackLayouts = useMemo(() => {
+    if (!document) return [];
+    let top = 0;
+    const layouts = [];
+    let visibleIndex = 0;
+    for (const track of document.tracks) {
+      const height = getDynamicTrackHeight(track.kind);
+      if (height <= 0) continue;
+
+      layouts.push({
+        track,
+        trackIndex: visibleIndex,
+        top,
+        height,
+        hidden: track.hidden,
+        locked: track.locked,
+      });
+      top += height;
+      visibleIndex++;
+    }
+    return layouts;
+  }, [document, getDynamicTrackHeight]);
+
+  const itemLayouts = useMemo(() => {
+    return trackLayouts.flatMap((trackLayout) =>
+      trackLayout.track.items.map((item) => ({
+        trackId: trackLayout.track.id,
+        trackIndex: trackLayout.trackIndex,
+        item,
+        left: timeToPixel(item.timelineStart, scale),
+        top: trackLayout.top + 5,
+        width: Math.max(20, timeToPixel(item.duration, scale)),
+        height: Math.max(16, trackLayout.height - 10),
+      })),
+    );
+  }, [trackLayouts, scale]);
+
+  const contentSize = useMemo(() => {
+    if (!document) return { width: 960, height: 192 };
+    const totalHeight = trackLayouts.reduce((sum, layout) => sum + layout.height, 0);
+    const maxDur = trackLayouts.reduce((maxDur, layout) => {
+      const trackDuration = layout.track.items.reduce(
+        (maxEnd, item) => Math.max(maxEnd, item.timelineStart + item.duration),
+        0,
+      );
+      return Math.max(maxDur, trackDuration);
+    }, 0);
+    return {
+      width: Math.max(960, timeToPixel(maxDur, scale)),
+      height: totalHeight,
+    };
+  }, [document, trackLayouts, scale]);
+
+  const layoutWindow = useMemo(() => {
+    return {
+      windowed: false,
+      trackLayouts,
+      itemLayouts,
+      renderedItemCount: itemLayouts.length,
+      totalItemCount: itemLayouts.length,
+      totalTrackCount: trackLayouts.length,
+      contentSize,
+    };
+  }, [trackLayouts, itemLayouts, contentSize]);
+
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
-  const duration = document ? timelineDuration(document) : 60;
+
+  const duration = useMemo(() => {
+    if (!document) return 60;
+    const maxDur = trackLayouts.reduce((maxDur, layout) => {
+      const trackDuration = layout.track.items.reduce(
+        (maxEnd, item) => Math.max(maxEnd, item.timelineStart + item.duration),
+        0,
+      );
+      return Math.max(maxDur, trackDuration);
+    }, 0);
+    return Math.max(60, maxDur);
+  }, [document, trackLayouts]);
+
+  const maxPlayheadTime = useMemo(() => {
+    if (!document) return 0;
+    return trackLayouts.reduce((maxDur, layout) => {
+      const trackDuration = layout.track.items.reduce(
+        (maxEnd, item) => Math.max(maxEnd, item.timelineStart + item.duration),
+        0,
+      );
+      return Math.max(maxDur, trackDuration);
+    }, 0);
+  }, [document, trackLayouts]);
   const contentWidth = Math.max(960, timeToPixel(duration, scale), contentSize.width);
   const hasTimelineItems = itemLayouts.length > 0;
   const timelineTrackAreaHeight = contentSize.height;
@@ -197,10 +293,22 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
       });
     });
   }, [document, projectMediaAvailabilityById]);
+  const [trackHeadersWidth, setTrackHeadersWidth] = useState(168);
+  const [addTrackDropdownOpen, setAddTrackDropdownOpen] = useState(false);
+
+  const handleHeadersResizeStart = useDragResize({
+    axis: "x",
+    value: trackHeadersWidth,
+    min: 120,
+    max: 300,
+    direction: "normal",
+    onChange: (value) => setTrackHeadersWidth(value),
+  });
+
   const handleResizeStart = useDragResize({
     axis: "y",
     value: timelineHeight,
-    min: 180,
+    min: 120,
     max: 420,
     direction: "reverse",
     onChange: (value) => dispatch(timelineHeightChanged(value)),
@@ -401,7 +509,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
 
   if (!timelineOpen) {
     return (
-      <footer className="z-40 flex h-10 shrink-0 items-center justify-center border-t border-outline-variant bg-surface">
+      <footer className={`z-40 flex h-10 shrink-0 items-center justify-center border-t border-outline-variant bg-surface ${className}`}>
         <button
           type="button"
           onClick={() => dispatch(timelineOpenChanged(true))}
@@ -416,7 +524,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
 
   return (
     <footer
-      className="relative z-40 flex min-h-video-timeline-min max-h-video-timeline-max shrink-0 flex-col border-t border-outline-variant bg-surface"
+      className={`relative z-40 flex min-h-video-timeline-min max-h-video-timeline-max shrink-0 flex-col border-t border-outline-variant bg-surface ${className}`}
       style={{ height: timelineHeight }}
       tabIndex={0}
     >
@@ -465,6 +573,20 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             className="h-7 w-7"
             onClick={deleteSelected}
           />
+          <EditorIconButton
+            icon="undo"
+            label="Undo"
+            className="h-7 w-7"
+            disabled={!canUndo}
+            onClick={() => dispatch(videoUndoRequested())}
+          />
+          <EditorIconButton
+            icon="redo"
+            label="Redo"
+            className="h-7 w-7"
+            disabled={!canRedo}
+            onClick={() => dispatch(videoRedoRequested())}
+          />
           <div className="mx-1 h-4 w-px bg-outline-variant" />
           <EditorIconButton
             icon="keyboard_arrow_down"
@@ -490,9 +612,69 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
       </div>
 
       <div className="relative flex flex-1 overflow-hidden">
-        <div className="z-10 flex w-[168px] shrink-0 flex-col border-r border-outline-variant bg-surface-container">
-          <div className="flex h-8 items-center border-b border-outline-variant px-2">
-            <span className="text-label-sm font-semibold uppercase text-on-surface-variant">Timecode</span>
+        <div
+          className="relative z-10 flex shrink-0 flex-col border-r border-outline-variant bg-surface-container"
+          style={{ width: trackHeadersWidth }}
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Resize track headers"
+            onPointerDown={handleHeadersResizeStart}
+            className="absolute right-[-3px] top-0 z-50 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40 motion-reduce:transition-none"
+          />
+          <div
+            className="flex h-8 items-center justify-between border-b border-outline-variant pl-2 pr-1 bg-surface-container-high/40"
+            onMouseLeave={() => setAddTrackDropdownOpen(false)}
+          >
+            <span className="text-label-sm font-semibold uppercase text-on-surface-variant truncate">Tracks</span>
+            <div className="relative flex shrink-0">
+              <button
+                type="button"
+                onClick={() => setAddTrackDropdownOpen(!addTrackDropdownOpen)}
+                className="flex items-center justify-center rounded-[4px] hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface h-5 w-5"
+                title="Add Track"
+              >
+                <EditorIcon className="text-[16px]">add</EditorIcon>
+              </button>
+              {addTrackDropdownOpen && (
+                <div className="absolute right-0 top-6 z-50 w-36 rounded-[4px] border border-outline-variant bg-surface-container-high p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(trackAdded({ kind: "video", label: `Video ${(document?.tracks ?? []).filter(t => t.kind === "video").length + 1}` }));
+                      setAddTrackDropdownOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                  >
+                    <EditorIcon className="text-[14px]">video_camera_front</EditorIcon>
+                    Video Track
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(trackAdded({ kind: "audio", label: `Audio ${(document?.tracks ?? []).filter(t => t.kind === "audio").length + 1}` }));
+                      setAddTrackDropdownOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                  >
+                    <EditorIcon className="text-[14px]">graphic_eq</EditorIcon>
+                    Audio Track
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(trackAdded({ kind: "text", label: `Text ${(document?.tracks ?? []).filter(t => t.kind === "text").length + 1}` }));
+                      setAddTrackDropdownOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                  >
+                    <EditorIcon className="text-[14px]">subtitles</EditorIcon>
+                    Text Track
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="relative min-h-0 flex-1 overflow-hidden">
             <div
@@ -508,6 +690,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                     track={track}
                     height={height}
                     soloed={soloedAudioTrackIds.includes(track.id)}
+                    showControls={trackHeadersWidth >= 140}
                     onUpdate={(fields) => {
                       dispatch(videoOperationApplied({
                         ...operationMetadata("update-track", "Update track", [track.id]),
@@ -517,6 +700,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                       }));
                     }}
                     onSolo={() => dispatch(trackSoloToggled(track.id))}
+                    onDelete={() => dispatch(trackDeleted(track.id))}
                   />
                 </div>
               ))}
@@ -527,6 +711,7 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
         <div
           ref={scrollRef}
           className="relative flex-1 overflow-auto bg-surface-container-lowest"
+          aria-label="Timeline tracks"
           onScroll={(event) => scheduleScrollUpdate(
             event.currentTarget.scrollLeft,
             event.currentTarget.scrollTop,
@@ -538,10 +723,20 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             event.preventDefault();
             const point = pointFromDragEvent(event, trackAreaRef.current);
             if (!point) return;
-            const mediaId = event.dataTransfer.getData("application/x-kuvox-media-id");
-            const mediaKind = event.dataTransfer.getData("application/x-kuvox-media-kind");
+            let mediaId = event.dataTransfer.getData("application/x-kuvox-media-id");
+            let mediaKindStr = event.dataTransfer.getData("application/x-kuvox-media-kind");
+            if (!mediaId) {
+              const activeDrag = getActiveDraggedMedia();
+              if (activeDrag) {
+                mediaId = activeDrag.id;
+                mediaKindStr = String(activeDrag.kind);
+              }
+            }
+            const mediaKind = Number(mediaKindStr);
             const hit = hitTestTimeline(point.x, point.y, trackLayouts, layoutWindow.itemLayouts);
-            const media = mediaId && mediaKind ? ({ id: mediaId, kind: mediaKind } as never) : null;
+            const media = mediaId && Number.isFinite(mediaKind)
+              ? ({ id: mediaId, kind: mediaKind } as never)
+              : null;
             const plan = media
               ? planMediaDrop({
                   document,
@@ -562,7 +757,13 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
           onDragLeave={() => clearDropPlan()}
           onDrop={(event) => {
             if (!document) return;
-            const mediaId = event.dataTransfer.getData("application/x-kuvox-media-id");
+            let mediaId = event.dataTransfer.getData("application/x-kuvox-media-id");
+            if (!mediaId) {
+              const activeDrag = getActiveDraggedMedia();
+              if (activeDrag) {
+                mediaId = activeDrag.id;
+              }
+            }
             if (!mediaId) return;
             event.preventDefault();
             const point = pointFromDragEvent(event, trackAreaRef.current);
@@ -587,9 +788,37 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
             className="sticky top-0 z-20 h-8 border-b border-outline-variant bg-surface-container"
             style={{ width: contentWidth }}
             onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.stopPropagation();
               const rect = event.currentTarget.getBoundingClientRect();
-              dispatch(currentTimeChanged(pixelToTime(event.clientX - rect.left, scale)));
+              const clientX = event.clientX - rect.left;
+              dispatch(currentTimeChanged(pixelToTime(clientX, scale)));
+              dragState.current = {
+                kind: "playhead",
+                pointerId: event.pointerId,
+              };
+              trackAreaRef.current?.setPointerCapture(event.pointerId);
             }}
+            onPointerMove={(event) => {
+              if (dragState.current?.kind === "playhead") {
+                const rect = event.currentTarget.getBoundingClientRect();
+                const clientX = event.clientX - rect.left;
+                dispatch(currentTimeChanged(pixelToTime(clientX, scale)));
+              }
+            }}
+            onPointerUp={(event) => {
+              if (dragState.current?.kind === "playhead") {
+                dragState.current = null;
+                clearDragPreview();
+              }
+            }}
+            onPointerCancel={(event) => {
+              if (dragState.current?.kind === "playhead") {
+                dragState.current = null;
+                clearDragPreview();
+              }
+            }}
+            aria-label="Timeline ruler"
           >
             <Ruler duration={duration} scale={scale} />
           </div>
@@ -835,6 +1064,11 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               className="absolute top-0 z-30 h-full w-px bg-primary"
               style={{ left: playheadLeft }}
               aria-label="Playhead"
+              role="slider"
+              aria-orientation="horizontal"
+              aria-valuemin={0}
+              aria-valuemax={maxPlayheadTime}
+              aria-valuenow={currentTime}
               onPointerDown={(event) => {
                 event.stopPropagation();
                 const point = localPoint(event);
@@ -845,6 +1079,25 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
                 };
                 dispatch(currentTimeChanged(pixelToTime(point.x, scale)));
                 trackAreaRef.current?.setPointerCapture(event.pointerId);
+              }}
+              onKeyDown={(event) => {
+                let nextTime = currentTime;
+                const frameDuration = 1 / 30; // standard 30fps
+                const step = event.shiftKey ? 1 : frameDuration;
+                if (event.key === "ArrowRight") {
+                  nextTime = Math.min(maxPlayheadTime, currentTime + step);
+                } else if (event.key === "ArrowLeft") {
+                  nextTime = Math.max(0, currentTime - step);
+                } else if (event.key === "Home") {
+                  nextTime = 0;
+                } else if (event.key === "End") {
+                  nextTime = maxPlayheadTime;
+                } else {
+                  return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                dispatch(currentTimeChanged(nextTime));
               }}
             >
               <span className="absolute top-0 block h-3 w-3 -translate-x-[5px] -translate-y-1/2 rotate-45 rounded-sm bg-primary" />
@@ -879,14 +1132,18 @@ function TrackHeader({
   track,
   height,
   soloed,
+  showControls = true,
   onUpdate,
   onSolo,
+  onDelete,
 }: {
   track: VideoTrack;
   height: number;
   soloed: boolean;
+  showControls?: boolean;
   onUpdate: (fields: { locked?: boolean; hidden?: boolean; muted?: boolean }) => void;
   onSolo: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div
@@ -897,17 +1154,20 @@ function TrackHeader({
         <EditorIcon className="text-[16px] text-on-surface-variant">{trackIcon(track.kind)}</EditorIcon>
         <span className="truncate text-label-md font-semibold text-on-surface">{track.label}</span>
       </div>
-      <div className="flex shrink-0 gap-1 opacity-100 transition-opacity motion-reduce:transition-none xl:opacity-0 xl:group-hover:opacity-100">
-        {track.kind === "audio" ? (
-          <SmallIconButton icon="headphones" label={`Solo ${track.label}`} active={soloed} onClick={onSolo} />
-        ) : null}
-        {track.kind === "audio" ? (
-          <SmallIconButton icon={track.muted ? "volume_off" : "volume_up"} label={`Mute ${track.label}`} active={track.muted} onClick={() => onUpdate({ muted: !track.muted })} />
-        ) : (
-          <SmallIconButton icon={track.hidden ? "visibility_off" : "visibility"} label={`Toggle ${track.label} visibility`} active={track.hidden} onClick={() => onUpdate({ hidden: !track.hidden })} />
-        )}
-        <SmallIconButton icon={track.locked ? "lock" : "lock_open"} label={`Toggle ${track.label} lock`} active={track.locked} onClick={() => onUpdate({ locked: !track.locked })} />
-      </div>
+      {showControls && (
+        <div className="flex shrink-0 gap-1 opacity-100">
+          {track.kind === "audio" ? (
+            <SmallIconButton icon="headphones" label={`Solo ${track.label}`} active={soloed} onClick={onSolo} />
+          ) : null}
+          {track.kind === "audio" ? (
+            <SmallIconButton icon={track.muted ? "volume_off" : "volume_up"} label={`Mute ${track.label}`} active={track.muted} onClick={() => onUpdate({ muted: !track.muted })} />
+          ) : (
+            <SmallIconButton icon={track.hidden ? "visibility_off" : "visibility"} label={`Toggle ${track.label} visibility`} active={track.hidden} onClick={() => onUpdate({ hidden: !track.hidden })} />
+          )}
+          <SmallIconButton icon={track.locked ? "lock" : "lock_open"} label={`Toggle ${track.label} lock`} active={track.locked} onClick={() => onUpdate({ locked: !track.locked })} />
+          <SmallIconButton icon="delete" label={`Delete ${track.label}`} onClick={onDelete} />
+        </div>
+      )}
     </div>
   );
 }

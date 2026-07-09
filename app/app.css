@@ -105,7 +105,7 @@
   --spacing-video-ai-width: 360px;
   --spacing-video-tool-rail-width: 56px;
   --spacing-video-timeline-min: 180px;
-  --spacing-video-timeline-default: 292px;
+  --spacing-video-timeline-default: 256px;
   --spacing-video-timeline-max: 420px;
   --spacing-panel-padding: 12px;
   --spacing-gutter: 16px;
@@ -115,6 +115,28 @@ html,
 body {
   background-color: var(--color-surface);
   color: var(--color-on-surface);
+}
+
+.video-editor-theme {
+  --color-background: #070a14;
+  --color-on-background: #eef0ff;
+  --color-surface: #0b0e18;
+  --color-surface-dim: #070a14;
+  --color-surface-bright: #2d3141;
+  --color-surface-container-lowest: #05070d;
+  --color-surface-container-low: #10131f;
+  --color-surface-container: #151927;
+  --color-surface-container-high: #1d2233;
+  --color-surface-container-highest: #282e43;
+  --color-surface-variant: #282e43;
+  --color-on-surface: #f1f2fb;
+  --color-on-surface-variant: #aeb4c8;
+  --color-primary: #8b7cff;
+  --color-primary-container: #6754e8;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #ffffff;
+  --color-outline: #737b94;
+  --color-outline-variant: #293047;
 }
 
 /* Cursor blink for the feature-card terminal animation */

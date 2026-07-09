@@ -10,12 +10,27 @@ test("video editor route loads, edits timeline, recovers IndexedDB autosave, app
   await expect(page.getByText("E2E Video Project")).toBeVisible();
   await expect(page.getByRole("button", { name: /beach ready/i })).toBeVisible();
 
-  await page.getByRole("button", { name: /beach ready/i }).click();
+  const mediaCard = page.getByRole("button", { name: /beach ready/i });
+  const timelineTracks = page.getByLabel("Timeline tracks");
+  const timelineBox = await timelineTracks.boundingBox();
+  expect(timelineBox).not.toBeNull();
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await mediaCard.dispatchEvent("dragstart", { dataTransfer });
+  await timelineTracks.dispatchEvent("dragover", {
+    dataTransfer,
+    clientX: (timelineBox?.x ?? 0) + 320,
+    clientY: (timelineBox?.y ?? 0) + 56,
+  });
+  await timelineTracks.dispatchEvent("drop", {
+    dataTransfer,
+    clientX: (timelineBox?.x ?? 0) + 320,
+    clientY: (timelineBox?.y ?? 0) + 56,
+  });
   await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
 
   await page.getByRole("button", { name: /split at playhead/i }).click();
-  await page.getByRole("button", { name: /undo/i }).click();
-  await page.getByRole("button", { name: /redo/i }).click();
+  await page.getByRole("button", { name: /undo/i }).first().click();
+  await page.getByRole("button", { name: /redo/i }).first().click();
 
   await page.getByRole("button", { name: /delete selected/i }).click();
   await page.reload();
@@ -23,10 +38,12 @@ test("video editor route loads, edits timeline, recovers IndexedDB autosave, app
   await expect(page.getByLabel(/video timeline item/i)).toBeVisible();
 
   await page.getByRole("button", { name: /AI Agent editing mode/i }).click();
+  await expect(page.getByRole("complementary", { name: "AI Assistant" })).toBeVisible();
   await page.getByLabel("AI edit command").fill("add text at 8s");
   await page.getByRole("button", { name: /send command/i }).click();
   await expect(page.getByText("Added AI text at 8s.").first()).toBeVisible();
 
+  await page.getByRole("button", { name: /expand ai workspace/i }).click();
   await page.getByPlaceholder("Search moments...").fill("b-roll");
   await page.getByRole("button", { name: /search moments/i }).last().click();
   await expect(page.getByRole("button", { name: /add shot to timeline/i })).toBeVisible();
@@ -41,6 +58,54 @@ test("video editor route loads, edits timeline, recovers IndexedDB autosave, app
   }).then((names) => {
     expect(String(names)).toContain("kuvox");
   });
+});
+
+test("manual editor adapts across phone, tablet, and desktop layouts", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/editor/video/e2e-video-project");
+
+  const responsiveControls = page.locator("[data-responsive-manual-controls]");
+  await expect(responsiveControls).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Preview" })).toHaveAttribute("aria-selected", "true");
+  const playhead = page.getByLabel("Playhead", { exact: true });
+  await expect(playhead).toBeHidden();
+
+  await page.getByRole("button", { name: /AI Agent editing mode/i }).click();
+  await expect(page.getByRole("complementary", { name: "AI Assistant" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Auto Enhance" })).toBeVisible();
+  await expect(page.getByLabel("AI edit command")).toBeVisible();
+  await page.getByRole("button", { name: /Manual editing mode/i }).click();
+
+  await page.getByRole("tab", { name: "Timeline" }).click();
+  await expect(playhead).toBeVisible();
+
+  await page.getByRole("tab", { name: "Preview" }).click();
+  const mediaTrigger = page.getByRole("button", { name: "Open media library" });
+  const mediaPanel = page.locator('aside[aria-label="Media library"]');
+  await mediaTrigger.click();
+  await expect(mediaPanel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(mediaPanel).toBeHidden();
+  await expect(mediaTrigger).toBeFocused();
+
+  const inspectorTrigger = page.getByRole("button", { name: "Open inspector" });
+  const inspectorPanel = page.locator('aside[aria-label="Inspector"]');
+  await inspectorTrigger.click();
+  await expect(inspectorPanel).toBeVisible();
+  await page.getByRole("button", { name: "Close inspector" }).click();
+  await expect(inspectorTrigger).toBeFocused();
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await expect(responsiveControls).toBeVisible();
+  await expect(playhead).toBeVisible();
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(responsiveControls).toBeHidden();
+  await expect(mediaPanel).toBeVisible();
+  await expect(inspectorPanel).toBeHidden();
+  await page.getByRole("button", { name: "Show inspector" }).click();
+  await expect(inspectorPanel).toBeVisible();
+  await expect(page.locator("[data-video-editor-root]")).toHaveCSS("overflow", "hidden");
 });
 
 async function installBffMocks(page: Page) {

@@ -55,6 +55,7 @@ interface AiAssistantPanelProps {
 export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], canPlanCommands = true }: AiAssistantPanelProps) {
   const dispatch = useAppDispatch();
   const [semanticQuery, setSemanticQuery] = useState("");
+  const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
   const {
     commandInput,
     messages: extraMessages,
@@ -70,6 +71,7 @@ export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], 
   } = useAppSelector(selectAssistantState);
   const editor = useAppSelector(selectEditorState);
   const visibleMessages = [...messages, ...extraMessages];
+  const showActivity = workspaceExpanded || extraMessages.length > 0 || aiCommandStatus === "failed" || aiCommandStatus === "applied";
   const visibleAutocompleteSuggestions = aiAutocompleteOpen ? aiSuggestions.slice(0, 6) : [];
   const keyboardSuggestionCount = Math.min(aiSuggestions.length, 6);
 
@@ -323,23 +325,58 @@ export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], 
 
   return (
     <aside
-      className="z-40 hidden h-full w-video-ai-width min-w-[320px] max-w-[392px] shrink-0 flex-col border-l border-outline-variant bg-surface lg:flex 2xl:w-[392px]"
+      className="absolute inset-0 z-40 flex h-full w-full min-w-0 max-w-none shrink-0 flex-col border-l border-outline-variant bg-surface min-[760px]:relative min-[760px]:inset-auto min-[760px]:w-80 min-[760px]:min-w-80 min-[760px]:max-w-80"
+      aria-label="AI Assistant"
     >
-      <div className="flex h-14 items-center gap-3 border-b border-outline-variant px-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-[6px] border border-primary/25 bg-surface-container-high text-primary">
-          <EditorIcon className="text-[18px]" filled>
-            smart_toy
-          </EditorIcon>
-        </div>
+      <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-outline-variant px-4">
+        <EditorIcon className="text-[20px] text-primary" filled>
+          auto_awesome
+        </EditorIcon>
         <div className="min-w-0 flex-1">
-          <h2 className="text-body-sm font-semibold text-on-surface">Editing Assistant</h2>
-          <p className="text-label-sm uppercase tracking-[0.08em] text-on-surface-variant">
-            {statusText(aiCommandStatus)}
-          </p>
+          <h2 className="text-body-sm font-bold text-on-surface">AI Assistant</h2>
+          <p className="truncate text-label-sm text-on-surface-variant">{statusText(aiCommandStatus)}</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setWorkspaceExpanded((expanded) => !expanded)}
+          aria-label={workspaceExpanded ? "Collapse AI workspace" : "Expand AI workspace"}
+          aria-expanded={workspaceExpanded}
+          className="flex h-9 w-9 items-center justify-center rounded-[6px] text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+        >
+          <EditorIcon className={`text-[18px] transition-transform motion-reduce:transition-none ${workspaceExpanded ? "rotate-180" : ""}`}>
+            expand_more
+          </EditorIcon>
+        </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
+        <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">
+          Quick tools
+        </p>
+        <div className="grid grid-cols-2 gap-2.5">
+          {quickAiTools.map((tool) => (
+            <button
+              key={tool.label}
+              type="button"
+              aria-label={tool.label}
+              disabled={!canPlanCommands}
+              onClick={() => {
+                dispatch(commandInputChanged(tool.command));
+                dispatch(aiAutocompleteOpened());
+              }}
+              className="group min-h-[88px] rounded-[10px] border border-outline-variant bg-surface-container-low p-2.5 text-left transition-colors hover:border-primary/35 hover:bg-surface-container disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none"
+            >
+              <span className={`flex h-8 w-8 items-center justify-center rounded-[7px] ${tool.iconClass}`}>
+                <EditorIcon className="text-[18px]">{tool.icon}</EditorIcon>
+              </span>
+              <span className="mt-1.5 block text-[10px] font-bold text-on-surface">{tool.label}</span>
+              <span className="mt-0.5 block text-[9px] leading-3 text-on-surface-variant">{tool.description}</span>
+            </button>
+          ))}
+        </div>
+        {showActivity ? (
+          <div className="mt-5 space-y-3 border-t border-outline-variant pt-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">Activity</p>
         {visibleMessages.map((message) => {
           const fromUser = message.role === "user";
           return (
@@ -385,9 +422,12 @@ export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], 
             text={aiLastWarnings.length > 0 ? `${aiLastSummary} ${aiLastWarnings.join(" ")}` : aiLastSummary}
           />
         ) : null}
+          </div>
+        ) : null}
       </div>
 
-      <div className="h-[360px] shrink-0 overflow-y-auto border-t border-outline-variant bg-surface-container-lowest p-3">
+      <div className="shrink-0 border-t border-outline-variant bg-surface-container-lowest p-2.5">
+        <div className={workspaceExpanded ? "max-h-[320px] overflow-y-auto pr-1" : "hidden"}>
         <div className="mb-3 overflow-hidden rounded-[6px] border border-outline-variant bg-surface-container-low">
           <div className="flex items-center justify-between gap-2 border-b border-outline-variant bg-surface-container px-3 py-2">
             <span className="text-label-sm font-semibold uppercase tracking-widest text-on-surface-variant">
@@ -515,7 +555,10 @@ export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], 
             </div>
           )}
         </div>
+        </div>
 
+        <div className="rounded-[13px] border border-primary/70 bg-surface-container-low p-2.5 shadow-[0_0_24px_rgba(139,124,255,0.12)]">
+          <h3 className="mb-2 text-[11px] font-bold text-on-surface">Ask AI Assistant</h3>
         <form className="relative" onSubmit={handleSubmit}>
           {visibleAutocompleteSuggestions.length > 0 ? (
             <div className="absolute bottom-full left-0 z-50 mb-2 max-h-56 w-full overflow-y-auto rounded-[6px] border border-outline-variant bg-surface-container-low shadow-xl">
@@ -544,8 +587,8 @@ export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], 
             </div>
           ) : null}
           <input
-            className="h-11 w-full rounded-[6px] border border-outline-variant bg-surface py-2 pl-3 pr-11 text-body-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant focus:border-primary focus:ring-1 focus:ring-primary motion-reduce:transition-none"
-            placeholder="Tell me what to edit..."
+            className="h-9 w-full rounded-[7px] border border-outline-variant bg-surface py-2 pl-3 pr-10 text-[11px] text-on-surface outline-none transition-all placeholder:text-on-surface-variant/60 focus:border-primary focus:ring-1 focus:ring-primary motion-reduce:transition-none"
+            placeholder="Type your command..."
             aria-label="AI edit command"
             data-editor-shortcuts="ignore"
             type="text"
@@ -559,12 +602,13 @@ export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], 
           <button
             type="submit"
             disabled={!canPlanCommands || aiCommandStatus === "planning"}
-            className="absolute right-2 top-1/2 flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors -translate-y-1/2 hover:text-primary motion-reduce:transition-none"
+            className="absolute right-1.5 top-1/2 flex h-8 w-8 items-center justify-center text-primary transition-colors -translate-y-1/2 hover:text-on-surface disabled:opacity-40 motion-reduce:transition-none"
             aria-label="Send command"
           >
             <EditorIcon filled>send</EditorIcon>
           </button>
         </form>
+        </div>
       </div>
     </aside>
   );
@@ -590,6 +634,37 @@ function statusText(status: "idle" | "planning" | "applied" | "failed"): string 
   if (status === "failed") return "Needs a clearer command";
   return "Ready to help with your cut";
 }
+
+const quickAiTools = [
+  {
+    label: "Auto Enhance",
+    description: "Improve color & clarity",
+    icon: "auto_awesome",
+    command: "Auto enhance the selected clip",
+    iconClass: "bg-primary/15 text-primary",
+  },
+  {
+    label: "Remove Background",
+    description: "AI background removal",
+    icon: "person_remove",
+    command: "Remove the background from the selected clip",
+    iconClass: "bg-primary-container/30 text-primary",
+  },
+  {
+    label: "Smart Cut",
+    description: "Remove silences",
+    icon: "content_cut",
+    command: "Smart cut the selected clip and remove silences",
+    iconClass: "bg-secondary/15 text-secondary",
+  },
+  {
+    label: "AI Color Grade",
+    description: "Cinematic look",
+    icon: "palette",
+    command: "Apply a cinematic color grade to the selected clip",
+    iconClass: "bg-tertiary/15 text-tertiary",
+  },
+] as const;
 
 const semanticPresets = [
   { label: "Moments", query: "memorable moments", icon: "travel_explore" },
