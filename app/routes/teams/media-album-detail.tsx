@@ -2,14 +2,13 @@ import { actionErrorMessage } from "~/lib/action-error.server";
 import { useEffect, useMemo, useState } from "react";
 import { Link, redirect, useNavigation } from "react-router";
 
-import { PageHeader, SectionHeader, StatusBadge } from "~/components/dashboard/layout/DashboardPageLayout";
+import { AssetCard, PageHeader, SectionHeader, StatusBadge } from "~/components/dashboard/layout/DashboardPageLayout";
 import { ConfirmSubmitButton, EmptyState, ErrorBanner, primaryButtonClass } from "~/components/dashboard/section";
 import { AlbumAddItemsModal } from "~/components/dashboard/albums/album-add-items-modal";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import { AccessDialog } from "~/components/dashboard/shared/resource-dialogs";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { AlbumKind, MediaKind, canManageStudioAccess, canWriteStudioContent, type AlbumDto, type MediaDto, type Workspace } from "~/lib/api";
-import { albumsApi, ApiError, listAllMedia, listMyStudios } from "~/lib/api.server";
+import { albumsApi, ApiError, listAllMedia, listMyStudios, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { handleResourceAction } from "~/lib/resource-actions.server";
@@ -97,6 +96,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       await albumsApi.addMedia(accessToken, albumId, mediaIds, ws, reqLog);
       return { ok: true, intent };
     }
+    if (intent === "delete") {
+      const id = String(formData.get("id") ?? "");
+      if (id) await softDelete(accessToken, "media", id, reqLog);
+      return { ok: true, intent };
+    }
+
     if (intent === "remove-media") {
       const mediaId = String(formData.get("mediaId") ?? "");
       if (!mediaId) return { error: "Choose a media item to remove." };
@@ -203,28 +208,23 @@ export default function TeamAlbumDetail({ loaderData, actionData, params }: Rout
 
 function AlbumMediaCard({ media, album, index, canWrite, canManageAccess, onPreview }: { media: MediaDto; album: AlbumDto; index: number; canWrite: boolean; canManageAccess: boolean; onPreview: () => void }) {
   return (
-    <article className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
-      <button type="button" onClick={onPreview} className="relative block aspect-video w-full overflow-hidden text-left" aria-label={`Preview ${media.filename}`}>
-        <MediaThumbnail media={media} index={index} icon={mediaKindIcon(media.kind)} />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-        <span className="absolute left-3 top-3 rounded-md bg-surface-container-lowest/70 px-2 py-0.5 text-label-sm font-medium text-on-surface backdrop-blur-md">{mediaKindLabel(media.kind)}</span>
-      </button>
-      <div className="flex items-start gap-3 p-4">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-body-sm font-bold text-on-surface" title={media.filename}>{media.filename}</h3>
-          <p className="mt-1 text-label-sm text-on-surface-variant">{formatDate(media.createdAt)}</p>
-        </div>
-        <AccessDialog resourceType="media" resourceId={media.id} resourceName={media.filename} canManageAccess={canManageAccess} />
-        {canWrite ? (
+    <AssetCard
+      media={media}
+      index={index}
+      workspaceKind="studio"
+      canMoveToRecycleBin={canWrite}
+      canManageAccess={canManageAccess}
+      onPreview={onPreview}
+      secondaryAction={
+        canWrite ? (
           <ConfirmSubmitButton fields={{ intent: "remove-media", albumId: album.id, mediaId: media.id }} title="Remove media from album?" message={`Remove ${media.filename} from ${album.name}?`} confirmLabel="Remove media" ariaLabel={`Remove ${media.filename} from ${album.name}`} buttonClassName="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error">
             <span className="material-symbols-outlined text-[18px]">close</span>
           </ConfirmSubmitButton>
-        ) : null}
-      </div>
-    </article>
+        ) : null
+      }
+    />
   );
 }
-
 function acceptsMediaKind(albumKind: number, mediaKind: number) {
   if (albumKind === AlbumKind.Mixed) return true;
   if (albumKind === AlbumKind.Photo) return mediaKind === MediaKind.Image;
@@ -261,20 +261,3 @@ function albumKindTone(kind: number) {
   return "neutral" as const;
 }
 
-function mediaKindIcon(kind: number) {
-  if (kind === MediaKind.Image) return "image";
-  if (kind === MediaKind.Audio) return "graphic_eq";
-  return "movie";
-}
-
-function mediaKindLabel(kind: number) {
-  if (kind === MediaKind.Image) return "Photo";
-  if (kind === MediaKind.Audio) return "Audio";
-  return "Video";
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Recently added";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(date);
-}

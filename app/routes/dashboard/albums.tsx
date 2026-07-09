@@ -9,9 +9,9 @@ import {
   MetricCard,
   PageHeader,
   StatusBadge,
+  AssetCardContextMenu,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import {
-  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   Modal,
@@ -19,9 +19,8 @@ import {
 } from "~/components/dashboard/section";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
-import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
-import { AlbumKind, PERSONAL, type AlbumDto } from "~/lib/api";
+import { AlbumKind, PERSONAL, MediaKind, type AlbumDto, type MediaDto } from "~/lib/api";
 import { albumsApi, ApiError } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
@@ -330,10 +329,18 @@ function AlbumCard({
   count: number;
   index: number;
 }) {
+  const media = {
+    id: album.id,
+    filename: album.name,
+    kind: MediaKind.Image,
+    sizeBytes: "0",
+    createdAt: new Date().toISOString(),
+  } as unknown as MediaDto;
+
   return (
     <article className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
-      <Link to={`/dashboard/albums/${album.id}`} className="block w-full text-left">
-        <div className="relative aspect-video overflow-hidden border-b border-outline-variant">
+      <div className="relative aspect-video overflow-hidden border-b border-outline-variant">
+        <Link to={`/dashboard/albums/${album.id}`} className="block w-full h-full text-left">
           <GradientThumbnail
             index={index}
             icon={album.materialSymbol || albumKindIcon(album.kind)}
@@ -342,8 +349,19 @@ function AlbumCard({
           <div className="absolute left-3 top-3">
             <StatusBadge label={albumKindLabel(album.kind)} tone={albumKindTone(album.kind)} />
           </div>
+        </Link>
+        <div className="absolute right-3 top-3 z-10">
+          <AssetCardContextMenu
+            media={media}
+            workspaceKind="personal"
+            resourceType="albums"
+            copyUrl={`/dashboard/albums/${album.id}`}
+            deleteIntent="delete-album"
+            deleteConfirmTitle="Delete Album"
+            deleteConfirmMessage="Delete this album permanently? Media files will remain in your library."
+          />
         </div>
-      </Link>
+      </div>
       <div className="flex items-start gap-3 p-4">
         <Link to={`/dashboard/albums/${album.id}`} className="min-w-0 flex-1 text-left">
           <h3 className="truncate text-body-md font-bold text-on-surface" title={album.name}>
@@ -365,17 +383,6 @@ function AlbumCard({
           activeClassName="text-error"
           label={`${album.isFavorite ? "Remove from" : "Add to"} favorites`}
         />
-        <ShareDialog resourceType="album" resourceId={album.id} resourceName={album.name} />
-        <ConfirmSubmitButton
-          fields={{ intent: "delete-album", id: album.id }}
-          title="Delete album"
-          message="Delete this album permanently? Media files will remain in your library."
-          confirmLabel="Delete album"
-          ariaLabel={`Delete ${album.name}`}
-          buttonClassName="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
-        >
-          <span className="material-symbols-outlined text-[18px]">delete</span>
-        </ConfirmSubmitButton>
       </div>
     </article>
   );

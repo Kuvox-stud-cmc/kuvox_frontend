@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { Form, Link, useFetcher, useNavigation, useSearchParams } from "react-router";
 
 import {
-  CardOverflowMenu,
+  AssetCard,
+  AssetCardContextMenu,
   FormActions,
   MetricCard,
   PageHeader,
@@ -19,11 +20,9 @@ import {
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
-import { AccessDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { MediaPreviewOverlay, resolveMediaObjectSource } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import { MediaKind, type AlbumDto, type MediaDto } from "~/lib/api";
 import { AUDIO_CATEGORY_OPTIONS } from "~/lib/audio-categories";
@@ -109,6 +108,7 @@ export function TeamMediaKindView({
   const readyCount = items.filter((item) => resolveMediaPipeline(item).stage === "ready").length;
   const failedCount = items.filter((item) => resolveMediaPipeline(item).stage === "failed").length;
   const showAllRecent = searchParams.get("view") === "recent";
+  const assetDetailsId = searchParams.get("asset");
   const visibleItems = showAllRecent ? items : items.slice(0, 8);
 
   const handleUploaded = (uploaded: MediaDto, context: { audioCategory?: string }) => {
@@ -201,15 +201,17 @@ export function TeamMediaKindView({
           ) : (
             <div className={view === "grid" ? "grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" : "space-y-3"}>
               {visibleItems.map((item, index) => (
-                <MediaCard
+                <AssetCard
                   key={item.id}
                   media={item}
                   index={index}
+                  workspaceKind="studio"
                   listView={view === "list"}
                   pipeline={live.updatesById[item.id]?.pipeline}
-                  canWrite={canWrite}
+                  canMoveToRecycleBin={canWrite}
                   canManageAccess={canManageAccess}
                   onPreview={() => setPreviewMediaId(item.id)}
+                  defaultDetailsOpen={assetDetailsId === item.id}
                 />
               ))}
             </div>
@@ -244,15 +246,17 @@ export function TeamMediaKindView({
           ) : (
             <div className={view === "grid" ? "grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" : "space-y-3"}>
               {favoriteItems.map((item, index) => (
-                <MediaCard
+                <AssetCard
                   key={item.id}
                   media={item}
                   index={index}
+                  workspaceKind="studio"
                   listView={view === "list"}
                   pipeline={live.updatesById[item.id]?.pipeline}
-                  canWrite={canWrite}
+                  canMoveToRecycleBin={canWrite}
                   canManageAccess={canManageAccess}
                   onPreview={() => setPreviewMediaId(item.id)}
+                  defaultDetailsOpen={assetDetailsId === item.id}
                 />
               ))}
             </div>
@@ -290,75 +294,6 @@ export function TeamMediaKindView({
         </Modal>
       ) : null}
     </section>
-  );
-}
-
-function MediaCard({
-  media,
-  index,
-  listView,
-  pipeline,
-  canWrite,
-  canManageAccess,
-  onPreview,
-}: {
-  media: MediaDto;
-  index: number;
-  listView: boolean;
-  pipeline?: MediaPipeline | null;
-  canWrite: boolean;
-  canManageAccess: boolean;
-  onPreview: () => void;
-}) {
-  const config = configForKind(media.kind);
-  const pipelineState = resolveMediaPipeline(media, pipeline);
-
-  if (listView) {
-    return (
-      <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
-        <button type="button" onClick={onPreview} className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-outline-variant" aria-label={`Preview ${media.filename}`}>
-          <MediaThumbnail media={media} index={index} icon={config.icon} />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-body-md font-bold text-on-surface" title={media.filename}>{media.filename}</h3>
-          <p className="mt-1 text-label-md text-on-surface-variant">{mediaDetail(media)}</p>
-          <div className="mt-2"><MediaPipelineStatus media={media} pipeline={pipeline} compact /></div>
-        </div>
-        <span className="hidden text-label-sm text-on-surface-variant sm:block">{formatDate(media.createdAt)}</span>
-        <IconToggleButton id={media.id} active={media.isFavorite} intent="toggle-favorite" activeIcon="favorite" inactiveIcon="favorite_border" activeClassName="text-error" label={`${media.isFavorite ? "Remove from" : "Add to"} favorites`} />
-        <AccessDialog resourceType="media" resourceId={media.id} resourceName={media.filename} canManageAccess={canManageAccess} />
-        {canWrite ? <CardOverflowMenu id={media.id} itemLabel={media.filename} placement="top" /> : null}
-      </div>
-    );
-  }
-
-  return (
-    <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
-      <button type="button" onClick={onPreview} className={`relative block w-full overflow-hidden text-left ${media.kind === MediaKind.Image ? "aspect-[4/3]" : "aspect-video"}`} aria-label={`Preview ${media.filename}`}>
-        <MediaThumbnail media={media} index={index} icon={config.icon} />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
-        <div className="absolute left-3 top-3"><MediaPipelineStatus media={media} pipeline={pipeline} compact /></div>
-        {pipelineState.stage !== "ready" ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-surface/30 px-4 text-center">
-            <span className="text-label-md font-bold text-on-surface">{pipelineState.label}</span>
-          </div>
-        ) : null}
-      </button>
-      <div className="p-4">
-        <div className="mb-2 flex items-start justify-between gap-3">
-          <h3 className="min-w-0 truncate text-body-sm font-bold text-on-surface" title={media.filename}>{media.filename}</h3>
-          <div className="flex items-center gap-1">
-            <AccessDialog resourceType="media" resourceId={media.id} resourceName={media.filename} canManageAccess={canManageAccess} />
-            {canWrite ? <CardOverflowMenu id={media.id} itemLabel={media.filename} /> : null}
-          </div>
-        </div>
-        <p className="mb-3 text-label-md text-on-surface-variant">{mediaDetail(media)}</p>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-label-sm text-on-surface-variant">{formatDate(media.createdAt)}</span>
-          <IconToggleButton id={media.id} active={media.isFavorite} intent="toggle-favorite" activeIcon="favorite" inactiveIcon="favorite_border" activeClassName="text-error" label={`${media.isFavorite ? "Remove from" : "Add to"} favorites`} />
-        </div>
-      </div>
-    </article>
   );
 }
 
@@ -623,8 +558,12 @@ function AudioSections({
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <AccessDialog resourceType="media" resourceId={activeTrack.id} resourceName={activeTrack.filename} canManageAccess={canManageAccess} />
-                    {canWrite ? <CardOverflowMenu id={activeTrack.id} itemLabel={activeTrack.filename} /> : null}
+                    <AssetCardContextMenu
+                      media={activeTrack}
+                      workspaceKind="studio"
+                      canMoveToRecycleBin={canWrite}
+                      canManageAccess={canManageAccess}
+                    />
                   </div>
                 </div>
                 <WaveformVisualizer
@@ -973,8 +912,13 @@ function AudioTable({
                 <td className="px-3 py-3 sm:px-4">
                   <div className="flex justify-end gap-1">
                     <IconToggleButton id={track.id} active={track.isFavorite} intent="toggle-favorite" activeIcon="favorite" inactiveIcon="favorite_border" activeClassName="text-error" label={`${track.isFavorite ? "Remove from" : "Add to"} favorites`} />
-                    <AccessDialog resourceType="media" resourceId={track.id} resourceName={track.filename} canManageAccess={canManageAccess} />
-                    {canWrite ? <CardOverflowMenu id={track.id} itemLabel={track.filename} placement="top" /> : null}
+                    <AssetCardContextMenu
+                      media={track}
+                      workspaceKind="studio"
+                      canMoveToRecycleBin={canWrite}
+                      canManageAccess={canManageAccess}
+                      placement="top"
+                    />
                   </div>
                 </td>
               </tr>
@@ -994,14 +938,6 @@ function configForKind(kind: number) {
     return { singular: "Audio", plural: "Audio", icon: "music_note", albumIcon: "album", path: "audio", albumView: "audio", albumPlaceholder: "Podcast edits" };
   }
   return { singular: "Video", plural: "Videos", icon: "play_circle", albumIcon: "video_library", path: "videos", albumView: "video", albumPlaceholder: "Launch videos" };
-}
-
-function mediaDetail(media: MediaDto): string {
-  const size = formatSize(Number(media.sizeBytes || 0));
-  if (media.kind === MediaKind.Audio) return `${formatDuration(media.durationSeconds)} / ${size}`;
-  const dimensions = media.width && media.height ? `${media.width} x ${media.height}` : null;
-  if (media.kind === MediaKind.Video) return [formatDuration(media.durationSeconds), dimensions, size].filter(Boolean).join(" / ");
-  return [dimensions, size].filter(Boolean).join(" / ") || size;
 }
 
 function formatSize(bytes: number): string {
