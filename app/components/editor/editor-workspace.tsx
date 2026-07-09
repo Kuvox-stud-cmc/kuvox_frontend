@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from "react";
+import { useCallback, useEffect, type CSSProperties } from "react";
 
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
@@ -12,6 +12,7 @@ import { AiAssistantPanel } from "./ai-assistant-panel";
 import { EditorModalLayer, EditorPopoverLayer, EditorToast } from "./editor-overlays";
 import { EditorTopBar } from "./editor-top-bar";
 import { MediaLibraryPanel } from "./media-library-panel";
+import { hydrateMediaDurationFromBrowserMetadata } from "~/lib/editor/editor-media";
 import {
   assistantMessages,
   editorProject,
@@ -37,6 +38,11 @@ export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
   const { height: timelineHeight, open: timelineOpen } = useAppSelector(selectTimelinePanelState);
   const cacheScope = { userId: "mock-user", ownerKind: "user" as const, ownerId: "mock-user" };
 
+  const addMediaToTimeline = useCallback(async (media: (typeof workspaceMediaAssets)[number], placement?: { trackId?: string; timelineStart: number }) => {
+    const hydrated = await hydrateMediaDurationFromBrowserMetadata(media);
+    dispatch(mediaAssetAddedToTimeline(placement ? { media: hydrated, ...placement } : hydrated));
+  }, [dispatch]);
+
   useEffect(() => {
     dispatch(projectOpened(projectId));
   }, [dispatch, projectId]);
@@ -55,7 +61,7 @@ export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <MediaLibraryPanel
           media={workspaceMediaAssets}
-          onAddMedia={(media) => dispatch(mediaAssetAddedToTimeline(media))}
+          onAddMedia={(media) => void addMediaToTimeline(media)}
         />
         <PreviewPanel project={editorProject} />
         {editorMode === "ai" ? (
@@ -73,7 +79,7 @@ export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
       <TimelinePanel
         onMediaDrop={(mediaId, placement) => {
           const media = workspaceMediaAssets.find((item) => item.id === mediaId);
-          if (media) dispatch(mediaAssetAddedToTimeline(placement ? { media, ...placement } : media));
+          if (media) void addMediaToTimeline(media, placement);
         }}
       />
       <EditorPopoverLayer />

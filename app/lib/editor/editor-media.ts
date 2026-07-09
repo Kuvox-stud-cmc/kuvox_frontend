@@ -29,9 +29,12 @@ export type AddMediaToTimelineBuildResult =
     }
   | { ok: false; reason: string };
 
+const browserDurationCache = new Map<string, Promise<number>>();
+
 export function mediaDtoToVideoMediaReference(media: MediaDto): VideoMediaReference {
   const objectUrls = objectUrlsForMedia(media);
   const source = sourceObjectForMedia(media, objectUrls);
+  const duration = durationForMedia(media);
   const thumbnail = media.thumbnailStorageKey
     ? `/bff/media/${encodeURIComponent(media.id)}/object/thumbnail?v=${encodeURIComponent(media.thumbnailStorageKey)}`
     : undefined;
@@ -40,9 +43,9 @@ export function mediaDtoToVideoMediaReference(media: MediaDto): VideoMediaRefere
     id: media.id,
     kind: videoMediaKind(media),
     name: media.filename,
-    duration: numberOrUndefined(media.durationSeconds),
-    width: numberOrUndefined(media.width),
-    height: numberOrUndefined(media.height),
+    duration: duration ?? undefined,
+    width: positiveNumberOrUndefined(media.width),
+    height: positiveNumberOrUndefined(media.height),
     sourceUrl: source?.url,
     thumbnailUrl: thumbnail,
     objectUrls: Object.keys(objectUrls).length > 0 ? objectUrls : undefined,
@@ -64,6 +67,20 @@ export function mediaLibraryKind(media: MediaDto): MediaLibraryKind {
   if (media.kind === MediaKind.Audio) return "audio";
   if (media.kind === MediaKind.Image) return "stills";
   return "clips";
+}
+
+export async function hydrateMediaDurationFromBrowserMetadata(media: MediaDto): Promise<MediaDto> {
+  if (media.kind === MediaKind.Image || durationForMedia(media) !== null) {
+    return media;
+  }
+
+  const source = sourceObjectForMedia(media, objectUrlsForMedia(media));
+  if (!source) {
+    return media;
+  }
+
+  const duration = await loadBrowserMediaDuration(source.url, media.kind);
+  return duration > 0 ? { ...media, durationSeconds: roundTime(duration) } : media;
 }
 
 export function buildAddMediaToTimelineOperation({
@@ -313,7 +330,87 @@ function targetTrackForMedia(document: VideoProjectDocument, media: MediaDto, pr
 function durationForMedia(media: MediaDto): number | null {
   if (media.kind === MediaKind.Image) return 5;
   const duration = numberOrUndefined(media.durationSeconds);
-  return duration && duration > 0 ? duration : null;
+  return duration && duration > 0 ? roundTime(duration) : null;
+}
+
+async function loadBrowserMediaDuration(url: string, kind: MediaDto["kind"]): Promise<number> {
+  if (typeof document === "undefined") return 0;
+
+  const cached = browserDurationCache.get(url);
+  if (cached) return cached;
+
+  const promise = loadElementMediaDuration(url, kind).finally(() => {
+    void browserDurationCache.delete(url);
+  });
+  browserDurationCache.set(url, promise);
+  return promise;
+}
+
+function loadElementMediaDuration(url: string, kind: MediaDto["kind"]): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const element = document.createElement(kind === MediaKind.Audio ? "audio" : "video");
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      element.removeAttribute("src");
+      element.load();
+      element.onloadedmetadata = null;
+      element.ondurationchange = null;
+      element.ontimeupdate = null;
+      element.onerror = null;
+      if (timeout) clearTimeout(timeout);
+    };
+
+    const finish = (value: unknown) => {
+      if (settled) return;
+      settled = true;
+      const duration = typeof value === "number" || typeof value === "string"
+        ? numberOrUndefined(value)
+        : undefined;
+      cleanup();
+      resolve(duration && duration > 0 ? duration : 0);
+    };
+
+    const resolveIndeterminateAudioDuration = () => {
+      if (kind !== MediaKind.Audio || Number.isFinite(element.duration)) return;
+      const previousTime = element.currentTime;
+      element.ontimeupdate = () => {
+        element.ontimeupdate = null;
+        finish(element.duration);
+        try {
+          element.currentTime = previousTime;
+        } catch {
+          // The element is being torn down after duration discovery.
+        }
+      };
+      try {
+        element.currentTime = Number.MAX_SAFE_INTEGER;
+      } catch {
+        finish(0);
+      }
+    };
+
+    element.preload = "metadata";
+    element.onloadedmetadata = () => {
+      if (kind === MediaKind.Audio && !Number.isFinite(element.duration)) {
+        resolveIndeterminateAudioDuration();
+        return;
+      }
+      finish(element.duration);
+    };
+    element.ondurationchange = () => {
+      if (numberOrUndefined(element.duration)) {
+        finish(element.duration);
+      } else {
+        resolveIndeterminateAudioDuration();
+      }
+    };
+    element.onerror = () => finish(0);
+    timeout = setTimeout(() => finish(0), 8000);
+    element.src = url;
+    element.load();
+  });
 }
 
 function trackEnd(track: VideoTrack): number {
@@ -371,6 +468,11 @@ function numberOrUndefined(value: number | string | null | undefined): number | 
   if (value === null || value === undefined) return undefined;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function positiveNumberOrUndefined(value: number | string | null | undefined): number | undefined {
+  const numeric = numberOrUndefined(value);
+  return numeric !== undefined && numeric > 0 ? numeric : undefined;
 }
 
 function createTimelineItemId(media: MediaDto, timestamp: string): string {

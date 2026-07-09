@@ -26,7 +26,10 @@ import {
   logVideoEditorEvent,
 } from "~/lib/editor/editor-observability.client";
 import type { DraftRecoveryState } from "~/lib/editor/editor-recovery";
-import { mediaDtoToVideoMediaReference } from "~/lib/editor/editor-media";
+import {
+  hydrateMediaDurationFromBrowserMetadata,
+  mediaDtoToVideoMediaReference,
+} from "~/lib/editor/editor-media";
 import { getVideoTimelineFromBff } from "~/lib/editor/video-timeline-api.client";
 import {
   attachProjectMediaFromBff,
@@ -433,8 +436,13 @@ export function VideoEditorWorkspace({
 
   const addMediaToTimeline = useCallback(async (item: MediaDto) => {
     if (!await attachMediaForTimeline(item)) return;
-    dispatch(mediaAssetAddedToTimeline(item));
-  }, [attachMediaForTimeline, dispatch]);
+    const hydrated = await hydrateMediaDurationFromBrowserMetadata(item);
+    if (hydrated !== item) {
+      live.mergeMedia(hydrated);
+      void saveMediaAssets([hydrated], cacheScope);
+    }
+    dispatch(mediaAssetAddedToTimeline(hydrated));
+  }, [attachMediaForTimeline, cacheScope, dispatch, live]);
 
   const addDroppedMediaToTimeline = useCallback(async (mediaId: string, placement?: { trackId?: string; timelineStart: number }) => {
     const item = live.media.find((candidate) => candidate.id === mediaId);
@@ -444,8 +452,13 @@ export function VideoEditorWorkspace({
     }
 
     if (!await attachMediaForTimeline(item)) return;
-    dispatch(mediaAssetAddedToTimeline(placement ? { media: item, ...placement } : item));
-  }, [attachMediaForTimeline, dispatch, live.media]);
+    const hydrated = await hydrateMediaDurationFromBrowserMetadata(item);
+    if (hydrated !== item) {
+      live.mergeMedia(hydrated);
+      void saveMediaAssets([hydrated], cacheScope);
+    }
+    dispatch(mediaAssetAddedToTimeline(placement ? { media: hydrated, ...placement } : hydrated));
+  }, [attachMediaForTimeline, cacheScope, dispatch, live]);
 
   const handleUploaded = useCallback(async (item: MediaDto) => {
     live.mergeMedia(item);

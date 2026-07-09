@@ -577,8 +577,9 @@ const editorSlice = createSlice({
       const result = applyVideoOperationBatch(documentWithMedia, batch);
 
       if (!result.ok) {
-        state.lastError = result.errors?.join(" ") ?? "Media could not be added.";
-        state.ui.toastMessage = "Media could not be added";
+        const message = result.errors?.join(" ") ?? "Media could not be added.";
+        state.lastError = message;
+        state.ui.toastMessage = message;
         return;
       }
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { MediaKind, OwnerKind, type MediaDto } from "../app/lib/api";
 import {
   buildAddMediaToTimelineOperation,
+  hydrateMediaDurationFromBrowserMetadata,
   isMediaReadyForTimeline,
   mediaDtoToVideoMediaReference,
   mediaLibraryKind,
@@ -11,13 +12,18 @@ import {
   createEmptyVideoProjectDocument,
   type VideoProjectDocument,
 } from "../app/lib/editor/video-document";
+import {
+  applyVideoOperationBatch,
+  createVideoOperationBatch,
+} from "../app/lib/editor/video-operations";
 
-function main(): void {
+async function main(): Promise<void> {
   assertMediaReferenceMapping();
   assertReadinessClassification();
   assertVideoImageAndAudioOperations();
   assertNonReadyMediaIsNonDestructive();
   assertImageFallsBackToVideoTrack();
+  await assertBrowserDurationHydration();
 }
 
 function assertMediaReferenceMapping(): void {
@@ -92,6 +98,57 @@ function assertVideoImageAndAudioOperations(): void {
   assert.equal(audio.ok && audio.operation.item.type === "audio" ? audio.operation.item.muted : undefined, false);
   assert.equal(audio.ok && audio.operation.item.type === "audio" ? audio.operation.item.linkedGroupId : "unexpected", undefined);
 
+  const highPrecisionVideo = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, mediaDto({ id: "video-precise", kind: MediaKind.Video, durationSeconds: 13.255555 })),
+    media: mediaDto({ id: "video-precise", kind: MediaKind.Video, durationSeconds: 13.255555 }),
+    now,
+  });
+  assert.equal(highPrecisionVideo.ok, true);
+  assert.equal(highPrecisionVideo.ok && highPrecisionVideo.mediaReference.duration, 13.256);
+  assert.equal(highPrecisionVideo.ok && highPrecisionVideo.operation.item.duration, 13.256);
+  assert.equal(
+    highPrecisionVideo.ok && highPrecisionVideo.operation.item.type === "video"
+      ? highPrecisionVideo.operation.item.sourceOut
+      : undefined,
+    13.256,
+  );
+
+  const zeroDimensionMedia = mediaDto({
+    id: "video-zero-dimensions",
+    kind: MediaKind.Video,
+    durationSeconds: 7,
+    width: 0,
+    height: 0,
+  });
+  const zeroDimensionVideo = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, zeroDimensionMedia),
+    media: zeroDimensionMedia,
+    now,
+  });
+  assert.equal(zeroDimensionVideo.ok, true);
+  assert.equal(zeroDimensionVideo.ok && zeroDimensionVideo.mediaReference.width, undefined);
+  assert.equal(zeroDimensionVideo.ok && zeroDimensionVideo.mediaReference.height, undefined);
+  const zeroDimensionApply = zeroDimensionVideo.ok
+    ? applyVideoOperationBatch(
+        {
+          ...document,
+          media: {
+            ...document.media,
+            [zeroDimensionVideo.mediaReference.id]: zeroDimensionVideo.mediaReference,
+          },
+        },
+        createVideoOperationBatch({
+          id: zeroDimensionVideo.operation.id,
+          source: zeroDimensionVideo.operation.source,
+          timestamp: zeroDimensionVideo.operation.timestamp,
+          label: zeroDimensionVideo.operation.label,
+          operations: [zeroDimensionVideo.operation],
+          affectedEntityIds: zeroDimensionVideo.operation.affectedEntityIds,
+        }),
+      )
+    : null;
+  assert.equal(zeroDimensionApply?.ok, true);
+
   const preferredAudio = buildAddMediaToTimelineOperation({
     document: upsertMedia(document, mediaDto({ id: "audio-2", kind: MediaKind.Audio, durationSeconds: 9 })),
     media: mediaDto({ id: "audio-2", kind: MediaKind.Audio, durationSeconds: 9 }),
@@ -147,6 +204,72 @@ function assertImageFallsBackToVideoTrack(): void {
 
   assert.equal(built.ok, true);
   assert.equal(built.ok && built.operation.trackId, "v1");
+}
+
+async function assertBrowserDurationHydration(): Promise<void> {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const fakeDocument = {
+    createElement: (tagName: string) => {
+      let duration = tagName === "audio" ? Infinity : 13.255555;
+      let currentTime = 0;
+      return {
+        preload: "",
+        src: "",
+        onloadedmetadata: null as (() => void) | null,
+        ondurationchange: null as (() => void) | null,
+        ontimeupdate: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        get duration() {
+          return duration;
+        },
+        get currentTime() {
+          return currentTime;
+        },
+        set currentTime(value: number) {
+          currentTime = value;
+          if (tagName === "audio" && value === Number.MAX_SAFE_INTEGER) {
+            duration = 21.75555;
+            this.ontimeupdate?.();
+          }
+        },
+        load() {
+          if (this.src) this.onloadedmetadata?.();
+        },
+        removeAttribute(name: string) {
+          if (name === "src") this.src = "";
+        },
+      };
+    },
+  };
+
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: fakeDocument,
+  });
+
+  try {
+    const hydrated = await hydrateMediaDurationFromBrowserMetadata(mediaDto({
+      id: "video-needs-duration",
+      kind: MediaKind.Video,
+      durationSeconds: 0,
+      canonicalStorageKey: "canonical.mp4",
+    }));
+    assert.equal(hydrated.durationSeconds, 13.256);
+
+    const hydratedAudio = await hydrateMediaDurationFromBrowserMetadata(mediaDto({
+      id: "audio-needs-duration",
+      kind: MediaKind.Audio,
+      durationSeconds: 0,
+      canonicalStorageKey: "canonical.opus",
+    }));
+    assert.equal(hydratedAudio.durationSeconds, 21.756);
+  } finally {
+    if (descriptor) {
+      Object.defineProperty(globalThis, "document", descriptor);
+    } else {
+      delete (globalThis as { document?: unknown }).document;
+    }
+  }
 }
 
 function documentWithOverlay(): VideoProjectDocument {
@@ -216,4 +339,4 @@ function mediaDto(overrides: Partial<MediaDto> = {}): MediaDto {
   };
 }
 
-main();
+await main();
