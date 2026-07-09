@@ -192,6 +192,8 @@ function PhotoCard({
   pipeline?: MediaPipeline | null;
   onPreview: (photo: MediaDto) => void;
 }) {
+  const isRecent = new Date().getTime() - new Date(photo.createdAt).getTime() < 24 * 60 * 60 * 1000;
+
   if (listView) {
     return (
       <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
@@ -204,14 +206,23 @@ function PhotoCard({
           <MediaThumbnail media={photo} index={index} icon="image" />
         </button>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-body-md font-bold text-on-surface" title={photo.filename}>
-            {photo.filename}
+          <h3 className="truncate text-body-md font-bold text-on-surface flex items-center gap-2" title={photo.filename}>
+            <span className="truncate">{photo.filename}</span>
+            {isRecent && (
+              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                Recent
+              </span>
+            )}
           </h3>
-          <p className="mt-1 text-label-md text-on-surface-variant">{photoLabel(photo)}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-label-sm text-on-surface-variant">
+            <span>{photoLabel(photo)}</span>
+            <span className="h-1 w-1 rounded-full bg-outline-variant" />
+            <span>{formatDate(photo.createdAt)}</span>
+          </div>
           <div className="mt-2">
-        <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
-      </div>
-    </div>
+            <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
+          </div>
+        </div>
         <IconToggleButton
           id={photo.id}
           active={photo.isFavorite}
@@ -221,9 +232,6 @@ function PhotoCard({
           activeClassName="text-error"
           label={`${photo.isFavorite ? "Remove from" : "Add to"} favorites`}
         />
-        <span className="hidden text-label-sm text-on-surface-variant sm:block">
-          {formatDate(photo.createdAt)}
-        </span>
         <ShareDialog resourceType="media" resourceId={photo.id} resourceName={photo.filename} />
         <CardOverflowMenu id={photo.id} itemLabel={photo.filename} placement="top" />
       </div>
@@ -231,7 +239,7 @@ function PhotoCard({
   }
 
   return (
-    <div className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
+    <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <div
         role="button"
         tabIndex={0}
@@ -246,11 +254,21 @@ function PhotoCard({
         aria-label={`Preview ${photo.filename}`}
       >
         <MediaThumbnail media={photo} index={index} icon="image" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+        <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
         <div className="absolute left-3 top-3 max-w-[calc(100%-5rem)]">
           <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
         </div>
-        <div className="absolute bottom-3 right-3 opacity-0 transition-opacity group-hover:opacity-100">
+      </div>
+      <div className="p-4">
+        <div className="mb-2 flex items-start justify-between">
+          <h3 className="truncate text-body-sm font-bold text-on-surface flex items-center gap-2 min-w-0 flex-1" title={photo.filename}>
+            <span className="truncate">{photo.filename}</span>
+            {isRecent && (
+              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                Recent
+              </span>
+            )}
+          </h3>
           <div className="flex items-center gap-1">
             <IconToggleButton
               id={photo.id}
@@ -261,28 +279,16 @@ function PhotoCard({
               activeClassName="text-error"
               label={`${photo.isFavorite ? "Remove from" : "Add to"} favorites`}
             />
-            <ShareDialog
-              resourceType="media"
-              resourceId={photo.id}
-              resourceName={photo.filename}
-              buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
-            />
-            <CardOverflowMenu
-              id={photo.id}
-              itemLabel={photo.filename}
-              placement="top"
-              buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
-            />
+            <ShareDialog resourceType="media" resourceId={photo.id} resourceName={photo.filename} />
+            <CardOverflowMenu id={photo.id} itemLabel={photo.filename} placement="top" />
           </div>
         </div>
-        <div className="absolute bottom-3 left-3 right-24 translate-y-2 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100">
-          <h3 className="truncate text-label-md font-bold text-white" title={photo.filename}>
-            {photo.filename}
-          </h3>
-          <p className="mt-1 text-label-sm text-white/75">{photoLabel(photo)}</p>
+        <div className="flex items-center justify-between text-label-md text-on-surface-variant">
+          <span>{photoLabel(photo)}</span>
+          <span>{formatDate(photo.createdAt)}</span>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -380,7 +386,7 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
       </div>
 
       <section>
-        <SectionHeader title="Recent Photos" actionTo="/dashboard/photos?view=recent" />
+        <SectionHeader title="All Photos" actionTo="/dashboard/photos?view=recent" />
 
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

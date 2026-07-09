@@ -36,7 +36,8 @@ const MAIN_NAV: NavItemConfig[] = [
     icon: "videocam",
     children: [
       { to: "/dashboard/videos", label: "All Videos" },
-      { to: "/dashboard/videos?view=projects", label: "Recent Projects" },
+      { to: "/dashboard/videos?view=albums", label: "Albums" },
+      { to: "/dashboard/videos?view=favorites", label: "Favorites" },
     ],
   },
   {
