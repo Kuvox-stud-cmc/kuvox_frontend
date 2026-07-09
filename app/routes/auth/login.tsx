@@ -75,24 +75,24 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
 
   return (
     <section>
-      <h1 className="text-headline-lg text-on-surface">Log in</h1>
-      <p className="mt-2 text-body-sm text-on-surface-variant">
+      <h1 className="text-headline-lg font-semibold tracking-tight text-on-surface">Sign in</h1>
+      <p className="mt-1.5 text-body-sm text-on-surface-variant/80">
         Sign in to continue to Kuvox.
       </p>
 
       {resetSuccess && (
-        <p className="mt-4 rounded-lg bg-primary/10 px-3 py-2 text-body-sm text-primary">
+        <p className="mt-4 rounded-xl border border-primary/20 bg-primary/8 px-4 py-3 text-body-sm text-primary animate-fade-in-section">
           Password reset successful. Sign in with your new password.
         </p>
       )}
 
       {actionData?.error && (
-        <div className="mt-4 rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
+        <div className="mt-4 rounded-xl border border-error/20 bg-error-container/10 px-4 py-3 text-body-sm text-error animate-fade-in-section">
           <p>{actionData.error}</p>
           {actionData.unverified && (
             <Link
               to={`/verify-pending?email=${encodeURIComponent(actionData.email ?? "")}`}
-              className="mt-1 inline-block font-medium underline"
+              className="mt-1.5 inline-block font-medium underline underline-offset-2 hover:text-on-error-container transition-colors"
             >
               Resend verification email
             </Link>
@@ -103,7 +103,7 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
       <Form method="post" className="mt-6 space-y-4">
         <input type="hidden" name="redirectTo" value={loaderData.redirectTo} />
         <div>
-          <label htmlFor="email" className="block text-label-md text-on-surface-variant">
+          <label htmlFor="email" className="block text-label-md font-medium text-on-surface-variant/85 mb-1.5">
             Email
           </label>
           <input
@@ -112,27 +112,27 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
             type="email"
             autoComplete="email"
             required
-            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+            className="w-full h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 text-body-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:bg-white/[0.06] focus:ring-1 focus:ring-primary/20 transition-all duration-200 outline-none"
           />
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-label-md text-on-surface-variant">
+          <label htmlFor="password" className="block text-label-md font-medium text-on-surface-variant/85 mb-1.5">
             Password
           </label>
-          <div className="relative mt-1">
+          <div className="relative">
             <input
               id="password"
               name="password"
               type={showPassword ? "text" : "password"}
               autoComplete="current-password"
               required
-              className="w-full rounded-lg border border-outline-variant bg-surface-container py-2 pl-3 pr-11 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+              className="w-full h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] pl-3.5 pr-11 text-body-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:bg-white/[0.06] focus:ring-1 focus:ring-primary/20 transition-all duration-200 outline-none"
             />
             <button
               type="button"
               onClick={() => setShowPassword((value) => !value)}
-              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant/70 transition-colors hover:bg-white/10 hover:text-on-surface"
               aria-label={showPassword ? "Hide password" : "Show password"}
               aria-pressed={showPassword}
             >
@@ -146,17 +146,17 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-lg bg-primary px-4 py-2 text-label-md font-medium text-on-primary transition-colors hover:bg-primary-fixed disabled:opacity-60"
+          className="w-full h-11 mt-6 rounded-xl bg-primary text-label-md font-semibold text-on-primary shadow-[0_4px_20px_rgba(192,193,255,0.2)] hover:bg-primary-fixed-dim hover:shadow-[0_4px_24px_rgba(192,193,255,0.35)] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none"
         >
           {isSubmitting ? "Signing in…" : "Sign in"}
         </button>
       </Form>
 
-      <div className="mt-4 flex justify-between text-body-sm text-on-surface-variant">
-        <Link to="/forgot-password" className="transition-colors hover:text-primary">
+      <div className="mt-6 flex justify-between text-label-md text-on-surface-variant/75">
+        <Link to="/forgot-password" className="transition-colors hover:text-primary hover:underline underline-offset-4">
           Forgot password?
         </Link>
-        <Link to="/signup" className="transition-colors hover:text-primary">
+        <Link to="/signup" className="transition-colors hover:text-primary hover:underline underline-offset-4">
           Create account
         </Link>
       </div>
