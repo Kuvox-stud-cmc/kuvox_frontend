@@ -606,7 +606,12 @@ function AudioSections({
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
-                      <h3 className="min-w-0 truncate text-headline-md font-bold text-on-surface" title={activeTrack.filename}>{activeTrack.filename}</h3>
+                      <h3
+                        className="truncated-reveal min-w-0 max-w-full [--truncate-window:clamp(12rem,46vw,36rem)] text-headline-md font-bold text-on-surface"
+                        title={activeTrack.filename}
+                      >
+                        <span>{activeTrack.filename}</span>
+                      </h3>
                       <FormatBadge format={activeTrack.codec ? activeTrack.codec.toUpperCase() : "MP3"} />
                       <MediaPipelineStatus media={activeTrack} pipeline={pipelineFor(activeTrack)} compact />
                     </div>
@@ -921,14 +926,21 @@ function AudioTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
-      <table className="w-full text-left text-body-sm">
+      <table className="w-full table-fixed text-left text-body-sm">
+        <colgroup>
+          <col className="w-[50%] md:w-[46%] xl:w-[40%]" />
+          <col className="hidden w-24 md:table-column" />
+          <col className="hidden w-24 xl:table-column" />
+          <col className="hidden w-32 lg:table-column" />
+          <col className="w-28 sm:w-36" />
+        </colgroup>
         <thead className="bg-surface-container">
           <tr>
-            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">Name</th>
-            <th className="hidden px-4 py-3 text-label-md font-medium text-on-surface-variant md:table-cell">Duration</th>
-            <th className="hidden px-4 py-3 text-label-md font-medium text-on-surface-variant lg:table-cell">Size</th>
-            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">Status</th>
-            <th className="px-4 py-3 text-right text-label-md font-medium text-on-surface-variant">Actions</th>
+            <th className="px-3 py-3 text-label-md font-medium text-on-surface-variant sm:px-4">Name</th>
+            <th className="hidden px-3 py-3 text-label-md font-medium text-on-surface-variant md:table-cell">Duration</th>
+            <th className="hidden px-3 py-3 text-label-md font-medium text-on-surface-variant xl:table-cell">Size</th>
+            <th className="hidden px-3 py-3 text-label-md font-medium text-on-surface-variant lg:table-cell">Status</th>
+            <th className="px-3 py-3 text-right text-label-md font-medium text-on-surface-variant sm:px-4">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-outline-variant/50">
@@ -936,9 +948,9 @@ function AudioTable({
             <tr><td colSpan={5} className="px-4 py-8 text-center text-on-surface-variant">{emptyMessage}</td></tr>
           ) : (
             tracks.map((track) => (
-              <tr key={track.id} className="transition-colors hover:bg-surface-container">
-                <td className="min-w-0 px-4 py-3">
-                  <div className="flex items-center gap-3">
+              <tr key={track.id} className="group transition-colors hover:bg-surface-container">
+                <td className="min-w-0 px-3 py-3 sm:px-4">
+                  <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                     <button
                       type="button"
                       onClick={() => onPlay(track)}
@@ -947,13 +959,18 @@ function AudioTable({
                     >
                       <span className="material-symbols-outlined text-[20px]">play_arrow</span>
                     </button>
-                    <span className="truncate font-bold text-on-surface">{track.filename}</span>
+                    <span
+                      className="truncated-reveal min-w-0 flex-1 [--truncate-window:clamp(9rem,26vw,24rem)] font-bold text-on-surface"
+                      title={track.filename}
+                    >
+                      <span>{track.filename}</span>
+                    </span>
                   </div>
                 </td>
-                <td className="hidden px-4 py-3 text-on-surface-variant md:table-cell">{formatDuration(rowDurations[track.id])}</td>
-                <td className="hidden px-4 py-3 text-on-surface-variant lg:table-cell">{formatSize(Number(track.sizeBytes || 0))}</td>
-                <td className="px-4 py-3"><MediaPipelineStatus media={track} pipeline={pipelinesById[track.id]?.pipeline} compact /></td>
-                <td className="px-4 py-3">
+                <td className="hidden px-3 py-3 text-on-surface-variant md:table-cell">{formatDuration(rowDurations[track.id])}</td>
+                <td className="hidden px-3 py-3 text-on-surface-variant xl:table-cell">{formatSize(Number(track.sizeBytes || 0))}</td>
+                <td className="hidden px-3 py-3 lg:table-cell"><MediaPipelineStatus media={track} pipeline={pipelinesById[track.id]?.pipeline} compact /></td>
+                <td className="px-3 py-3 sm:px-4">
                   <div className="flex justify-end gap-1">
                     <IconToggleButton id={track.id} active={track.isFavorite} intent="toggle-favorite" activeIcon="favorite" inactiveIcon="favorite_border" activeClassName="text-error" label={`${track.isFavorite ? "Remove from" : "Add to"} favorites`} />
                     <AccessDialog resourceType="media" resourceId={track.id} resourceName={track.filename} canManageAccess={canManageAccess} />

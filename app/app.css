@@ -256,3 +256,49 @@ body {
 .animate-slide-in-left {
   animation: slide-in-left 0.25s ease-out both;
 }
+
+@keyframes reveal-truncated-text {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  85%,
+  100% {
+    transform: translateX(calc(-1 * var(--reveal-distance, 0px)));
+  }
+}
+
+.truncated-reveal {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.truncated-reveal > span {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.truncated-reveal:hover > span,
+.group:hover .truncated-reveal > span,
+.truncated-reveal:focus-visible > span {
+  max-width: none;
+  min-width: max-content;
+  animation: reveal-truncated-text 7s ease-in-out infinite alternate;
+  --reveal-distance: max(0px, calc(100% - var(--truncate-window, 12rem)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .truncated-reveal:hover > span,
+  .group:hover .truncated-reveal > span,
+  .truncated-reveal:focus-visible > span {
+    animation: none;
+    max-width: 100%;
+  }
+}

@@ -477,28 +477,37 @@ function AudioTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
-      <table className="w-full text-left text-body-sm">
+      <table className="w-full table-fixed text-left text-body-sm">
+        <colgroup>
+          <col className="w-[45%] md:w-[42%] xl:w-[34%]" />
+          <col className="hidden w-20 xl:table-column" />
+          <col className="hidden w-24 md:table-column" />
+          <col className="hidden w-24 lg:table-column" />
+          <col className="hidden w-28 2xl:table-column" />
+          <col className="hidden w-32 lg:table-column" />
+          <col className="w-28 sm:w-36" />
+        </colgroup>
         <thead>
           <tr className="border-b border-outline-variant bg-surface-container">
-            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
+            <th className="px-3 py-3 text-label-md font-medium text-on-surface-variant sm:px-4">
               Name
             </th>
-            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
+            <th className="hidden px-3 py-3 text-label-md font-medium text-on-surface-variant xl:table-cell">
               Type
             </th>
-            <th className="px-4 py-3 text-center text-label-md font-medium text-on-surface-variant">
+            <th className="hidden px-3 py-3 text-center text-label-md font-medium text-on-surface-variant md:table-cell">
               Duration
             </th>
-            <th className="px-4 py-3 text-center text-label-md font-medium text-on-surface-variant">
+            <th className="hidden px-3 py-3 text-center text-label-md font-medium text-on-surface-variant lg:table-cell">
               Size
             </th>
-            <th className="hidden px-4 py-3 text-label-md font-medium text-on-surface-variant lg:table-cell">
+            <th className="hidden px-3 py-3 text-label-md font-medium text-on-surface-variant 2xl:table-cell">
               Date Added
             </th>
-            <th className="px-4 py-3 text-label-md font-medium text-on-surface-variant">
+            <th className="hidden px-3 py-3 text-label-md font-medium text-on-surface-variant lg:table-cell">
               Status
             </th>
-            <th className="px-4 py-3 text-right text-label-md font-medium text-on-surface-variant">
+            <th className="px-3 py-3 text-right text-label-md font-medium text-on-surface-variant sm:px-4">
               Actions
             </th>
           </tr>
@@ -515,45 +524,50 @@ function AudioTable({
               key={track.id}
               className="group transition-colors hover:bg-surface-container"
             >
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-3">
+              <td className="px-3 py-3 sm:px-4">
+                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <span className="material-symbols-outlined text-[20px]">
                       audio_file
                     </span>
                   </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-on-surface">
-                      {track.filename}
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className="truncated-reveal [--truncate-window:clamp(9rem,24vw,22rem)] font-medium text-on-surface"
+                      title={track.filename}
+                    >
+                      <span>{track.filename}</span>
                     </p>
-                    <p className="text-label-sm text-on-surface-variant">
-                      Audio
+                    <p className="truncate text-label-sm text-on-surface-variant">
+                      Audio / {track.codec ? track.codec.toUpperCase() : "MP3"}
                     </p>
                   </div>
-                  <MiniWaveform />
+                  <div className="hidden shrink-0 sm:block">
+                    <MiniWaveform />
+                  </div>
                 </div>
               </td>
-              <td className="px-4 py-3">
+              <td className="hidden px-3 py-3 xl:table-cell">
                 <FormatBadge format={track.codec ? track.codec.toUpperCase() : "MP3"} />
               </td>
-              <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
+              <td className="hidden px-3 py-3 text-center font-mono text-on-surface-variant md:table-cell">
                 {formatTrackDuration(rowDurations[track.id])}
               </td>
-              <td className="px-4 py-3 text-center text-on-surface-variant">
+              <td className="hidden px-3 py-3 text-center text-on-surface-variant lg:table-cell">
                 {formatTrackSize(track.sizeBytes)}
               </td>
-              <td className="hidden px-4 py-3 text-on-surface-variant lg:table-cell">
+              <td className="hidden px-3 py-3 text-on-surface-variant 2xl:table-cell">
                 {new Date(track.createdAt).toLocaleDateString()}
               </td>
-              <td className="px-4 py-3">
+              <td className="hidden px-3 py-3 lg:table-cell">
                 <MediaPipelineStatus
                   media={track}
                   pipeline={pipelinesById?.[track.id]}
                   compact
                 />
               </td>
-              <td className="px-4 py-3 text-right">
-                <div className="flex items-center justify-end gap-2">
+              <td className="px-3 py-3 text-right sm:px-4">
+                <div className="flex items-center justify-end gap-1 sm:gap-2">
                   <button
                     type="button"
                     onClick={() => onPlay(track)}
@@ -582,11 +596,11 @@ function AudioTable({
         </tbody>
       </table>
 
-      <div className="flex items-center justify-between border-t border-outline-variant px-4 py-3">
+      <div className="flex flex-col gap-3 border-t border-outline-variant px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
         <p className="text-label-sm text-on-surface-variant">
           Showing {showingStart} to {showingEnd} of {tracks.length} results
         </p>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"
             disabled={safePage <= 1}
@@ -1035,11 +1049,14 @@ export default function Audio() {
             {activeTrack ? (
               <>
                 {/* Track info */}
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="mb-1 flex items-center gap-2">
-                      <h3 className="text-headline-md font-bold text-on-surface">
-                        {activeTrack.filename}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
+                      <h3
+                        className="truncated-reveal min-w-0 max-w-full [--truncate-window:clamp(12rem,46vw,36rem)] text-headline-md font-bold text-on-surface"
+                        title={activeTrack.filename}
+                      >
+                        <span>{activeTrack.filename}</span>
                       </h3>
                       <FormatBadge format={activeTrack.codec ? activeTrack.codec.toUpperCase() : "MP3"} />
                       <MediaPipelineStatus
