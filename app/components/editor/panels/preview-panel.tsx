@@ -43,9 +43,12 @@ import type { UpdateTextOperation } from "~/lib/editor/video-operations";
 
 import { editorProject, type EditorProjectMock } from "../mock-editor-data";
 import { EditorIcon, EditorIconButton } from "../editor-ui";
+import { getActiveDraggedMedia } from "~/lib/editor/editor-media";
 
 interface PreviewPanelProps {
   project: EditorProjectMock;
+  className?: string;
+  onMediaDrop?: (mediaId: string, placement?: { trackId?: string; timelineStart: number }) => void;
 }
 
 interface StageSize {
@@ -72,7 +75,12 @@ const defaultStageSize: StageSize = { width: 960, height: 540 };
 const mediaClockEndEpsilon = 0.01;
 const decodedImageCache = new Map<string, HTMLImageElement>();
 
-export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelProps>) {
+export function PreviewPanel({
+  project = editorProject,
+  className = "",
+  onMediaDrop,
+}: Partial<PreviewPanelProps>) {
+  const [dragOverActive, setDragOverActive] = useState(false);
   const dispatch = useAppDispatch();
   const { document, playback, timelineDuration, soloedAudioTrackIds } = useAppSelector(selectProgramMonitorState);
   const selectedItemIds = useAppSelector(selectSelectedItemIds);
@@ -246,10 +254,34 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
           className="flex h-full w-full items-center justify-center overflow-hidden"
         >
           <div
-            className="relative overflow-hidden rounded-[6px] border border-outline-variant bg-black shadow-[0_18px_50px_rgba(0,0,0,0.38)]"
+            className={`relative overflow-hidden rounded-[6px] border bg-black shadow-[0_18px_50px_rgba(0,0,0,0.38)] transition-colors duration-200 ${
+              dragOverActive ? "border-primary" : "border-outline-variant"
+            }`}
             style={{
               width: stageSize.width,
               height: stageSize.height,
+            }}
+            onDragOver={(event) => {
+              if (!Array.from(event.dataTransfer.types).includes("application/x-kuvox-media-id")) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setDragOverActive(true);
+            }}
+            onDragLeave={() => {
+              setDragOverActive(false);
+            }}
+            onDrop={(event) => {
+              setDragOverActive(false);
+              let mediaId = event.dataTransfer.getData("application/x-kuvox-media-id");
+              if (!mediaId) {
+                const activeDrag = getActiveDraggedMedia();
+                if (activeDrag) {
+                  mediaId = activeDrag.id;
+                }
+              }
+              if (!mediaId) return;
+              event.preventDefault();
+              onMediaDrop?.(mediaId, { timelineStart: playback.currentTime });
             }}
           >
             <ProgramMonitorStage
@@ -263,6 +295,13 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
               onSelectTextOverlay={selectTextOverlay}
               onCommitTextTransform={commitTextTransform}
             />
+            {dragOverActive && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 pointer-events-none">
+                <div className="rounded-[6px] border border-primary/30 bg-surface-container-high/90 px-4 py-2 text-label-md font-semibold text-primary shadow-lg backdrop-blur-sm">
+                  Drop to insert at playhead ({formatTimecode(playback.currentTime, frameRate)})
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 
 import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { MediaKind, type MediaDto } from "~/lib/api";
@@ -7,6 +7,7 @@ import {
   mediaLibraryKind,
   mediaReadiness,
   type MediaReadiness,
+  setActiveDraggedMedia,
 } from "~/lib/editor/editor-media";
 import { resolveMediaPipeline } from "~/lib/media-pipeline";
 import type { MediaRealtimeUpdate } from "~/lib/media-realtime";
@@ -23,10 +24,13 @@ import {
   type LibraryTab,
 } from "~/store/slices/editor-slice";
 
-import { EditorIcon, EditorIconButton, PanelHeader } from "./editor-ui";
+import { EditorIcon, EditorIconButton } from "./editor-ui";
 import { useDragResize } from "./use-drag-resize";
 
-const tabs: Array<{ value: LibraryTab; label: string; icon: string }> = [
+type LibraryKindFilter = "all" | LibraryTab;
+
+const tabs: Array<{ value: LibraryKindFilter; label: string; icon: string }> = [
+  { value: "all", label: "All", icon: "perm_media" },
   { value: "clips", label: "Videos", icon: "video_file" },
   { value: "audio", label: "Audio", icon: "audio_file" },
   { value: "stills", label: "Images", icon: "imagesmode" },
@@ -50,8 +54,11 @@ interface MediaLibraryPanelProps {
   canPlaceMedia?: boolean;
   onRetryMediaLoad?: () => void;
   onAddMedia: (media: MediaDto) => void;
+  className?: string;
+  resizable?: boolean;
+  onRequestClose?: () => void;
+  onImportFiles?: (files: File[]) => void;
 }
-
 export function MediaLibraryPanel({
   media,
   updatesById = {},
@@ -61,11 +68,16 @@ export function MediaLibraryPanel({
   canPlaceMedia = true,
   onRetryMediaLoad,
   onAddMedia,
+  className = "hidden lg:flex",
+  resizable = true,
+  onRequestClose,
+  onImportFiles,
 }: MediaLibraryPanelProps) {
   const dispatch = useAppDispatch();
-  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilterValue>("ready");
+  const [kindFilter, setKindFilter] = useState<LibraryKindFilter>("all");
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilterValue>("all");
+  const [fileDragActive, setFileDragActive] = useState(false);
   const {
-    activeTab,
     open: libraryOpen,
     width: libraryWidth,
     selectedMediaId,
@@ -74,11 +86,11 @@ export function MediaLibraryPanel({
   const visibleAssets = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
-    return filteredLibraryAssets(media, activeTab, readinessFilter, normalizedSearch);
-  }, [activeTab, media, readinessFilter, searchQuery]);
+    return filteredLibraryAssets(media, kindFilter, readinessFilter, normalizedSearch);
+  }, [kindFilter, media, readinessFilter, searchQuery]);
   const activeTabAssets = useMemo(
-    () => sortedMedia(media).filter((asset) => mediaLibraryKind(asset) === activeTab),
-    [activeTab, media],
+    () => sortedMedia(media).filter((asset) => kindFilter === "all" || mediaLibraryKind(asset) === kindFilter),
+    [kindFilter, media],
   );
   const readinessCounts = useMemo(() => countReadiness(activeTabAssets), [activeTabAssets]);
   const readinessAssets = useMemo(
@@ -93,7 +105,7 @@ export function MediaLibraryPanel({
     tabAssetCount: activeTabAssets.length,
     readinessAssetCount: readinessAssets.length,
     searchQuery,
-    activeTab,
+    activeTab: kindFilter,
     readinessFilter,
     mediaLoadError,
     usingCachedMedia,
@@ -102,8 +114,6 @@ export function MediaLibraryPanel({
     const readiness = mediaReadiness(asset);
     return readiness === "failed" || readiness === "processing";
   }).length;
-  const compactLibraryControls = libraryWidth < 292;
-
   const handleResizeStart = useDragResize({
     axis: "x",
     value: libraryWidth,
@@ -133,41 +143,65 @@ export function MediaLibraryPanel({
 
   return (
     <aside
-      className="relative z-40 hidden h-full min-w-video-library-min max-w-video-library-max shrink-0 flex-col border-r border-outline-variant bg-surface lg:flex"
-      style={{ width: libraryWidth }}
+      className={`relative z-40 h-full min-w-video-library-min max-w-video-library-max shrink-0 flex-col border-r border-outline-variant bg-surface ${className}`}
+      style={{ width: resizable ? libraryWidth : undefined }}
+      aria-label="Media library"
+      onDragEnter={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault();
+        setFileDragActive(true);
+      }}
+      onDragOver={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setFileDragActive(false);
+      }}
+      onDrop={(event: DragEvent<HTMLElement>) => {
+        const files = Array.from(event.dataTransfer.files);
+        if (files.length === 0) return;
+        event.preventDefault();
+        setFileDragActive(false);
+        onImportFiles?.(files);
+      }}
     >
-      <PanelHeader
-        title="Library"
-        eyebrow="Workspace Media"
-        compact={compactLibraryControls}
-        action={
-          <div className="flex shrink-0 items-center gap-1">
-            <EditorIconButton
-              icon="add"
-              label="Add media"
-              active
-              className="h-8 w-8 border-primary/40 bg-primary text-on-primary hover:opacity-90"
-              onClick={() => dispatch(modalOpened("import-media"))}
-            />
-            <EditorIconButton
-              icon="close"
-              label="Close media library"
-              className="h-8 w-8"
-              onClick={() => dispatch(libraryOpenChanged(false))}
-            />
-          </div>
-        }
-      />
+      <div className="flex h-16 shrink-0 items-center justify-between gap-3 px-4">
+        <div>
+          <h2 className="text-body-lg font-bold text-on-surface">Media</h2>
+          <p className="mt-0.5 text-label-sm text-on-surface-variant">Project library</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label="Add media"
+            onClick={() => dispatch(modalOpened("import-media"))}
+            className="flex h-9 items-center gap-1.5 rounded-[7px] border border-primary/30 bg-primary/10 px-3 text-label-md font-bold text-primary hover:bg-primary/20"
+          >
+            <EditorIcon className="text-[17px]">add</EditorIcon>
+            Import
+          </button>
+          <EditorIconButton
+            icon="close"
+            label="Close media library"
+            className="hidden h-9 w-9 min-[760px]:flex min-[1180px]:hidden"
+            onClick={() => {
+              dispatch(libraryOpenChanged(false));
+              onRequestClose?.();
+            }}
+          />
+        </div>
+      </div>
 
       <div
         role="tablist"
         aria-label="Media kind"
-        className={`grid shrink-0 grid-cols-3 gap-1 border-b border-outline-variant bg-surface-container-lowest p-2 ${
-          compactLibraryControls ? "h-[58px]" : "h-12"
-        }`}
+        className="grid h-11 shrink-0 grid-cols-4 border-b border-outline-variant px-3"
       >
         {tabs.map((tab) => {
-          const active = activeTab === tab.value;
+          const active = kindFilter === tab.value;
           return (
             <button
               key={tab.value}
@@ -176,30 +210,24 @@ export function MediaLibraryPanel({
               aria-label={`${tab.label} library`}
               aria-selected={active}
               title={`${tab.label} library`}
-              onClick={() => dispatch(libraryTabChanged(tab.value))}
-              className={`flex min-w-0 items-center justify-center rounded-[4px] border text-label-md font-semibold transition-colors motion-reduce:transition-none ${
+              onClick={() => {
+                setKindFilter(tab.value);
+                if (tab.value !== "all") dispatch(libraryTabChanged(tab.value));
+              }}
+              className={`relative flex min-w-0 items-center justify-center text-[11px] font-semibold transition-colors motion-reduce:transition-none ${
                 active
-                  ? "border-primary/40 bg-surface-container-high text-primary"
-                  : "border-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-              } ${compactLibraryControls ? "h-full flex-col gap-0.5 px-1 py-1" : "h-8 gap-1.5 px-2"}`}
+                  ? "text-on-surface after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
             >
-              <EditorIcon className={compactLibraryControls ? "text-[18px]" : "text-[16px]"}>
-                {tab.icon}
-              </EditorIcon>
-              <span
-                className={`min-w-0 max-w-full truncate ${
-                  compactLibraryControls ? "text-[10px] leading-none" : ""
-                }`}
-              >
-                {tab.label}
-              </span>
+              <span className="truncate">{tab.label}</span>
             </button>
           );
         })}
       </div>
 
-      <div className="shrink-0 border-b border-outline-variant bg-surface-container-lowest p-2">
-        <label className="relative block">
+      <div className="flex shrink-0 gap-2 border-b border-outline-variant px-3 py-2.5">
+        <label className="relative min-w-0 flex-1">
           <EditorIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">
             search
           </EditorIcon>
@@ -209,55 +237,23 @@ export function MediaLibraryPanel({
             placeholder="Search filename"
             aria-label="Search media filename"
             data-editor-shortcuts="ignore"
-            className="h-8 w-full rounded-[4px] border border-outline-variant bg-surface pl-8 pr-2 text-body-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant focus:border-primary motion-reduce:transition-none"
+            className="h-9 w-full rounded-[6px] border border-outline-variant bg-surface-container-low pl-8 pr-2 text-label-md text-on-surface outline-none transition-colors placeholder:text-on-surface-variant focus:border-primary motion-reduce:transition-none"
           />
         </label>
-
-        <div
-          role="radiogroup"
+        <label className="sr-only" htmlFor="media-readiness-filter">Media readiness</label>
+        <select
+          id="media-readiness-filter"
           aria-label="Media readiness"
-          className="mt-2 rounded-[6px] border border-outline-variant bg-surface p-1"
+          value={readinessFilter}
+          onChange={(event) => setReadinessFilter(event.currentTarget.value as ReadinessFilterValue)}
+          className="h-9 w-[82px] rounded-[6px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant outline-none focus:border-primary"
         >
-          <div className="grid grid-cols-2 gap-1">
-            {readinessFilters.map((filter) => {
-              const active = readinessFilter === filter.value;
-              const count = readinessCounts[filter.value];
-              return (
-                <button
-                  key={filter.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  title={`${filter.label} media`}
-                  onClick={() => setReadinessFilter(filter.value)}
-                  className={`flex h-9 min-w-0 items-center gap-1.5 rounded-[4px] border px-2 text-left transition-colors motion-reduce:transition-none ${
-                    active
-                      ? "border-primary/50 bg-primary/10 text-on-surface shadow-[inset_0_0_0_1px_rgba(192,193,255,0.18)]"
-                      : "border-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                  }`}
-                >
-                  <EditorIcon
-                    className={`shrink-0 text-[16px] ${readinessFilterIconClass(filter.value, active)}`}
-                  >
-                    {filter.icon}
-                  </EditorIcon>
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">
-                    {filter.label}
-                  </span>
-                  <span
-                    className={`shrink-0 rounded-[3px] px-1.5 py-0.5 font-mono text-[10px] ${
-                      active
-                        ? "bg-primary/15 text-primary"
-                        : "bg-surface-container-high text-on-surface-variant"
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+          {readinessFilters.map((filter) => (
+            <option key={filter.value} value={filter.value}>
+              {filter.label} {readinessCounts[filter.value]}
+            </option>
+          ))}
+        </select>
       </div>
 
       {mediaLoadError ? (
@@ -283,7 +279,7 @@ export function MediaLibraryPanel({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 content-start grid-cols-2 gap-2 overflow-y-auto p-2 2xl:p-3">
+      <div className="grid min-h-0 flex-1 content-start grid-cols-2 gap-3 overflow-y-auto p-3">
         {visibleAssets.map((asset, index) => (
           <MediaCard
             key={asset.id}
@@ -295,15 +291,30 @@ export function MediaLibraryPanel({
             onAdd={() => handleAddMedia(asset)}
           />
         ))}
-        {visibleAssets.length === 0 ? <MediaLibraryEmptyState state={emptyState} /> : null}
+        {visibleAssets.length === 0 ? (
+          <MediaLibraryEmptyState
+            state={emptyState}
+            onImport={() => dispatch(modalOpened("import-media"))}
+          />
+        ) : null}
       </div>
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        title="Resize media library"
-        onPointerDown={handleResizeStart}
-        className="absolute right-[-3px] top-0 z-50 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40 motion-reduce:transition-none"
-      />
+      {fileDragActive ? (
+        <div className="pointer-events-none absolute inset-2 z-50 flex items-center justify-center rounded-[10px] border-2 border-dashed border-primary bg-surface/90">
+          <div className="text-center text-primary">
+            <EditorIcon className="text-[32px]">upload_file</EditorIcon>
+            <p className="mt-2 text-body-sm font-bold">Drop files to import</p>
+          </div>
+        </div>
+      ) : null}
+      {resizable ? (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="Resize media library"
+          onPointerDown={handleResizeStart}
+          className="absolute right-[-3px] top-0 z-50 hidden h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40 motion-reduce:transition-none min-[1180px]:block"
+        />
+      ) : null}
     </aside>
   );
 }
@@ -315,12 +326,12 @@ function sortedMedia(media: MediaDto[]): MediaDto[] {
 
 function filteredLibraryAssets(
   media: MediaDto[],
-  activeTab: LibraryTab,
+  activeTab: LibraryKindFilter,
   readinessFilter: ReadinessFilterValue,
   normalizedSearch: string,
 ): MediaDto[] {
   return sortedMedia(media)
-    .filter((asset) => mediaLibraryKind(asset) === activeTab)
+    .filter((asset) => activeTab === "all" || mediaLibraryKind(asset) === activeTab)
     .filter((asset) => readinessFilter === "all" || mediaReadiness(asset) === readinessFilter)
     .filter((asset) => !normalizedSearch || asset.filename.toLowerCase().includes(normalizedSearch));
 }
@@ -338,14 +349,6 @@ function countReadiness(media: MediaDto[]): Record<ReadinessFilterValue, number>
   }
 
   return counts;
-}
-
-function readinessFilterIconClass(value: ReadinessFilterValue, active: boolean): string {
-  if (active) return "text-primary";
-  if (value === "failed") return "text-error";
-  if (value === "processing") return "text-on-surface-variant";
-  if (value === "ready") return "text-primary";
-  return "text-on-surface-variant";
 }
 
 type MediaLibraryEmptyStateModel = {
@@ -368,7 +371,7 @@ function mediaLibraryEmptyState({
   tabAssetCount: number;
   readinessAssetCount: number;
   searchQuery: string;
-  activeTab: LibraryTab;
+  activeTab: LibraryKindFilter;
   readinessFilter: MediaReadiness | "all";
   mediaLoadError?: string | null;
   usingCachedMedia: boolean;
@@ -420,18 +423,33 @@ function mediaLibraryEmptyState({
   };
 }
 
-function libraryTabLabel(tab: LibraryTab): string {
+function libraryTabLabel(tab: LibraryKindFilter): string {
+  if (tab === "all") return "media";
   if (tab === "audio") return "audio";
   if (tab === "stills") return "images";
   return "videos";
 }
 
-function MediaLibraryEmptyState({ state }: { state: MediaLibraryEmptyStateModel }) {
+function MediaLibraryEmptyState({
+  state,
+  onImport,
+}: {
+  state: MediaLibraryEmptyStateModel;
+  onImport: () => void;
+}) {
   return (
-    <div className="col-span-2 flex min-h-[180px] flex-col items-center justify-center rounded-[4px] border border-dashed border-outline-variant bg-surface-container-lowest p-4 text-center">
+    <div className="col-span-2 flex min-h-[190px] flex-col items-center justify-center rounded-[8px] border border-dashed border-outline-variant bg-surface-container-lowest p-4 text-center">
       <EditorIcon className="text-[28px] text-on-surface-variant">{state.icon}</EditorIcon>
       <p className="mt-2 text-body-sm font-semibold text-on-surface">{state.title}</p>
       <p className="mt-1 max-w-[220px] text-label-md text-on-surface-variant">{state.body}</p>
+      <button
+        type="button"
+        onClick={onImport}
+        className="mt-4 flex h-9 items-center gap-1.5 rounded-[6px] bg-primary px-3 text-label-md font-bold text-on-primary"
+      >
+        <EditorIcon className="text-[16px]">add</EditorIcon>
+        Import media
+      </button>
     </div>
   );
 }
@@ -459,6 +477,8 @@ function MediaCard({
     <button
       type="button"
       draggable={canPlaceMedia && ready}
+      data-media-id={media.id}
+      aria-label={`Add ${media.filename} to timeline`}
       onClick={onAdd}
       onDragStart={(event) => {
         if (!canPlaceMedia || !ready) {
@@ -470,22 +490,29 @@ function MediaCard({
         event.dataTransfer.setData("application/x-kuvox-media-id", media.id);
         event.dataTransfer.setData("application/x-kuvox-media-kind", String(media.kind));
         event.dataTransfer.setData("text/plain", media.filename);
+        setActiveDraggedMedia({ id: media.id, kind: media.kind });
+      }}
+      onDragEnd={() => {
+        setActiveDraggedMedia(null);
       }}
       title={`${media.filename} - ${pipeline.label}`}
-      className={`group relative overflow-hidden rounded-[4px] border bg-surface-container-low text-left transition-colors motion-reduce:transition-none ${
+      className={`group relative aspect-[4/3] cursor-grab overflow-hidden rounded-[8px] border bg-surface-container-low text-left transition-all active:cursor-grabbing motion-reduce:transition-none ${
         selected
-          ? "border-primary shadow-[0_0_0_1px_rgba(192,193,255,0.18)]"
-          : "border-outline-variant hover:border-primary/60"
+          ? "border-primary shadow-[0_0_0_1px_rgba(139,124,255,0.22)]"
+          : "border-outline-variant hover:border-primary/60 hover:-translate-y-0.5"
       }`}
     >
-      <div className="relative aspect-video overflow-hidden border-b border-outline-variant/80 bg-surface-container-high">
+      <div className="absolute inset-0 overflow-hidden bg-surface-container-high">
         <MediaThumbnail media={media} index={index} className="absolute inset-0" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.58),transparent_65%)]" />
-        <div className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-[4px] bg-black/45 text-white/85">
+        <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(3,5,12,0.9),transparent_70%)]" />
+        <div className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-[5px] bg-black/55 text-white/90">
           <EditorIcon className="text-[16px]">{iconForMedia(media)}</EditorIcon>
         </div>
         <span className="absolute bottom-1.5 right-1.5 rounded-[3px] bg-black/60 px-1.5 py-0.5 font-mono text-[9px] text-white/90">
           {durationLabel(media)}
+        </span>
+        <span className="absolute bottom-2 left-2 right-12 truncate text-[10px] font-semibold text-white">
+          {media.filename}
         </span>
         {readiness !== "ready" ? (
           <span className={`absolute bottom-1.5 left-1.5 rounded-[3px] px-1.5 py-0.5 text-[9px] font-semibold uppercase ${readiness === "failed" ? "bg-error-container text-on-error-container" : "bg-surface-container-high text-on-surface"}`}>
@@ -493,14 +520,11 @@ function MediaCard({
           </span>
         ) : null}
       </div>
-      <div className="px-2 py-1.5">
-        <span className="block truncate text-[11px] font-medium text-on-surface">
-          {media.filename}
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-primary/20 opacity-0 transition-opacity group-hover:opacity-100 motion-reduce:transition-none">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg">
+          <EditorIcon className="text-[20px]">add</EditorIcon>
         </span>
-        <span className={`mt-0.5 block truncate text-[9px] uppercase tracking-[0.08em] ${statusClass(pipeline.stage)}`}>
-          {pipeline.label}
-        </span>
-      </div>
+      </span>
     </button>
   );
 }
@@ -518,10 +542,4 @@ function durationLabel(media: MediaDto): string {
   const minutes = Math.floor(duration / 60);
   const seconds = Math.floor(duration % 60);
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function statusClass(stage: string): string {
-  if (stage === "ready") return "text-primary";
-  if (stage === "failed") return "text-error";
-  return "text-on-surface-variant";
 }

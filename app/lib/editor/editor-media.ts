@@ -402,3 +402,19 @@ function omitUndefined<T extends Record<string, unknown>>(value: T): T {
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
   ) as T;
 }
+
+export interface DraggedMediaInfo {
+  id: string;
+  kind: number;
+}
+
+let activeDraggedMedia: DraggedMediaInfo | null = null;
+
+export function setActiveDraggedMedia(media: DraggedMediaInfo | null) {
+  activeDraggedMedia = media;
+}
+
+export function getActiveDraggedMedia(): DraggedMediaInfo | null {
+  return activeDraggedMedia;
+}
+
