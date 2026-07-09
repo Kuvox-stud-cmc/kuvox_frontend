@@ -29,6 +29,7 @@ interface EditorTopBarProps {
   project: EditorProjectMock;
   user?: HeaderActionUser;
   notifications?: HeaderNotifications;
+  onSync?: () => void | Promise<void>;
 }
 
 const modes: Array<{ value: EditorMode; label: string; icon?: string }> = [
@@ -50,7 +51,7 @@ const DEFAULT_EDITOR_NOTIFICATIONS: HeaderNotifications = {
 const editorActionButton =
   "flex h-8 w-8 items-center justify-center rounded-[4px] text-on-surface-variant transition-colors duration-150 hover:bg-surface-container-high hover:text-on-surface motion-reduce:transition-none";
 
-export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notifications }: EditorTopBarProps) {
+export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notifications, onSync }: EditorTopBarProps) {
   const dispatch = useAppDispatch();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -59,6 +60,7 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
   const canUndo = useAppSelector(selectCanUndo);
   const canRedo = useAppSelector(selectCanRedo);
   const syncCopy = syncStatusCopy(syncStatus, pendingSyncCount);
+  const syncDisabled = !onSync || syncStatus === "syncing" || syncStatus === "server-changed";
   const headerNotifications = notifications ?? DEFAULT_EDITOR_NOTIFICATIONS;
   const unreadCount = Math.max(0, Number(headerNotifications.unreadCount) || 0);
   const badgeLabel = unreadCount > 99 ? "99+" : String(unreadCount);
@@ -131,6 +133,13 @@ export function EditorTopBar({ project, user = DEFAULT_EDITOR_USER, notification
         >
           {syncCopy.label}
         </span>
+        <EditorIconButton
+          icon="save"
+          label="Sync"
+          className="hidden h-8 w-8 lg:flex"
+          disabled={syncDisabled}
+          onClick={() => void onSync?.()}
+        />
         <EditorIconButton
           icon="undo"
           label="Undo"
@@ -270,6 +279,13 @@ function syncStatusCopy(status: EditorSyncStatus, pendingSyncCount: number) {
   if (status === "saved-local") {
     return {
       label: pendingSyncCount > 0 ? `Saved locally (${pendingSyncCount})` : "Saved locally",
+      className: "border-tertiary/40 bg-tertiary-container text-on-tertiary-container",
+    };
+  }
+
+  if (status === "dirty") {
+    return {
+      label: "Saved locally",
       className: "border-tertiary/40 bg-tertiary-container text-on-tertiary-container",
     };
   }

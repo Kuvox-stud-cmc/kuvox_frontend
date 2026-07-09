@@ -32,7 +32,11 @@ import {
   videoUndoRequested,
 } from "~/store/slices/editor-slice";
 
-export function useVideoKeyboardShortcuts(rootRef: RefObject<HTMLElement | null>) {
+export function useVideoKeyboardShortcuts(
+  rootRef: RefObject<HTMLElement | null>,
+  options: { onSave?: () => void | Promise<void> } = {},
+) {
+  const onSave = options.onSave;
   const dispatch = useAppDispatch();
   const document = useAppSelector(selectVideoDocument);
   const selectedItemIds = useAppSelector(selectSelectedItemIds);
@@ -46,6 +50,12 @@ export function useVideoKeyboardShortcuts(rootRef: RefObject<HTMLElement | null>
     if (!root) return undefined;
 
     function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void onSave?.();
+        return;
+      }
+
       const shortcut = classifyVideoEditorShortcut(event);
       if (!shortcut) return;
 
@@ -194,5 +204,6 @@ export function useVideoKeyboardShortcuts(rootRef: RefObject<HTMLElement | null>
     rootRef,
     selectedItemIds,
     timelineZoom,
+    onSave,
   ]);
 }

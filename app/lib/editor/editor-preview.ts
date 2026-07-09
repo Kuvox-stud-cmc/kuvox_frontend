@@ -258,6 +258,23 @@ export function timelineTimeToMediaSourceTime(
   return Math.min(item.sourceOut, Math.max(item.sourceIn, sourceTime));
 }
 
+export function mediaSourceTimeToTimelineTime(
+  item: VideoClipTimelineItem | AudioTimelineItem,
+  sourceTime: number,
+): number {
+  if (sourceTime <= item.sourceIn) {
+    return item.timelineStart;
+  }
+
+  if (sourceTime >= item.sourceOut) {
+    return item.timelineStart + item.duration;
+  }
+
+  const speed = "speed" in item && item.speed > 0 ? item.speed : 1;
+  const timelineTime = item.timelineStart + (sourceTime - item.sourceIn) / speed;
+  return Math.min(item.timelineStart + item.duration, Math.max(item.timelineStart, timelineTime));
+}
+
 export function stepPreviewTime({
   currentTime,
   direction,

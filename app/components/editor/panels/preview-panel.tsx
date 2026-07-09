@@ -8,6 +8,7 @@ import {
   computeSafeGuides,
   computeTextOverlayBounds,
   createProgramMonitorPlan,
+  mediaSourceTimeToTimelineTime,
   type PreviewAudioPlan,
   type PreviewMediaOverlayPlan,
   type PreviewOverlayPlan,
@@ -55,6 +56,10 @@ interface StageSize {
 type MediaErrorMap = Record<string, string>;
 type ResizeCorner = "nw" | "ne" | "sw" | "se";
 type TextTransformPreview = Record<string, VideoTransform>;
+type HTMLVideoElementWithFrameCallback = HTMLVideoElement & {
+  requestVideoFrameCallback: (callback: () => void) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
+};
 type TextGesture = {
   kind: "move" | "resize";
   itemId: string;
@@ -64,6 +69,7 @@ type TextGesture = {
 };
 
 const defaultStageSize: StageSize = { width: 960, height: 540 };
+const mediaClockEndEpsilon = 0.01;
 const decodedImageCache = new Map<string, HTMLImageElement>();
 
 export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelProps>) {
@@ -74,7 +80,7 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
   const [qualityPreference, setQualityPreference] = useState<PreviewQualityPreference>("balanced");
   const [timecodeDraft, setTimecodeDraft] = useState<string | null>(null);
   const [mediaErrors, setMediaErrors] = useState<MediaErrorMap>({});
-  const [stageSize, setStageSize] = useElementSize(defaultStageSize);
+  const [previewAreaSize, setPreviewAreaSize] = useElementSize(defaultStageSize);
   const [fullscreenStageSize, setFullscreenStageSize] = useElementSize(defaultStageSize);
   const mediaLayerRef = useRef<Konva.Layer>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -99,6 +105,12 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
       ? plan.activeVisual
       : null;
   const activeAudio = plan?.activeAudio.filter((audio) => audio.objectUrl) ?? [];
+  const primaryClockAudio = activeVideo ? null : activeAudio[0] ?? null;
+  const mediaClockActive = Boolean(activeVideo || primaryClockAudio);
+  const stageSize = useMemo(
+    () => fitStageToArea(previewAreaSize, document?.settings),
+    [document?.settings, previewAreaSize],
+  );
   const displayTime = timecodeDraft ?? formatTimecode(playback.currentTime, frameRate);
   const durationTime = formatTimecode(timelineDuration, frameRate);
   const planWarnings = plan?.warnings.map((warning) => warning.message) ?? [];
@@ -115,6 +127,7 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
 
   usePlaybackClock({
     playing: playback.playing,
+    mediaClockActive,
     currentTime: playback.currentTime,
     timelineDuration,
     frameRate,
@@ -128,6 +141,9 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
     playing: playback.playing,
     muted: playback.muted,
     volume: playback.volume,
+    timelineDuration,
+    onTimeChange: (time) => dispatch(currentTimeChanged(time)),
+    onEnd: () => dispatch(playbackPaused()),
     onError: (message) => {
       logMediaObjectFailure(document?.projectId, activeVideo?.media.id, activeVideo?.item.id, activeVideo?.objectVariant, "video", message);
       setMediaErrors((errors) => ({ ...errors, video: message }));
@@ -212,6 +228,10 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
           key={audioPlan.item.id}
           activeAudio={audioPlan}
           playing={playback.playing}
+          primaryClock={primaryClockAudio?.item.id === audioPlan.item.id}
+          timelineDuration={timelineDuration}
+          onTimeChange={(time) => dispatch(currentTimeChanged(time))}
+          onEnd={() => dispatch(playbackPaused())}
           onError={(message) => {
             logMediaObjectFailure(document?.projectId, audioPlan.media.id, audioPlan.item.id, audioPlan.objectVariant, "audio", message);
             setMediaErrors((errors) => ({ ...errors, [`audio:${audioPlan.item.id}`]: message }));
@@ -222,24 +242,28 @@ export function PreviewPanel({ project = editorProject }: Partial<PreviewPanelPr
 
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-2 lg:p-3 2xl:p-5">
         <div
-          ref={setStageSize.ref}
-          className="relative aspect-video w-full max-h-full overflow-hidden rounded-[6px] border border-outline-variant bg-black shadow-[0_18px_50px_rgba(0,0,0,0.38)]"
-          style={{
-            maxWidth:
-              "min(100%, calc((100vh - 64px - var(--editor-timeline-space, 292px) - 56px) * 1.777))",
-          }}
+          ref={setPreviewAreaSize.ref}
+          className="flex h-full w-full items-center justify-center overflow-hidden"
         >
-          <ProgramMonitorStage
-            plan={plan}
-            stageSize={stageSize}
-            videoElement={videoRef.current}
-            mediaLayerRef={mediaLayerRef}
-            messages={monitorMessages}
-            fallbackTitle={project.previewTitle}
-            selectedItemIds={selectedItemIds}
-            onSelectTextOverlay={selectTextOverlay}
-            onCommitTextTransform={commitTextTransform}
-          />
+          <div
+            className="relative overflow-hidden rounded-[6px] border border-outline-variant bg-black shadow-[0_18px_50px_rgba(0,0,0,0.38)]"
+            style={{
+              width: stageSize.width,
+              height: stageSize.height,
+            }}
+          >
+            <ProgramMonitorStage
+              plan={plan}
+              stageSize={stageSize}
+              videoElement={videoRef.current}
+              mediaLayerRef={mediaLayerRef}
+              messages={monitorMessages}
+              fallbackTitle={project.previewTitle}
+              selectedItemIds={selectedItemIds}
+              onSelectTextOverlay={selectTextOverlay}
+              onCommitTextTransform={commitTextTransform}
+            />
+          </div>
         </div>
       </div>
 
@@ -834,8 +858,30 @@ function MonitorMessage({ frameBounds, message }: { frameBounds: PreviewRect; me
   );
 }
 
+function fitStageToArea(area: StageSize, settings: VideoProjectSettings | undefined): StageSize {
+  const projectWidth = settings?.width && settings.width > 0 ? settings.width : 16;
+  const projectHeight = settings?.height && settings.height > 0 ? settings.height : 9;
+  const aspectRatio = projectWidth / projectHeight || 16 / 9;
+  const areaWidth = Math.max(1, area.width);
+  const areaHeight = Math.max(1, area.height);
+  const widthByHeight = areaHeight * aspectRatio;
+
+  if (widthByHeight <= areaWidth) {
+    return {
+      width: Math.max(1, Math.floor(widthByHeight)),
+      height: Math.max(1, Math.floor(areaHeight)),
+    };
+  }
+
+  return {
+    width: Math.max(1, Math.floor(areaWidth)),
+    height: Math.max(1, Math.floor(areaWidth / aspectRatio)),
+  };
+}
+
 function usePlaybackClock({
   playing,
+  mediaClockActive,
   currentTime,
   timelineDuration,
   frameRate,
@@ -843,6 +889,7 @@ function usePlaybackClock({
   onEnd,
 }: {
   playing: boolean;
+  mediaClockActive: boolean;
   currentTime: number;
   timelineDuration: number;
   frameRate: number;
@@ -856,7 +903,7 @@ function usePlaybackClock({
   }, [currentTime, frameRate, onEnd, onTimeChange, timelineDuration]);
 
   useEffect(() => {
-    if (!playing) {
+    if (!playing || mediaClockActive) {
       return undefined;
     }
 
@@ -888,7 +935,7 @@ function usePlaybackClock({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [playing]);
+  }, [mediaClockActive, playing]);
 }
 
 function useVideoElementSync({
@@ -897,6 +944,9 @@ function useVideoElementSync({
   playing,
   muted,
   volume,
+  timelineDuration,
+  onTimeChange,
+  onEnd,
   onError,
   onDrawNeeded,
 }: {
@@ -905,66 +955,183 @@ function useVideoElementSync({
   playing: boolean;
   muted: boolean;
   volume: number;
+  timelineDuration: number;
+  onTimeChange: (time: number) => void;
+  onEnd: () => void;
   onError: (message: string) => void;
   onDrawNeeded: () => void;
 }) {
+  const item = activeVideo?.item.type === "video" ? activeVideo.item : null;
+  const objectUrl = activeVideo?.objectUrl ?? null;
+  const sourceTime = activeVideo?.sourceTime ?? 0;
+  const itemId = item?.id ?? null;
+  const speed = item?.speed ?? 1;
+  const sourceTimeRef = useRef(sourceTime);
+  const onErrorRef = useRef(onError);
+  const onDrawNeededRef = useRef(onDrawNeeded);
+  const onTimeChangeRef = useRef(onTimeChange);
+  const onEndRef = useRef(onEnd);
+  const lastSourceKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    sourceTimeRef.current = sourceTime;
+    onErrorRef.current = onError;
+    onDrawNeededRef.current = onDrawNeeded;
+    onTimeChangeRef.current = onTimeChange;
+    onEndRef.current = onEnd;
+  }, [onDrawNeeded, onEnd, onError, onTimeChange, sourceTime]);
+
   useEffect(() => {
     const video = ref.current;
     if (!video) {
       return;
     }
 
-    if (!activeVideo?.objectUrl) {
+    if (!objectUrl) {
       video.pause();
       video.removeAttribute("src");
       video.load();
+      lastSourceKeyRef.current = null;
       return;
     }
 
-    if (video.src !== new URL(activeVideo.objectUrl, window.location.href).href) {
-      video.src = activeVideo.objectUrl;
+    const sourceKey = `${itemId ?? ""}:${objectUrl}`;
+    const sourceChanged = lastSourceKeyRef.current !== sourceKey;
+
+    if (video.src !== new URL(objectUrl, window.location.href).href) {
+      video.src = objectUrl;
       video.load();
     }
 
-    video.playbackRate = activeVideo.item.type === "video" ? activeVideo.item.speed : 1;
+    video.playbackRate = speed;
     video.muted = muted;
     video.volume = Math.max(0, Math.min(1, volume));
-    syncElementCurrentTime(video, activeVideo.sourceTime ?? 0);
-
-    if (playing) {
-      video.play().catch(() => onError("Video preview could not start."));
-    } else {
-      video.pause();
+    if (sourceChanged) {
+      syncElementCurrentTime(video, sourceTimeRef.current);
     }
-
-    const handleError = () => onError("Video preview object could not be loaded.");
-    video.addEventListener("error", handleError);
-    return () => video.removeEventListener("error", handleError);
-  }, [activeVideo, muted, onError, playing, ref, volume]);
+    lastSourceKeyRef.current = sourceKey;
+  }, [itemId, muted, objectUrl, ref, speed, volume]);
 
   useEffect(() => {
-    if (!playing || !activeVideo) {
+    const video = ref.current;
+    if (!video || !objectUrl) {
+      return undefined;
+    }
+
+    const handleError = () => onErrorRef.current("Video preview object could not be loaded.");
+    video.addEventListener("error", handleError);
+    return () => video.removeEventListener("error", handleError);
+  }, [objectUrl, ref]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) {
+      return;
+    }
+
+    if (!playing || !objectUrl) {
+      video.pause();
+      return;
+    }
+
+    video.play().catch(() => onErrorRef.current("Video preview could not start."));
+  }, [objectUrl, playing, ref]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !objectUrl) {
+      return;
+    }
+
+    const sourceKey = `${itemId ?? ""}:${objectUrl}`;
+    const sourceChanged = lastSourceKeyRef.current !== sourceKey;
+    const drift = Math.abs(video.currentTime - sourceTime);
+    if (!playing || sourceChanged || drift > 0.35) {
+      syncElementCurrentTime(video, sourceTime);
+    }
+    lastSourceKeyRef.current = sourceKey;
+  }, [itemId, objectUrl, playing, ref, sourceTime]);
+
+  useEffect(() => {
+    if (!playing || !item || !objectUrl) {
       return undefined;
     }
 
     let frameId = 0;
-    const draw = () => {
-      onDrawNeeded();
-      frameId = requestAnimationFrame(draw);
+    let videoFrameId = 0;
+    const video = ref.current;
+    if (!video) {
+      return undefined;
+    }
+
+    const publish = () => {
+      const timelineTime = mediaSourceTimeToTimelineTime(item, video.currentTime);
+      const clipEndTime = item.timelineStart + item.duration;
+      const clipEnded =
+        video.currentTime >= item.sourceOut - mediaClockEndEpsilon ||
+        timelineTime >= clipEndTime - mediaClockEndEpsilon;
+      onDrawNeededRef.current();
+
+      if (clipEnded) {
+        const nextTime = mediaClockHandoffTime(clipEndTime, timelineDuration);
+        onTimeChangeRef.current(nextTime);
+        if (nextTime >= timelineDuration - mediaClockEndEpsilon) {
+          onEndRef.current();
+        }
+        return false;
+      }
+
+      onTimeChangeRef.current(timelineTime);
+      return true;
     };
+
+    const draw = () => {
+      if (publish()) {
+        frameId = requestAnimationFrame(draw);
+      }
+    };
+
+    if ("requestVideoFrameCallback" in video) {
+      const requestVideoFrameCallback = (video as HTMLVideoElementWithFrameCallback).requestVideoFrameCallback.bind(video);
+      const cancelVideoFrameCallback = (video as HTMLVideoElementWithFrameCallback).cancelVideoFrameCallback?.bind(video);
+      let cancelled = false;
+      const onFrame = () => {
+        if (cancelled) {
+          return;
+        }
+        if (publish()) {
+          videoFrameId = requestVideoFrameCallback(onFrame);
+        }
+      };
+      videoFrameId = requestVideoFrameCallback(onFrame);
+      return () => {
+        cancelled = true;
+        if (cancelVideoFrameCallback) {
+          cancelVideoFrameCallback(videoFrameId);
+        }
+      };
+    }
 
     frameId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frameId);
-  }, [activeVideo, onDrawNeeded, playing]);
+  }, [item, objectUrl, playing, ref, timelineDuration]);
 }
 
 function PreviewAudioElement({
   activeAudio,
   playing,
+  primaryClock,
+  timelineDuration,
+  onTimeChange,
+  onEnd,
   onError,
 }: {
   activeAudio: PreviewAudioPlan;
   playing: boolean;
+  primaryClock: boolean;
+  timelineDuration: number;
+  onTimeChange: (time: number) => void;
+  onEnd: () => void;
   onError: (message: string) => void;
 }) {
   const ref = useRef<HTMLAudioElement>(null);
@@ -973,6 +1140,10 @@ function PreviewAudioElement({
     ref,
     activeAudio,
     playing,
+    primaryClock,
+    timelineDuration,
+    onTimeChange,
+    onEnd,
     onError,
   });
 
@@ -983,45 +1154,144 @@ function useAudioElementSync({
   ref,
   activeAudio,
   playing,
+  primaryClock,
+  timelineDuration,
+  onTimeChange,
+  onEnd,
   onError,
 }: {
   ref: RefObject<HTMLAudioElement | null>;
   activeAudio: PreviewAudioPlan;
   playing: boolean;
+  primaryClock: boolean;
+  timelineDuration: number;
+  onTimeChange: (time: number) => void;
+  onEnd: () => void;
   onError: (message: string) => void;
 }) {
+  const {
+    item,
+    objectUrl,
+    sourceTime,
+    muted,
+    effectiveVolume,
+  } = activeAudio;
+  const sourceTimeRef = useRef(sourceTime);
+  const onErrorRef = useRef(onError);
+  const onTimeChangeRef = useRef(onTimeChange);
+  const onEndRef = useRef(onEnd);
+  const lastSourceKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    sourceTimeRef.current = sourceTime;
+    onErrorRef.current = onError;
+    onTimeChangeRef.current = onTimeChange;
+    onEndRef.current = onEnd;
+  }, [onEnd, onError, onTimeChange, sourceTime]);
+
   useEffect(() => {
     const audio = ref.current;
     if (!audio) {
       return;
     }
 
-    if (!activeAudio.objectUrl) {
+    if (!objectUrl) {
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
+      lastSourceKeyRef.current = null;
       return;
     }
 
-    if (audio.src !== new URL(activeAudio.objectUrl, window.location.href).href) {
-      audio.src = activeAudio.objectUrl;
+    const sourceKey = `${item.id}:${objectUrl}`;
+    const sourceChanged = lastSourceKeyRef.current !== sourceKey;
+
+    if (audio.src !== new URL(objectUrl, window.location.href).href) {
+      audio.src = objectUrl;
       audio.load();
     }
 
-    audio.muted = activeAudio.muted;
-    audio.volume = Math.max(0, Math.min(1, activeAudio.effectiveVolume));
-    syncElementCurrentTime(audio, activeAudio.sourceTime);
+    audio.muted = muted;
+    audio.volume = Math.max(0, Math.min(1, effectiveVolume));
+    if (sourceChanged) {
+      syncElementCurrentTime(audio, sourceTimeRef.current);
+    }
+    lastSourceKeyRef.current = sourceKey;
+  }, [effectiveVolume, item.id, muted, objectUrl, ref]);
 
-    if (playing) {
-      audio.play().catch(() => onError("Audio preview could not start."));
-    } else {
-      audio.pause();
+  useEffect(() => {
+    const audio = ref.current;
+    if (!audio || !objectUrl) {
+      return undefined;
     }
 
-    const handleError = () => onError("Audio preview object could not be loaded.");
+    const handleError = () => onErrorRef.current("Audio preview object could not be loaded.");
     audio.addEventListener("error", handleError);
     return () => audio.removeEventListener("error", handleError);
-  }, [activeAudio, onError, playing, ref]);
+  }, [objectUrl, ref]);
+
+  useEffect(() => {
+    const audio = ref.current;
+    if (!audio) {
+      return;
+    }
+
+    if (!playing || !objectUrl) {
+      audio.pause();
+      return;
+    }
+
+    audio.play().catch(() => onErrorRef.current("Audio preview could not start."));
+  }, [objectUrl, playing, ref]);
+
+  useEffect(() => {
+    const audio = ref.current;
+    if (!audio || !objectUrl) {
+      return;
+    }
+
+    const sourceKey = `${item.id}:${objectUrl}`;
+    const sourceChanged = lastSourceKeyRef.current !== sourceKey;
+    const drift = Math.abs(audio.currentTime - sourceTime);
+    if (!playing || sourceChanged || drift > 0.35) {
+      syncElementCurrentTime(audio, sourceTime);
+    }
+    lastSourceKeyRef.current = sourceKey;
+  }, [item.id, objectUrl, playing, ref, sourceTime]);
+
+  useEffect(() => {
+    if (!playing || !primaryClock || !objectUrl) {
+      return undefined;
+    }
+
+    let frameId = 0;
+    const audio = ref.current;
+    if (!audio) {
+      return undefined;
+    }
+    const tick = () => {
+      const timelineTime = mediaSourceTimeToTimelineTime(item, audio.currentTime);
+      const clipEndTime = item.timelineStart + item.duration;
+      const clipEnded =
+        audio.currentTime >= item.sourceOut - mediaClockEndEpsilon ||
+        timelineTime >= clipEndTime - mediaClockEndEpsilon;
+
+      if (clipEnded) {
+        const nextTime = mediaClockHandoffTime(clipEndTime, timelineDuration);
+        onTimeChangeRef.current(nextTime);
+        if (nextTime >= timelineDuration - mediaClockEndEpsilon) {
+          onEndRef.current();
+        }
+        return;
+      }
+
+      onTimeChangeRef.current(timelineTime);
+      frameId = requestAnimationFrame(tick);
+    };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [item, objectUrl, playing, primaryClock, ref, timelineDuration]);
 }
 
 function useElementSize(initialSize: StageSize): [StageSize, { ref: (node: HTMLDivElement | null) => void }] {
@@ -1128,9 +1398,17 @@ function syncElementCurrentTime(element: HTMLMediaElement, sourceTime: number): 
   }
 }
 
+function mediaClockHandoffTime(clipEndTime: number, timelineDuration: number): number {
+  if (clipEndTime >= timelineDuration - mediaClockEndEpsilon) {
+    return timelineDuration;
+  }
+
+  return Math.min(timelineDuration, clipEndTime + mediaClockEndEpsilon);
+}
+
 function activeAudioSignature(activeAudio: PreviewAudioPlan[]): string {
   return activeAudio
-    .map((audio) => `${audio.item.id}:${audio.objectUrl ?? ""}:${audio.sourceTime}:${audio.effectiveVolume}:${audio.muted}`)
+    .map((audio) => `${audio.item.id}:${audio.objectUrl ?? ""}:${audio.effectiveVolume}:${audio.muted}`)
     .join("|");
 }
 

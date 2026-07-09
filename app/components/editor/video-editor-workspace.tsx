@@ -136,7 +136,7 @@ export function VideoEditorWorkspace({
     cacheScope,
     editor,
   });
-  useVideoKeyboardShortcuts(editorRootRef);
+  useVideoKeyboardShortcuts(editorRootRef, { onSave: autosave.syncNow });
 
   useEffect(() => {
     setProjectMediaRows(projectMedia);
@@ -412,6 +412,7 @@ export function VideoEditorWorkspace({
         project={{ ...editorProject, id: project.id, name: project.name }}
         user={user}
         notifications={notifications}
+        onSync={autosave.syncNow}
       />
       {conflict ? (
         <EditorConflictBanner

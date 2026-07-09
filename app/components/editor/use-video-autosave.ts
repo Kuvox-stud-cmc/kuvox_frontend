@@ -48,11 +48,14 @@ export type VideoExportFlushResult =
   | { ok: true; timelineId: string; revisionNumber: number }
   | { ok: false; reason: "conflict" | "sync-failed"; message: string };
 
+const videoTimelineAutosaveIntervalMs = 15 * 60 * 1000;
+
 export function useVideoAutosave({ projectId, projectName, cacheScope, editor }: UseVideoAutosaveInput) {
   const dispatch = useAppDispatch();
   const retryTimer = useRef<number | null>(null);
   const retryCount = useRef(0);
   const latestDocumentUpdatedAt = useRef<string | null>(null);
+  const syncNowRef = useRef<() => Promise<void>>(async () => undefined);
 
   const clearRetryTimer = useCallback(() => {
     if (retryTimer.current !== null) {
@@ -186,6 +189,42 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
     latestDocumentUpdatedAt.current = editor.document?.updatedAt ?? null;
   }, [editor.document?.updatedAt]);
 
+  const syncNow = useCallback(async () => {
+    if (!editor.document || editor.projectId !== projectId) return;
+    if (editor.syncStatus === "server-changed" || editor.syncStatus === "syncing") return;
+    if (editor.syncStatus !== "dirty" && editor.syncStatus !== "saved-local" && editor.syncStatus !== "sync-failed") return;
+
+    const document = editor.document;
+    await syncPending(document, document.updatedAt, editor.serverRevisionNumber ?? 0, true);
+  }, [
+    editor.document,
+    editor.projectId,
+    editor.serverRevisionNumber,
+    editor.syncStatus,
+    projectId,
+    syncPending,
+  ]);
+
+  useEffect(() => {
+    syncNowRef.current = syncNow;
+  }, [syncNow]);
+
+  useEffect(() => {
+    if (!editor.document || editor.projectId !== projectId) return;
+    if (editor.syncStatus === "server-changed") return;
+    if (editor.syncStatus !== "dirty" && editor.syncStatus !== "saved-local" && editor.syncStatus !== "sync-failed") return;
+
+    const intervalId = window.setInterval(() => {
+      void syncNowRef.current();
+    }, videoTimelineAutosaveIntervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    editor.projectId,
+    editor.syncStatus,
+    projectId,
+  ]);
+
   useEffect(() => {
     if (!editor.document || !editor.lastHistoryFrame || !editor.lastHistoryAction) return;
 
@@ -231,37 +270,6 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
     editor.serverRevisionNumber,
     projectId,
   ]);
-
-  useEffect(() => {
-    if (!editor.document || editor.projectId !== projectId) return;
-    if (editor.syncStatus === "server-changed") return;
-    if (editor.syncStatus !== "dirty" && editor.syncStatus !== "saved-local" && editor.syncStatus !== "sync-failed") return;
-
-    const document = editor.document;
-    const documentUpdatedAt = document.updatedAt;
-    const timeoutId = window.setTimeout(() => {
-      void syncPending(document, documentUpdatedAt, editor.serverRevisionNumber ?? 0);
-    }, 1500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    editor.document,
-    editor.projectId,
-    editor.serverRevisionNumber,
-    editor.syncStatus,
-    projectId,
-    syncPending,
-  ]);
-
-  useEffect(() => {
-    function handleOnline() {
-      if (!editor.document || editor.syncStatus === "server-changed") return;
-      void syncPending(editor.document, editor.document.updatedAt, editor.serverRevisionNumber ?? 0);
-    }
-
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, [editor.document, editor.serverRevisionNumber, editor.syncStatus, syncPending]);
 
   const keepLocalEdits = useCallback(async () => {
     if (!editor.document) return;
@@ -344,10 +352,9 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
   ]);
 
   const retryNow = useCallback(() => {
-    if (!editor.document || editor.syncStatus === "server-changed") return;
     clearRetryTimer();
-    void syncPending(editor.document, editor.document.updatedAt, editor.serverRevisionNumber ?? 0);
-  }, [clearRetryTimer, editor.document, editor.serverRevisionNumber, editor.syncStatus, syncPending]);
+    void syncNow();
+  }, [clearRetryTimer, syncNow]);
 
   const flushForExport = useCallback(async (): Promise<VideoExportFlushResult> => {
     if (!editor.document) {
@@ -498,7 +505,7 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
     projectId,
   ]);
 
-  return { flushForExport, keepLocalEdits, reloadServerCopy, retryNow };
+  return { flushForExport, keepLocalEdits, reloadServerCopy, retryNow, syncNow };
 }
 
 async function clearLocalTimelineDraftAfterServerReload(

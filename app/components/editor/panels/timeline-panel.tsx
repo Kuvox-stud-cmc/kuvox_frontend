@@ -84,6 +84,10 @@ type DragState =
       originX: number;
       originY: number;
       startedAt: number;
+    }
+  | {
+      kind: "playhead";
+      pointerId: number;
     };
 
 type DragPreview =
@@ -614,6 +618,10 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               if (!state) return;
               const point = localPoint(event);
               if (!point) return;
+              if (state.kind === "playhead") {
+                dispatch(currentTimeChanged(pixelToTime(point.x, scale)));
+                return;
+              }
               if (state.kind === "marquee") {
                 queueDragPreview({
                   kind: "marquee",
@@ -666,6 +674,11 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               const point = localPoint(event);
               const latestDragPreview = flushDragPreview();
               if (!state || !point || !document) {
+                clearDragPreview();
+                return;
+              }
+
+              if (state.kind === "playhead") {
                 clearDragPreview();
                 return;
               }
@@ -744,6 +757,12 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
 
               clearDragPreview();
             }}
+            onPointerCancel={() => {
+              if (dragState.current?.kind === "playhead") {
+                dragState.current = null;
+                clearDragPreview();
+              }
+            }}
           >
             {layoutWindow.trackLayouts.map((layout) => (
               <div
@@ -818,8 +837,14 @@ export function TimelinePanel({ onMediaDrop }: TimelinePanelProps) {
               aria-label="Playhead"
               onPointerDown={(event) => {
                 event.stopPropagation();
-                const target = event.currentTarget.parentElement;
-                target?.setPointerCapture(event.pointerId);
+                const point = localPoint(event);
+                if (!point) return;
+                dragState.current = {
+                  kind: "playhead",
+                  pointerId: event.pointerId,
+                };
+                dispatch(currentTimeChanged(pixelToTime(point.x, scale)));
+                trackAreaRef.current?.setPointerCapture(event.pointerId);
               }}
             >
               <span className="absolute top-0 block h-3 w-3 -translate-x-[5px] -translate-y-1/2 rotate-45 rounded-sm bg-primary" />

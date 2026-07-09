@@ -5,6 +5,7 @@ import {
   computeFrameBounds,
   computeSafeGuides,
   createProgramMonitorPlan,
+  mediaSourceTimeToTimelineTime,
   stepPreviewTime,
   timelineTimeToMediaSourceTime,
 } from "../app/lib/editor/editor-preview";
@@ -20,6 +21,8 @@ import {
 function main(): void {
   assertActiveVideoClipResolvesAtPlayhead();
   assertTrimAndSpeedMapToSourceTime();
+  assertSourceTimeMapsBackToTimelineTime();
+  assertSourceAndTimelineTimeRoundTrip();
   assertActiveAudioPlansResolveAndMixAtPlayhead();
   assertAudioSoloMuteAndFadePlanning();
   assertImageAndTextOverlaysResolveInActiveRange();
@@ -137,6 +140,62 @@ function assertTrimAndSpeedMapToSourceTime(): void {
 
   assert.equal(timelineTimeToMediaSourceTime(item, 13), 10);
   assert.equal(timelineTimeToMediaSourceTime(item, 20), 16);
+}
+
+function assertSourceTimeMapsBackToTimelineTime(): void {
+  const item: VideoClipTimelineItem = {
+    id: "speedy",
+    type: "video",
+    mediaId: "clip-beach",
+    timelineStart: 10,
+    duration: 6,
+    sourceIn: 4,
+    sourceOut: 16,
+    speed: 2,
+    transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    crop: { top: 0, right: 0, bottom: 0, left: 0 },
+    opacity: 1,
+  };
+
+  assert.equal(mediaSourceTimeToTimelineTime(item, 4), 10);
+  assert.equal(mediaSourceTimeToTimelineTime(item, 10), 13);
+  assert.equal(mediaSourceTimeToTimelineTime(item, 16), 16);
+  assert.equal(mediaSourceTimeToTimelineTime(item, 2), 10);
+  assert.equal(mediaSourceTimeToTimelineTime(item, 30), 16);
+
+  const trimmedBeyondDuration: VideoClipTimelineItem = {
+    ...item,
+    timelineStart: 20,
+    duration: 3,
+    sourceIn: 4,
+    sourceOut: 12,
+    speed: 2,
+  };
+  assert.equal(mediaSourceTimeToTimelineTime(trimmedBeyondDuration, 12), 23);
+  assert.equal(mediaSourceTimeToTimelineTime(trimmedBeyondDuration, 99), 23);
+}
+
+function assertSourceAndTimelineTimeRoundTrip(): void {
+  const item: AudioTimelineItem = {
+    id: "music",
+    type: "audio",
+    mediaId: "audio-music",
+    timelineStart: 5,
+    duration: 8,
+    sourceIn: 2,
+    sourceOut: 10,
+    volume: 1,
+    muted: false,
+    fades: {
+      fadeInDuration: 0,
+      fadeOutDuration: 0,
+    },
+  };
+
+  for (const timelineTime of [5, 7.5, 13]) {
+    const sourceTime = timelineTimeToMediaSourceTime(item, timelineTime);
+    assert.equal(mediaSourceTimeToTimelineTime(item, sourceTime), timelineTime);
+  }
 }
 
 function assertImageAndTextOverlaysResolveInActiveRange(): void {
