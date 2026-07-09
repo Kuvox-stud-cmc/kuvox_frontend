@@ -142,7 +142,12 @@ export function installProxyHandlers(appOrServer, maybeServer) {
       return;
     }
 
-    await proxyWebSocket(req, socket, head, "/hubs/media");
+    try {
+      await proxyWebSocket(req, socket, head, "/hubs/media");
+    } catch (error) {
+      console.warn(`[kuvox-proxy] websocket proxy failed: ${errorMessage(error)}`);
+      socket.destroy();
+    }
   });
 }
 
@@ -158,14 +163,63 @@ async function proxyHttp(req, res, targetPath, options = {}) {
   const headers = proxyHeaders(req.headers, auth.token, target, correlation);
   const transport = target.protocol === "https:" ? https : http;
   const start = performance.now();
+  let upstream;
+  let completed = false;
+  let handledFailure = false;
 
-  const upstream = transport.request(
+  const failProxy = (error, status = 502) => {
+    if (handledFailure || completed) {
+      return;
+    }
+    handledFailure = true;
+
+    const clientReset = isConnectionResetError(error);
+    logProxyEvent(clientReset ? "info" : "warn", {
+      event: clientReset ? "bff.proxy.aborted" : "bff.proxy.failure",
+      method: req.method,
+      targetRoute: target.pathname,
+      status: clientReset ? 499 : status,
+      durationMs: Math.round(performance.now() - start),
+      requestId: correlation.requestId,
+      editorCorrelationId: correlation.editorCorrelationId,
+      error: errorMessage(error),
+    });
+
+    upstream?.destroy();
+    if (res.destroyed || res.writableEnded) {
+      return;
+    }
+    if (clientReset) {
+      res.destroy();
+      return;
+    }
+    if (!res.headersSent) {
+      sendJson(res, status, { error: `Proxy request failed: ${errorMessage(error)}` }, auth.setCookie, correlation);
+      return;
+    }
+    res.end();
+  };
+
+  req.on("aborted", () => {
+    const error = new Error("Client aborted request.");
+    error.code = "ECONNRESET";
+    failProxy(error);
+  });
+  req.on("error", failProxy);
+  req.socket?.on("error", failProxy);
+  res.on("error", failProxy);
+  res.on("finish", () => {
+    completed = true;
+  });
+
+  upstream = transport.request(
     target,
     {
       method: req.method,
       headers,
     },
     (upstreamRes) => {
+      upstreamRes.on("error", failProxy);
       const statusCode = upstreamRes.statusCode ?? 502;
       const contentType = headerValue(upstreamRes.headers["content-type"]) ?? "unknown";
       logProxyEvent("info", {
@@ -183,22 +237,11 @@ async function proxyHttp(req, res, targetPath, options = {}) {
     },
   );
 
-  upstream.on("error", (error) => {
-    logProxyEvent("warn", {
-      event: "bff.proxy.failure",
-      method: req.method,
-      targetRoute: target.pathname,
-      status: 502,
-      durationMs: Math.round(performance.now() - start),
-      requestId: correlation.requestId,
-      editorCorrelationId: correlation.editorCorrelationId,
-      error: error.message,
-    });
-    if (!res.headersSent) {
-      sendJson(res, 502, { error: `Proxy request failed: ${error.message}` }, auth.setCookie, correlation);
-      return;
+  upstream.on("error", failProxy);
+  res.on("close", () => {
+    if (!completed) {
+      upstream.destroy();
     }
-    res.end();
   });
 
   upstream.setTimeout(UPLOAD_PROXY_TIMEOUT_MS, () => {
@@ -336,6 +379,10 @@ async function readJsonBody(req) {
 }
 
 async function proxyWebSocket(req, socket, head, targetPath) {
+  socket.on("error", (error) => {
+    console.warn(`[kuvox-proxy] websocket client socket error: ${errorMessage(error)}`);
+  });
+
   const auth = await accessTokenFromRequest(req, { allowRefresh: false });
   if (!auth.token) {
     console.warn(`[kuvox-proxy] websocket auth failed: ${auth.error}`);
@@ -351,6 +398,10 @@ async function proxyWebSocket(req, socket, head, targetPath) {
   const upstream = isSecure
     ? tls.connect(port, host, { servername: host })
     : net.connect(port, host);
+
+  socket.on("close", () => {
+    upstream.destroy();
+  });
 
   upstream.once(isSecure ? "secureConnect" : "connect", () => {
     const headers = proxyHeaders(req.headers, auth.token, target, proxyCorrelation(req));
@@ -377,7 +428,8 @@ async function proxyWebSocket(req, socket, head, targetPath) {
     socket.pipe(upstream);
   });
 
-  upstream.on("error", () => {
+  upstream.on("error", (error) => {
+    console.warn(`[kuvox-proxy] websocket upstream error: ${errorMessage(error)}`);
     socket.destroy();
   });
 }
@@ -658,6 +710,14 @@ function headerValue(value) {
   }
 
   return value;
+}
+
+function isConnectionResetError(error) {
+  return error?.code === "ECONNRESET" || /ECONNRESET|socket hang up/i.test(errorMessage(error));
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error ?? "Unknown error.");
 }
 
 function sendJson(res, statusCode, body, setCookie, correlation = null) {
