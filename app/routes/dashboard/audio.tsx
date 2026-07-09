@@ -8,6 +8,11 @@ import { ApiError, listMedia, setMediaFavorite, softDelete, albumsApi } from "~/
 import { useLiveMedia } from "~/lib/media-realtime";
 import type { MediaPipeline } from "~/lib/media-pipeline";
 import { useAudioMetadataDurations } from "~/lib/audio-metadata-duration";
+import {
+  AUDIO_CATEGORY_OPTIONS,
+  isAudioCategoryKey,
+  type AudioCategoryKey,
+} from "~/lib/audio-categories";
 import { formatMediaDuration, resolvePlayableMediaDuration } from "~/lib/media-duration";
 import { createRequestLogger } from "~/lib/logger.server";
 import { handleResourceAction } from "~/lib/resource-actions.server";
@@ -36,43 +41,6 @@ import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 
 const AUDIO_PAGE_SIZE = 10;
-type AudioCategoryKey = "music" | "sfx" | "voiceovers";
-
-const AUDIO_CATEGORY_CONFIG: Record<
-  AudioCategoryKey,
-  { label: string; albumName: string; icon: string; description: string }
-> = {
-  music: {
-    label: "Music",
-    albumName: "Music",
-    icon: "music_note",
-    description: "Songs and background tracks",
-  },
-  sfx: {
-    label: "Sound Effects",
-    albumName: "Sound Effects",
-    icon: "graphic_eq",
-    description: "SFX, foley, and stingers",
-  },
-  voiceovers: {
-    label: "Voiceovers",
-    albumName: "Voiceovers",
-    icon: "mic",
-    description: "Narration and spoken recordings",
-  },
-};
-
-const AUDIO_CATEGORY_OPTIONS = (Object.entries(AUDIO_CATEGORY_CONFIG) as Array<
-  [AudioCategoryKey, (typeof AUDIO_CATEGORY_CONFIG)[AudioCategoryKey]]
->).map(([value, config]) => ({
-  value,
-  label: config.label,
-  description: config.description,
-}));
-
-function isAudioCategoryKey(value: string): value is AudioCategoryKey {
-  return value in AUDIO_CATEGORY_CONFIG;
-}
 
 function normalizeAudioAlbumName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -1348,4 +1316,3 @@ export default function Audio() {
     </section>
   );
 }
-

@@ -90,12 +90,6 @@ export default function ImportMedia(_: Route.ComponentProps) {
         />
       </div>
 
-      <p className="mt-3 flex items-center gap-1.5 text-body-sm text-on-surface-variant">
-        <span className="material-symbols-outlined text-[18px]">info</span>
-        Uploads are coming soon — selections here are a preview and won't be
-        sent yet.
-      </p>
-
       {files.length > 0 && (
         <ul className="mt-4 space-y-2">
           {files.map((file, index) => (

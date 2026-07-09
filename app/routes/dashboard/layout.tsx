@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Outlet } from "react-router";
 
+import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
 import { HeaderBar, type HeaderNotifications } from "~/routes/dashboard/header-bar";
 import { SidebarNav } from "~/routes/dashboard/sidebar-nav";
@@ -91,6 +92,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
 
   const collapsed = !isMobile && sidebarWidth <= COLLAPSED_WIDTH;
@@ -240,9 +242,12 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
         )}
 
         {/* New Project CTA */}
-        <Link
-          to="/dashboard/projects?create=1"
-          onClick={() => isMobile && setMobileOpen(false)}
+        <button
+          type="button"
+          onClick={() => {
+            setCreateOpen(true);
+            if (isMobile) setMobileOpen(false);
+          }}
           className={`mt-4 flex items-center justify-center rounded-xl bg-primary font-medium text-on-primary transition-colors hover:bg-primary-fixed ${
             collapsed
               ? "mb-4 h-10 w-10 mx-auto p-0"
@@ -252,7 +257,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
         >
           <span className="material-symbols-outlined text-[18px]">add</span>
           {!collapsed && "New Project"}
-        </Link>
+        </button>
 
         {/* Navigation (main + workspace) */}
         <SidebarNav collapsed={collapsed} />
@@ -329,6 +334,11 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
+      <CreateProjectModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        action="/dashboard/projects"
+      />
       {/* ── Desktop Sidebar ─────────────────────────────────────────────── */}
       {!isMobile && (
         <aside

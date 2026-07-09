@@ -1,30 +1,30 @@
 import { useEffect, useState } from "react";
-import { Form, Link, useActionData, useNavigation } from "react-router";
+import { Link, useActionData, useSearchParams } from "react-router";
 
 import {
     EmptyState,
     ErrorBanner,
-    Modal,
     primaryButtonClass,
 } from "~/components/dashboard/section";
+import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import {
     CardOverflowMenu,
     FilterTabs,
-    FormActions,
     GradientThumbnail,
     MetricCard,
     QuickActionCard,
 } from "~/components/dashboard/layout/DashboardPageLayout";
-import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { AccessDialog, ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 
 import {
     ProjectKind,
+    MediaKind,
     projectKindLabel,
     type MediaDto,
     type ProjectDto,
 } from "~/lib/api";
+import { AUDIO_CATEGORY_OPTIONS } from "~/lib/audio-categories";
 import { projectEditorHref } from "~/lib/project-routes";
 import { useLiveMedia } from "~/lib/media-realtime";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
@@ -504,9 +504,8 @@ export default function ProjectsDashboard({
     const [activeTab, setActiveTab] = useState<TabFilter>("all");
     const [createOpen, setCreateOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
+    const [searchParams, setSearchParams] = useSearchParams();
     const actionData = useActionData<ActionData>();
-    const navigation = useNavigation();
-    const isSubmitting = navigation.state === "submitting";
     const live = useLiveMedia(media);
     const metrics = getProjectMetrics(projects, sharedProjects, live.media);
     const tabs = buildTabs(metrics);
@@ -514,10 +513,43 @@ export default function ProjectsDashboard({
     const aiToolsPath = workspaceRoot.startsWith("/teams/") ? "/dashboard/ai-tools" : `${workspaceRoot}/ai-tools`;
     const albumsPath = workspaceRoot.startsWith("/teams/") ? `${workspaceRoot}/media/albums` : "/dashboard/albums";
 
+    const handleUploadedMedia = async (uploaded: MediaDto, context: { audioCategory?: string }) => {
+        if (uploaded.kind === MediaKind.Audio) {
+            if (!context.audioCategory) {
+                throw new Error("Choose an audio type.");
+            }
+
+            const formData = new FormData();
+            formData.append("intent", "assign-audio-category");
+            formData.append("mediaId", uploaded.id);
+            formData.append("category", context.audioCategory);
+
+            const response = await fetch(studioId ? `/teams/${studioId}/media/audio` : "/dashboard/audio", {
+                method: "POST",
+                body: formData,
+            });
+            const body = await response.json().catch(() => null) as { error?: string } | null;
+
+            if (!response.ok || body?.error) {
+                throw new Error(body?.error || "Couldn't assign the audio type.");
+            }
+        }
+
+        live.mergeMedia(uploaded);
+    };
+
     useEffect(() => {
         if (!actionData?.ok) return;
         if (actionData.intent === "create") setCreateOpen(false);
     }, [actionData]);
+
+    useEffect(() => {
+        if (searchParams.get("create") !== "1") return;
+        setCreateOpen(true);
+        const next = new URLSearchParams(searchParams);
+        next.delete("create");
+        setSearchParams(next, { replace: true });
+    }, [searchParams, setSearchParams]);
 
     const filteredProjects =
         activeTab === "all"
@@ -843,57 +875,14 @@ export default function ProjectsDashboard({
                 </div>
             </div>
 
-            {/* ── New Project Modal ──────────────────────────────────────────────── */}
-            <Modal
-                open={createOpen && canWrite}
-                onClose={() => setCreateOpen(false)}
-                title="New project"
-            >
-                <Form method="post" className="space-y-4">
-                    <input type="hidden" name="intent" value="create" />
-                    <TextField
-                        name="name"
-                        label="Name"
-                        placeholder="My new edit"
-                        required
-                        autoFocus
-                    />
-                    <div>
-                        <label
-                            htmlFor="project-kind"
-                            className="block text-label-md text-on-surface-variant"
-                        >
-                            Kind
-                        </label>
-                        <select
-                            id="project-kind"
-                            name="kind"
-                            defaultValue={ProjectKind.Video}
-                            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
-                        >
-                            <option value={ProjectKind.Video}>Video</option>
-                            <option value={ProjectKind.Image}>Image</option>
-                        </select>
-                    </div>
-                    <TextArea
-                        name="description"
-                        label="Description"
-                        rows={2}
-                        placeholder="Brief project description..."
-                    />
-                    <FormActions
-                        onCancel={() => setCreateOpen(false)}
-                        submitLabel={isSubmitting ? "Creating..." : "Create"}
-                        isSubmitting={isSubmitting}
-                    />
-                </Form>
-            </Modal>
+            <CreateProjectModal open={createOpen && canWrite} onClose={() => setCreateOpen(false)} />
             <MediaUploadModal
                 open={importOpen && canWrite}
                 onClose={() => setImportOpen(false)}
                 title="Import media"
                 studioId={studioId}
-                onUploaded={live.mergeMedia}
+                audioCategoryOptions={AUDIO_CATEGORY_OPTIONS}
+                onUploaded={handleUploadedMedia}
             />
         </section>
     );

@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Link, NavLink, Outlet, redirect } from "react-router";
 
+import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
 import { ErrorBanner } from "~/components/dashboard/section";
 import { HeaderBar, type HeaderNotifications } from "~/routes/dashboard/header-bar";
@@ -173,6 +174,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   const studioList: StudioDto[] = studios;
   const storagePercent = usage ? percent(usage.storageBytesUsed, usage.storageBytesQuota) : 0;
   const [collapsed, setCollapsed] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const toggleCollapsed = useCallback(() => {
     setCollapsed((value) => !value);
   }, []);
@@ -212,8 +214,9 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
           )}
 
           {canWriteContent && (
-            <Link
-              to={`/teams/${studio.id}/projects?create=1`}
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
               className={`mt-4 flex items-center justify-center rounded-xl bg-primary font-medium text-on-primary transition-colors hover:bg-primary-fixed ${
                 collapsed
                   ? "mb-4 h-10 w-10 mx-auto p-0"
@@ -223,7 +226,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
               {!collapsed && "New Project"}
-            </Link>
+            </button>
           )}
 
           <nav className="flex flex-col gap-5 text-body-sm">
@@ -302,6 +305,11 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
           </div>
         )}
       </aside>
+      <CreateProjectModal
+        open={createOpen && canWriteContent}
+        onClose={() => setCreateOpen(false)}
+        action={`/teams/${studio.id}/projects`}
+      />
       <div className="flex flex-1 flex-col overflow-hidden">
         <HeaderBar user={user} notifications={notifications} />
         <main className="flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-6 md:px-10 md:pb-10 md:pt-8">

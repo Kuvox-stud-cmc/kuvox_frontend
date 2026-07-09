@@ -26,6 +26,7 @@ import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipe
 import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import { MediaKind, type AlbumDto, type MediaDto } from "~/lib/api";
+import { AUDIO_CATEGORY_OPTIONS } from "~/lib/audio-categories";
 import { useAudioMetadataDurations } from "~/lib/audio-metadata-duration";
 import { formatMediaDuration, resolvePlayableMediaDuration } from "~/lib/media-duration";
 import { useLiveMedia } from "~/lib/media-realtime";
@@ -52,12 +53,6 @@ interface TeamMediaKindViewProps {
   canWrite: boolean;
   canManageAccess: boolean;
 }
-
-const AUDIO_CATEGORY_OPTIONS = [
-  { value: "music", label: "Music", description: "Songs and background tracks" },
-  { value: "sfx", label: "Sound Effects", description: "SFX, foley, and stingers" },
-  { value: "voiceovers", label: "Voiceovers", description: "Narration and spoken recordings" },
-];
 
 const WAVEFORM_BARS = [
   40, 60, 30, 80, 50, 70, 40, 90, 55, 35, 45, 75, 65, 50, 40, 85, 60, 30, 70,
