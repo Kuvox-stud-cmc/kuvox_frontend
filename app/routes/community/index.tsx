@@ -28,7 +28,7 @@ export default function Community() {
             professional AI video creation.
           </p>
           <div className="flex flex-wrap gap-4 mb-16">
-            <button className="bg-primary text-on-primary px-8 py-3 rounded-xl font-headline-sm text-headline-sm hover:opacity-90 transition-all flex items-center gap-2">
+            <button className="bg-[#F5F2ED] text-[#111111] px-8 py-3 rounded-xl font-headline-sm text-headline-sm hover:bg-white transition-all flex items-center gap-2 border border-[#F7A8D3]/20 shadow-[0_0_24px_rgba(232,108,181,0.08)]">
               <span
                 className="material-symbols-outlined"
                 style={{ fontVariationSettings: "'FILL' 1" }}
@@ -37,7 +37,7 @@ export default function Community() {
               </span>
               Join Discussion
             </button>
-            <button className="border border-outline text-on-surface px-8 py-3 rounded-xl font-headline-sm text-headline-sm hover:bg-white/5 transition-all flex items-center gap-2">
+            <button className="border border-[#C9A962]/30 text-on-surface px-8 py-3 rounded-xl font-headline-sm text-headline-sm hover:bg-[#5C3E2A]/18 hover:border-[#F7A8D3]/35 transition-all flex items-center gap-2">
               <span className="material-symbols-outlined">upload</span>
               Share Your Project
             </button>
@@ -45,15 +45,15 @@ export default function Community() {
 
           {/* Stats Bento */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-gutter">
-            <div className="glass-card p-6 rounded-2xl">
-              <p className="font-label-mono text-label-mono text-primary mb-2 uppercase tracking-widest">
+            <div className="glass-card p-6 rounded-2xl border border-[#C9A962]/15">
+              <p className="font-label-mono text-label-mono text-[#F7A8D3] mb-2 uppercase tracking-widest">
                 Active Creators
               </p>
               <p className="font-display-lg text-headline-md text-on-surface">
                 12.4k+
               </p>
             </div>
-            <div className="glass-card p-6 rounded-2xl">
+            <div className="glass-card p-6 rounded-2xl border border-[#C9A962]/15">
               <p className="font-label-mono text-label-mono text-secondary mb-2 uppercase tracking-widest">
                 Discussions
               </p>
@@ -61,7 +61,7 @@ export default function Community() {
                 840
               </p>
             </div>
-            <div className="glass-card p-6 rounded-2xl">
+            <div className="glass-card p-6 rounded-2xl border border-[#C9A962]/15">
               <p className="font-label-mono text-label-mono text-tertiary mb-2 uppercase tracking-widest">
                 Projects Shared
               </p>
@@ -69,7 +69,7 @@ export default function Community() {
                 3.2k
               </p>
             </div>
-            <div className="glass-card p-6 rounded-2xl">
+            <div className="glass-card p-6 rounded-2xl border border-[#C9A962]/15">
               <p className="font-label-mono text-label-mono text-surface-tint mb-2 uppercase tracking-widest">
                 Tutorials
               </p>
@@ -86,7 +86,7 @@ export default function Community() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
           <Link
             to="/community/forums"
-            className="glass-card group p-8 rounded-3xl relative overflow-hidden block"
+            className="glass-card group p-8 rounded-3xl relative overflow-hidden block border border-[#C9A962]/15 hover:border-[#F7A8D3]/30 transition-colors"
           >
             <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <span className="material-symbols-outlined text-[120px]">
@@ -106,7 +106,7 @@ export default function Community() {
 
           <Link
             to="/community/showcase"
-            className="glass-card group p-8 rounded-3xl relative overflow-hidden block"
+            className="glass-card group p-8 rounded-3xl relative overflow-hidden block border border-[#C9A962]/15 hover:border-[#F7A8D3]/30 transition-colors"
           >
             <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <span className="material-symbols-outlined text-[120px]">
@@ -126,7 +126,7 @@ export default function Community() {
 
           <Link
             to="/community/learn"
-            className="glass-card group p-8 rounded-3xl relative overflow-hidden block"
+            className="glass-card group p-8 rounded-3xl relative overflow-hidden block border border-[#C9A962]/15 hover:border-[#F7A8D3]/30 transition-colors"
           >
             <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <span className="material-symbols-outlined text-[120px]">
@@ -146,7 +146,7 @@ export default function Community() {
 
           <Link
             to="/community/news"
-            className="glass-card group p-8 rounded-3xl relative overflow-hidden block"
+            className="glass-card group p-8 rounded-3xl relative overflow-hidden block border border-[#C9A962]/15 hover:border-[#F7A8D3]/30 transition-colors"
           >
             <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <span className="material-symbols-outlined text-[120px]">
@@ -183,17 +183,17 @@ export default function Community() {
           </div>
           <div className="space-y-4">
             {/* Discussion Item 1 */}
-            <div className="glass-panel p-5 rounded-2xl flex items-center gap-6 hover:bg-surface-container-high transition-colors cursor-pointer group">
+            <div className="glass-panel p-5 rounded-2xl flex items-center gap-6 hover:bg-[#5C3E2A]/16 transition-colors cursor-pointer group">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded font-bold uppercase">
+                  <span className="bg-[#E86CB5]/10 text-[#F7A8D3] border border-[#F7A8D3]/20 text-[10px] px-2 py-0.5 rounded font-bold uppercase">
                     Workflow
                   </span>
                   <span className="text-on-surface-variant text-label-mono font-label-mono">
                     Updated 2h ago
                   </span>
                 </div>
-                <h4 className="font-headline-sm text-headline-sm text-on-surface group-hover:text-primary transition-colors">
+                <h4 className="font-headline-sm text-headline-sm text-on-surface group-hover:text-[#F7A8D3] transition-colors">
                   Best workflow for short-form content?
                 </h4>
                 <p className="text-on-surface-variant text-body-md line-clamp-1">
@@ -217,7 +217,7 @@ export default function Community() {
             </div>
 
             {/* Discussion Item 2 */}
-            <div className="glass-panel p-5 rounded-2xl flex items-center gap-6 hover:bg-surface-container-high transition-colors cursor-pointer group">
+            <div className="glass-panel p-5 rounded-2xl flex items-center gap-6 hover:bg-[#5C3E2A]/16 transition-colors cursor-pointer group">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <span className="bg-secondary/10 text-secondary text-[10px] px-2 py-0.5 rounded font-bold uppercase">
@@ -227,7 +227,7 @@ export default function Community() {
                     Updated 5h ago
                   </span>
                 </div>
-                <h4 className="font-headline-sm text-headline-sm text-on-surface group-hover:text-primary transition-colors">
+                <h4 className="font-headline-sm text-headline-sm text-on-surface group-hover:text-[#F7A8D3] transition-colors">
                   AI Agent tips: Maximizing prompt precision
                 </h4>
                 <p className="text-on-surface-variant text-body-md line-clamp-1">
@@ -251,7 +251,7 @@ export default function Community() {
             </div>
 
             {/* Discussion Item 3 */}
-            <div className="glass-panel p-5 rounded-2xl flex items-center gap-6 hover:bg-surface-container-high transition-colors cursor-pointer group">
+            <div className="glass-panel p-5 rounded-2xl flex items-center gap-6 hover:bg-[#5C3E2A]/16 transition-colors cursor-pointer group">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <span className="bg-tertiary/10 text-tertiary text-[10px] px-2 py-0.5 rounded font-bold uppercase">
@@ -261,7 +261,7 @@ export default function Community() {
                     Updated 8h ago
                   </span>
                 </div>
-                <h4 className="font-headline-sm text-headline-sm text-on-surface group-hover:text-primary transition-colors">
+                <h4 className="font-headline-sm text-headline-sm text-on-surface group-hover:text-[#F7A8D3] transition-colors">
                   Multiple timeline support in V2?
                 </h4>
                 <p className="text-on-surface-variant text-body-md line-clamp-1">
@@ -293,7 +293,7 @@ export default function Community() {
               Top Contributors
             </h2>
           </div>
-          <div className="glass-panel rounded-3xl p-6 space-y-6">
+          <div className="glass-panel rounded-3xl p-6 space-y-6 border border-[#C9A962]/15">
             {/* User 1 */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -301,7 +301,7 @@ export default function Community() {
                   <div className="w-12 h-12 rounded-full bg-surface-container-high border border-outline-variant/30 flex items-center justify-center font-bold text-on-surface">
                     AR
                   </div>
-                  <div className="absolute -bottom-1 -right-1 bg-primary text-on-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">
+                  <div className="absolute -bottom-1 -right-1 bg-[#E86CB5]/20 text-[#F7A8D3] border border-[#F7A8D3]/25 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">
                     1
                   </div>
                 </div>
@@ -315,7 +315,7 @@ export default function Community() {
                 </div>
               </div>
               <span
-                className="material-symbols-outlined text-primary"
+                className="material-symbols-outlined text-[#F7A8D3]"
                 style={{ fontVariationSettings: "'FILL' 1" }}
               >
                 stars
@@ -372,7 +372,7 @@ export default function Community() {
               </span>
             </div>
 
-            <button className="w-full py-3 mt-4 border border-outline-variant/30 rounded-xl font-label-mono text-label-mono text-on-surface uppercase tracking-widest hover:bg-white/5 transition-colors">
+            <button className="w-full py-3 mt-4 border border-[#C9A962]/25 rounded-xl font-label-mono text-label-mono text-on-surface uppercase tracking-widest hover:bg-[#5C3E2A]/18 hover:border-[#F7A8D3]/30 transition-colors">
               View All Leaders
             </button>
           </div>
@@ -654,8 +654,8 @@ export default function Community() {
           News & Announcements
         </h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
-          <div className="glass-panel p-8 rounded-3xl border-l-4 border-l-primary flex flex-col sm:flex-row items-start gap-6">
-            <div className="bg-primary/10 p-3 rounded-2xl text-primary shrink-0">
+          <div className="glass-panel p-8 rounded-3xl border border-[#C9A962]/15 border-l-4 border-l-[#F7A8D3] flex flex-col sm:flex-row items-start gap-6">
+            <div className="bg-[#E86CB5]/10 p-3 rounded-2xl text-[#F7A8D3] shrink-0 border border-[#F7A8D3]/20">
               <span className="material-symbols-outlined text-3xl">
                 rocket_launch
               </span>
@@ -680,8 +680,8 @@ export default function Community() {
             </div>
           </div>
 
-          <div className="glass-panel p-8 rounded-3xl border-l-4 border-l-secondary flex flex-col sm:flex-row items-start gap-6">
-            <div className="bg-secondary/10 p-3 rounded-2xl text-secondary shrink-0">
+          <div className="glass-panel p-8 rounded-3xl border border-[#C9A962]/15 border-l-4 border-l-[#C9A962] flex flex-col sm:flex-row items-start gap-6">
+            <div className="bg-[#5C3E2A]/22 p-3 rounded-2xl text-[#C9A962] shrink-0 border border-[#C9A962]/20">
               <span className="material-symbols-outlined text-3xl">
                 construction
               </span>
@@ -710,7 +710,7 @@ export default function Community() {
 
       {/* Guidelines Section */}
       <section className="border-t border-outline-variant/10 pt-16">
-        <div className="glass-card p-10 rounded-[40px] max-w-5xl mx-auto text-center border-outline-variant/20">
+        <div className="glass-card p-10 rounded-[40px] max-w-5xl mx-auto text-center border border-[#C9A962]/15 shadow-[0_0_50px_rgba(232,108,181,0.04)]">
           <h2 className="font-headline-md text-headline-md text-on-surface mb-8">
             Community Guidelines
           </h2>
@@ -765,7 +765,7 @@ export default function Community() {
           Access the world's most advanced AI video editing community and
           elevate your projects to cinema standards.
         </p>
-        <button className="bg-primary text-on-primary px-10 py-4 rounded-2xl font-headline-md text-headline-md hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20">
+        <button className="bg-[#F5F2ED] text-[#111111] px-10 py-4 rounded-2xl font-headline-md text-headline-md hover:scale-105 active:scale-95 transition-all shadow-xl shadow-[#E86CB5]/10 border border-[#F7A8D3]/20">
           Create Free Account
         </button>
       </section>

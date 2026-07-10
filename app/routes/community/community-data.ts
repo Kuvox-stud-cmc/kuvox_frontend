@@ -93,7 +93,7 @@ export const FORUM_CATEGORIES: ForumCategory[] = [
     icon: "smart_toy",
     threads: 934,
     posts: 4870,
-    accent: "border-secondary/50",
+    accent: "border-[#C9A962]/50",
   },
   {
     id: "feedback",
@@ -103,7 +103,7 @@ export const FORUM_CATEGORIES: ForumCategory[] = [
     icon: "rate_review",
     threads: 712,
     posts: 3104,
-    accent: "border-tertiary/50",
+    accent: "border-[#F7A8D3]/35",
   },
   {
     id: "announcements",

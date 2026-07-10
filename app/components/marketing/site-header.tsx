@@ -79,7 +79,7 @@ function NavDropdown({
   return (
     <div className="relative group/dd h-full flex items-center">
       {/* Trigger */}
-      <button className="px-2 xl:px-4 py-2 text-sm font-medium text-white/70 group-hover/dd:text-white transition-colors duration-300 flex items-center gap-0.5 whitespace-nowrap">
+      <button className="px-2 xl:px-4 py-2 rounded-full text-sm font-medium text-[#EFE3D2] group-hover/dd:text-[#F7A8D3] group-hover/dd:bg-[#E86CB5]/10 transition-colors duration-300 flex items-center gap-0.5 whitespace-nowrap">
         {label}
         <span className="material-symbols-outlined text-[15px] transition-transform duration-300 ease-out group-hover/dd:rotate-180">
           expand_more
@@ -94,10 +94,10 @@ function NavDropdown({
         className="
           absolute top-[calc(100%+0.25rem)] left-1/2 -translate-x-1/2
           p-3
-          bg-[#1a1612]/95 backdrop-blur-xl
-          border border-white/10
+          bg-[#0c0a08]/95 backdrop-blur-xl
+          border border-[#F7A8D3]/18
           rounded-xl
-          shadow-[0_8px_32px_rgba(0,0,0,0.5)]
+          shadow-[0_8px_32px_rgba(0,0,0,0.42)]
           opacity-0 invisible scale-[0.97] -translate-y-1
           group-hover/dd:opacity-100 group-hover/dd:visible group-hover/dd:scale-100 group-hover/dd:translate-y-0
           transition-all duration-300 ease-out
@@ -108,7 +108,7 @@ function NavDropdown({
         {groups.map((group, gIdx) => (
           <div key={gIdx} className="flex flex-col">
             {group.title && (
-              <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
+              <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#EFE3D2]">
                 {group.title}
               </div>
             )}
@@ -116,9 +116,9 @@ function NavDropdown({
               <Link
                 key={item.label + i}
                 to={item.to}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/5 transition-all duration-200 group/item"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10 transition-all duration-200 group/item"
               >
-                <span className="material-symbols-outlined text-[18px] text-white/50 group-hover/item:text-white transition-colors duration-200">
+                <span className="material-symbols-outlined text-[18px] text-[#EFE3D2] group-hover/item:text-[#F7A8D3] transition-colors duration-200">
                   {item.icon}
                 </span>
                 <span>{item.label}</span>
@@ -151,7 +151,7 @@ function MobileDropdown({
     <div>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between text-base font-medium py-3 px-4 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors duration-200"
+        className="w-full flex items-center justify-between text-base font-medium py-3 px-4 rounded-lg text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10 transition-colors duration-200"
       >
         {label}
         <span
@@ -172,7 +172,7 @@ function MobileDropdown({
           {groups.map((group, gIdx) => (
             <div key={gIdx} className={gIdx > 0 ? "mt-2" : ""}>
               {group.title && (
-                <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#EFE3D2]">
                   {group.title}
                 </div>
               )}
@@ -181,9 +181,9 @@ function MobileDropdown({
                   key={item.label + i}
                   to={item.to}
                   onClick={onNavigate}
-                  className="flex items-center gap-3 text-sm font-medium py-2.5 px-3 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors duration-200"
+                  className="flex items-center gap-3 text-sm font-medium py-2.5 px-3 rounded-lg text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10 transition-colors duration-200"
                 >
-                  <span className="material-symbols-outlined text-[18px] text-white/40">
+                  <span className="material-symbols-outlined text-[18px] text-[#EFE3D2]">
                     {item.icon}
                   </span>
                   {item.label}
@@ -235,7 +235,7 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
             backdropFilter: "blur(30px)",
             WebkitBackdropFilter: "blur(30px)",
             background: "rgba(12, 10, 8, 0.58)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
+            border: "1px solid rgba(247, 168, 211, 0.14)",
             borderRadius: "999px",
             boxShadow: "0 8px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
           }}
@@ -253,8 +253,8 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                 to={item.to}
                 className={({ isActive }) =>
                   `px-2 xl:px-4 py-2 text-sm font-medium transition-colors duration-200 whitespace-nowrap ${isActive
-                    ? "text-white"
-                    : "text-white/70 hover:text-white"
+                    ? "text-[#F7A8D3] bg-[#E86CB5]/12"
+                    : "text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10"
                   }`
                 }
               >
@@ -271,8 +271,8 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                 to={item.to}
                 className={({ isActive }) =>
                   `px-2 xl:px-4 py-2 text-sm font-medium transition-colors duration-200 whitespace-nowrap ${isActive
-                    ? "text-white"
-                    : "text-white/70 hover:text-white"
+                    ? "text-[#F7A8D3] bg-[#E86CB5]/12"
+                    : "text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10"
                   }`
                 }
               >
@@ -287,7 +287,7 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
               <div className="hidden sm:flex items-center gap-2">
                 <Link
                   to="/dashboard"
-                  className="ml-2 px-4 h-9 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
+                  className="ml-2 px-4 h-9 flex items-center justify-center bg-[#F5F2ED] text-[#111111] text-sm font-medium rounded-full hover:bg-white hover:shadow-[0_0_20px_rgba(232,108,181,0.16)] transition-all duration-200 whitespace-nowrap leading-none shrink-0"
                 >
                   Go to dashboard
                 </Link>
@@ -304,13 +304,13 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
               <div className="flex items-center gap-1">
                 <Link
                   to="/login"
-                  className="hidden sm:flex px-3 xl:px-4 py-2 text-sm font-medium text-white/70 hover:text-white transition-colors duration-200 whitespace-nowrap"
+                  className="hidden sm:flex px-3 xl:px-4 py-2 rounded-full text-sm font-medium text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10 transition-colors duration-200 whitespace-nowrap"
                 >
                   Sign In
                 </Link>
                 <Link
                   to="/signup"
-                  className="ml-1 px-4 h-9 flex items-center justify-center bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-colors duration-200 whitespace-nowrap leading-none shrink-0"
+                  className="ml-1 px-4 h-9 flex items-center justify-center bg-[#F5F2ED] text-[#111111] text-sm font-medium rounded-full hover:bg-white hover:shadow-[0_0_20px_rgba(232,108,181,0.16)] transition-all duration-200 whitespace-nowrap leading-none shrink-0"
                 >
                   Get Started
                 </Link>
@@ -319,7 +319,7 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
 
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 text-white/70 hover:text-white rounded-full hover:bg-white/5 transition-colors"
+              className="lg:hidden p-2 text-[#EFE3D2] hover:text-[#F7A8D3] rounded-full hover:bg-[#E86CB5]/10 transition-colors"
               aria-label="Toggle menu"
             >
               <svg
@@ -362,8 +362,8 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                   onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
                     `text-base font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
-                      ? "text-white bg-white/10"
-                      : "text-white/70 hover:text-white hover:bg-white/5"
+                      ? "text-[#F7A8D3] bg-[#E86CB5]/12"
+                      : "text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10"
                     }`
                   }
                 >
@@ -389,8 +389,8 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                   onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
                     `text-base font-medium py-3 px-4 rounded-lg transition-colors duration-200 ${isActive
-                      ? "text-white bg-white/10"
-                      : "text-white/70 hover:text-white hover:bg-white/5"
+                      ? "text-[#F7A8D3] bg-[#E86CB5]/12"
+                      : "text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10"
                     }`
                   }
                 >
@@ -414,7 +414,7 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                   <Link
                     to="/dashboard"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="flex-1 rounded-lg bg-white px-4 py-3 text-center text-base font-medium text-black transition-colors duration-300 hover:bg-white/90"
+                    className="flex-1 rounded-lg bg-[#F5F2ED] px-4 py-3 text-center text-base font-medium text-[#111111] transition-all duration-300 hover:bg-white hover:shadow-[0_0_20px_rgba(232,108,181,0.16)]"
                   >
                     Go to dashboard
                   </Link>
@@ -424,14 +424,14 @@ export function SiteHeader({ user = null }: { user?: SessionUser | null }) {
                   <Link
                     to="/login"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="text-base text-center font-medium py-3 px-4 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors duration-200"
+                    className="text-base text-center font-medium py-3 px-4 rounded-lg text-[#EFE3D2] hover:text-[#F7A8D3] hover:bg-[#E86CB5]/10 transition-colors duration-200"
                   >
                     Sign In
                   </Link>
                   <Link
                     to="/signup"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="bg-white text-black py-3 px-4 rounded-lg text-base font-medium text-center hover:bg-white/90 transition-colors duration-300"
+                    className="bg-[#F5F2ED] text-[#111111] py-3 px-4 rounded-lg text-base font-medium text-center hover:bg-white hover:shadow-[0_0_20px_rgba(232,108,181,0.16)] transition-all duration-300"
                   >
                     Get Started
                   </Link>
