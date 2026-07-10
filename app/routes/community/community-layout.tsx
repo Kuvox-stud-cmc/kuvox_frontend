@@ -298,10 +298,11 @@ export default function CommunityLayout() {
   }, []);
 
   return (
-    <div className="bg-background text-on-surface font-body-md overflow-x-hidden selection:bg-primary/30 min-h-screen">
+    <div className="premium-page-shell relative bg-background text-on-surface font-body-md overflow-x-hidden selection:bg-primary/30 min-h-screen">
+      <div className="premium-gold-sparkle premium-gold-sparkle-fixed" aria-hidden="true" />
       <CommunityTopNav />
       <CommunitySidebar />
-      <main className="lg:ml-64 pt-toolbar-height min-h-screen flex flex-col">
+      <main className="relative lg:ml-64 pt-toolbar-height min-h-screen flex flex-col">
         <div className="flex-grow">
           <Outlet />
         </div>
