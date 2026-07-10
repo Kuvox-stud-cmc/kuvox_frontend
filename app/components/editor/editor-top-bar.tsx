@@ -15,6 +15,7 @@ import {
   selectChromeState,
   selectEditorSyncChromeState,
   timelineToggled,
+  toastShown,
   type EditorSyncStatus,
   type EditorMode,
   videoRedoRequested,
@@ -65,6 +66,8 @@ export function EditorTopBar({
   const dispatch = useAppDispatch();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [aspectRatioOpen, setAspectRatioOpen] = useState(false);
+  const [selectedRatio, setSelectedRatio] = useState("16:9");
   const { editorMode } = useAppSelector(selectChromeState);
   const { syncStatus, pendingSyncCount } = useAppSelector(selectEditorSyncChromeState);
   const canUndo = useAppSelector(selectCanUndo);
@@ -97,8 +100,9 @@ export function EditorTopBar({
         <div className="hidden h-7 w-px bg-outline-variant min-[760px]:block" />
         <div className="min-w-0 max-w-28 min-[760px]:max-w-52">
           <span className="block truncate text-body-sm font-semibold text-on-surface">{project.name}</span>
-          <span className="hidden truncate text-label-sm text-on-surface-variant min-[760px]:block">
-            {syncCopy.label}
+          <span className="hidden items-center truncate text-label-sm text-on-surface-variant min-[760px]:flex mt-0.5">
+            {getSyncStatusIcon(syncStatus)}
+            <span className="truncate">{syncCopy.label}</span>
           </span>
         </div>
         {conflict ? (
@@ -164,15 +168,56 @@ export function EditorTopBar({
           className="hidden h-8 w-8 min-[760px]:flex"
           onClick={() => dispatch(timelineToggled())}
         />
-        <button
-          type="button"
-          aria-label="Project aspect ratio"
-          onClick={() => dispatch(modalOpened("settings"))}
-          className="hidden h-9 items-center gap-1 rounded-[6px] border border-outline-variant bg-surface-container-low px-3 text-label-md font-semibold text-on-surface-variant hover:bg-surface-container-high lg:flex"
-        >
-          16:9
-          <EditorIcon className="text-[15px]">expand_more</EditorIcon>
-        </button>
+        <div className="relative hidden lg:block">
+          <button
+            type="button"
+            aria-label="Project aspect ratio"
+            onClick={() => setAspectRatioOpen(!aspectRatioOpen)}
+            className="flex h-9 items-center gap-1 rounded-[6px] border border-outline-variant bg-surface-container-low px-3 text-label-md font-semibold text-on-surface hover:bg-surface-container-high"
+          >
+            {selectedRatio}
+            <EditorIcon className="text-[15px]">expand_more</EditorIcon>
+          </button>
+          {aspectRatioOpen && (
+            <>
+              <button
+                type="button"
+                onClick={() => setAspectRatioOpen(false)}
+                className="fixed inset-0 z-30 cursor-default"
+                aria-label="Close aspect ratio menu"
+              />
+              <div className="absolute right-0 top-full mt-1.5 z-40 w-36 rounded-[6px] border border-outline-variant bg-surface-container-high p-1 shadow-lg flex flex-col gap-0.5">
+                {[
+                  { value: "16:9", label: "16:9 Landscape" },
+                  { value: "9:16", label: "9:16 Vertical" },
+                  { value: "1:1", label: "1:1 Square" },
+                  { value: "4:3", label: "4:3 Standard" },
+                  { value: "21:9", label: "21:9 Cinematic" },
+                ].map((ratio) => (
+                  <button
+                    key={ratio.value}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRatio(ratio.value);
+                      setAspectRatioOpen(false);
+                      dispatch(toastShown(`Aspect ratio changed to ${ratio.label}`));
+                    }}
+                    className={`flex w-full items-center justify-between rounded-[4px] px-2.5 py-1.5 text-left text-label-sm transition-colors ${
+                      selectedRatio === ratio.value
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
+                    }`}
+                  >
+                    <span>{ratio.label}</span>
+                    {selectedRatio === ratio.value && (
+                      <EditorIcon className="text-[14px]">check</EditorIcon>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <button
           type="button"
           aria-label="Export video"
@@ -359,4 +404,20 @@ function syncStatusCopy(status: EditorSyncStatus, pendingSyncCount: number) {
     label: "Saved locally",
     className: "border-outline-variant bg-surface-container-low text-on-surface-variant",
   };
+}
+
+function getSyncStatusIcon(status: EditorSyncStatus) {
+  if (status === "syncing") {
+    return <EditorIcon className="text-[13px] animate-spin text-primary mr-1 shrink-0">sync</EditorIcon>;
+  }
+  if (status === "synced" || status === "clean") {
+    return <EditorIcon className="text-[13px] text-primary mr-1 shrink-0">cloud_done</EditorIcon>;
+  }
+  if (status === "saved-local" || status === "dirty") {
+    return <EditorIcon className="text-[13px] text-amber-500 mr-1 shrink-0">cloud_upload</EditorIcon>;
+  }
+  if (status === "failed" || status === "sync-failed" || status === "server-changed") {
+    return <EditorIcon className="text-[13px] text-error mr-1 shrink-0">cloud_off</EditorIcon>;
+  }
+  return <EditorIcon className="text-[13px] text-on-surface-variant mr-1 shrink-0">cloud</EditorIcon>;
 }

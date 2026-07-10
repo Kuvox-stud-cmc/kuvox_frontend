@@ -215,16 +215,20 @@ body {
   background: radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--color-primary) 15%, transparent) 0%, transparent 60%);
 }
 
-/* Custom Scrollbar for Community Sidebar */
+/* Custom Scrollbar for Figma-like aesthetics */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-surface-container-lowest);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-outline-variant);
-  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-on-surface) 35%, transparent);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-on-surface) 60%, transparent);
 }
 
 /* Privacy / Legal page utilities */

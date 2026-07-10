@@ -161,6 +161,11 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
     width: 1,
     height: 1,
   });
+  const [clipboard, setClipboard] = useState<VideoTimelineItem[] | null>(null);
+  const [rippleEnabled, setRippleEnabled] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [trimOpen, setTrimOpen] = useState(false);
+
   const getDynamicTrackHeight = useCallback((kind: string) => {
     if (timelineHeight >= 220) {
       return kind === "text" ? 48 : 64;
@@ -190,7 +195,7 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
 
   const trackLayouts = useMemo(() => {
     if (!document) return [];
-    let top = 0;
+    let top = 12;
     const layouts = [];
     let visibleIndex = 0;
     for (const track of document.tracks) {
@@ -227,7 +232,7 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
 
   const contentSize = useMemo(() => {
     if (!document) return { width: 960, height: 192 };
-    const totalHeight = trackLayouts.reduce((sum, layout) => sum + layout.height, 0);
+    const totalHeight = trackLayouts.reduce((sum, layout) => sum + layout.height, 0) + 16;
     const maxDur = trackLayouts.reduce((maxDur, layout) => {
       const trackDuration = layout.track.items.reduce(
         (maxEnd, item) => Math.max(maxEnd, item.timelineStart + item.duration),
@@ -293,14 +298,14 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
       });
     });
   }, [document, projectMediaAvailabilityById]);
-  const [trackHeadersWidth, setTrackHeadersWidth] = useState(168);
+  const [trackHeadersWidth, setTrackHeadersWidth] = useState(200);
   const [addTrackDropdownOpen, setAddTrackDropdownOpen] = useState(false);
 
   const handleHeadersResizeStart = useDragResize({
     axis: "x",
     value: trackHeadersWidth,
-    min: 120,
-    max: 300,
+    min: 150,
+    max: 360,
     direction: "normal",
     onChange: (value) => setTrackHeadersWidth(value),
   });
@@ -503,9 +508,237 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
     }));
   }, [clipsLinked, dispatch, document, operationMetadata, selectedItemIds]);
 
-  const duplicateSelectedText = useCallback(() => {
-    dispatch(selectedTextItemsDuplicated({}));
-  }, [dispatch]);
+  const cloneJson = useCallback(<T,>(value: T): T => JSON.parse(JSON.stringify(value)), []);
+
+  const duplicateSelected = useCallback(() => {
+    if (!document || selectedItemIds.length === 0) return;
+    
+    const itemsWithTracks: Array<{ item: VideoTimelineItem; track: VideoTrack }> = [];
+    for (const itemId of selectedItemIds) {
+      const track = trackForItem(document, itemId);
+      const item = track?.items.find((i) => i.id === itemId);
+      if (track && item && !track.locked) {
+        itemsWithTracks.push({ item, track });
+      }
+    }
+
+    if (itemsWithTracks.length === 0) {
+      dispatch(toastShown("No unlocked clips selected to duplicate"));
+      return;
+    }
+
+    const timelineOffset = 0.5;
+
+    const operations = itemsWithTracks.map(({ item, track }, index) => {
+      const duplicateId = `${item.id}-copy-${Date.now()}-${index}`;
+      const duplicate = {
+        ...cloneJson(item),
+        id: duplicateId,
+        timelineStart: item.timelineStart + timelineOffset,
+      };
+
+      let type: "addTextItem" | "addAudioItem" | "addMediaToTimeline";
+      if (item.type === "text") {
+        type = "addTextItem";
+      } else if (item.type === "audio") {
+        type = "addAudioItem";
+      } else {
+        type = "addMediaToTimeline";
+      }
+
+      return {
+        ...operationMetadata(`duplicate-clip-${duplicateId}`, "Duplicate clip", [item.id, duplicateId]),
+        type,
+        trackId: track.id,
+        item: duplicate,
+      };
+    });
+
+    commitOperations("Duplicate clips", operations as VideoOperation[]);
+  }, [commitOperations, dispatch, document, operationMetadata, selectedItemIds, cloneJson]);
+
+  const trimStartToPlayhead = useCallback(() => {
+    if (!document || selectedItemIds.length === 0) return;
+    const selected = selectedItems(document, selectedItemIds);
+    const operations: VideoOperation[] = [];
+    for (const item of selected) {
+      const track = trackForItem(document, item.id);
+      if (!track || track.locked) continue;
+      const offset = currentTime - item.timelineStart;
+      if (offset > 0 && offset < item.duration) {
+        const newStart = currentTime;
+        const newDuration = item.duration - offset;
+        
+        if (item.type === "video" || item.type === "audio") {
+          const mediaDuration = mediaDurationForItem(document, item) ?? item.duration;
+          const currentSourceIn = (item as any).sourceIn ?? 0;
+          const newSourceIn = Math.min(mediaDuration, currentSourceIn + offset);
+          const currentSourceOut = (item as any).sourceOut ?? item.duration;
+          operations.push({
+            ...operationMetadata(`trim-start-${item.id}`, "Trim clip start", [item.id]),
+            type: "trimItem" as const,
+            itemId: item.id,
+            timelineStart: newStart,
+            duration: newDuration,
+            sourceIn: newSourceIn,
+            sourceOut: currentSourceOut,
+          } as any);
+        } else {
+          operations.push({
+            ...operationMetadata(`trim-start-${item.id}`, "Trim clip start", [item.id]),
+            type: "trimItem" as const,
+            itemId: item.id,
+            timelineStart: newStart,
+            duration: newDuration,
+          } as any);
+        }
+      }
+    }
+    if (operations.length > 0) {
+      commitOperations("Trim clip start", operations);
+    } else {
+      dispatch(toastShown("Playhead must be inside a selected clip to trim"));
+    }
+  }, [document, selectedItemIds, currentTime, operationMetadata, commitOperations, dispatch]);
+
+  const trimEndToPlayhead = useCallback(() => {
+    if (!document || selectedItemIds.length === 0) return;
+    const selected = selectedItems(document, selectedItemIds);
+    const operations: VideoOperation[] = [];
+    for (const item of selected) {
+      const track = trackForItem(document, item.id);
+      if (!track || track.locked) continue;
+      const offset = currentTime - item.timelineStart;
+      if (offset > 0 && offset < item.duration) {
+        const newDuration = offset;
+        if (item.type === "video" || item.type === "audio") {
+          const currentSourceIn = (item as any).sourceIn ?? 0;
+          const newSourceOut = Math.max(currentSourceIn, currentSourceIn + offset);
+          operations.push({
+            ...operationMetadata(`trim-end-${item.id}`, "Trim clip end", [item.id]),
+            type: "trimItem" as const,
+            itemId: item.id,
+            timelineStart: item.timelineStart,
+            duration: newDuration,
+            sourceIn: currentSourceIn,
+            sourceOut: newSourceOut,
+          } as any);
+        } else {
+          operations.push({
+            ...operationMetadata(`trim-end-${item.id}`, "Trim clip end", [item.id]),
+            type: "trimItem" as const,
+            itemId: item.id,
+            timelineStart: item.timelineStart,
+            duration: newDuration,
+          } as any);
+        }
+      }
+    }
+    if (operations.length > 0) {
+      commitOperations("Trim clip end", operations);
+    } else {
+      dispatch(toastShown("Playhead must be inside a selected clip to trim"));
+    }
+  }, [document, selectedItemIds, currentTime, operationMetadata, commitOperations, dispatch]);
+
+  const handleSplit = useCallback(() => {
+    const selected = selectedItems(document, selectedItemIds);
+    if (selected.length > 0) {
+      splitAtPlayhead(selected);
+    } else {
+      const allClips = document?.tracks.flatMap((track) => track.items) ?? [];
+      const clipsUnderPlayhead = allClips.filter((item) => currentTime > item.timelineStart && currentTime < item.timelineStart + item.duration);
+      if (clipsUnderPlayhead.length > 0) {
+        splitAtPlayhead(clipsUnderPlayhead);
+      } else {
+        dispatch(toastShown("Move playhead over a clip to split"));
+      }
+    }
+  }, [document, selectedItemIds, splitAtPlayhead, currentTime, dispatch]);
+
+  const handleCopy = useCallback(() => {
+    if (!document || selectedItemIds.length === 0) return;
+    const selected = selectedItems(document, selectedItemIds);
+    if (selected.length > 0) {
+      setClipboard(selected);
+      dispatch(toastShown(`Copied ${selected.length} clip(s)`));
+    }
+  }, [document, selectedItemIds, dispatch]);
+
+  const handlePaste = useCallback(() => {
+    if (!document || !clipboard || clipboard.length === 0) {
+      dispatch(toastShown("Clipboard is empty"));
+      return;
+    }
+    
+    const minStart = Math.min(...clipboard.map((item) => item.timelineStart));
+    const operations: any[] = [];
+
+    clipboard.forEach((item, index) => {
+      const offset = item.timelineStart - minStart;
+      const newStart = currentTime + offset;
+      const newId = `${item.id}-copy-${Date.now()}-${index}`;
+      
+      const originalTrack = trackForItem(document, item.id);
+      let targetTrackId = originalTrack?.id;
+      
+      if (!targetTrackId) {
+        const trackKind: VideoTrackKind = item.type === "text" ? "text" : item.type === "audio" ? "audio" : "video";
+        const compatibleTrack = document.tracks.find((t) => t.kind === trackKind && !t.locked);
+        targetTrackId = compatibleTrack?.id;
+      } else {
+        const track = document.tracks.find((t) => t.id === targetTrackId);
+        if (track?.locked) {
+          const trackKind: VideoTrackKind = item.type === "text" ? "text" : item.type === "audio" ? "audio" : "video";
+          const compatibleTrack = document.tracks.find((t) => t.kind === trackKind && !t.locked);
+          targetTrackId = compatibleTrack?.id;
+        }
+      }
+      
+      if (!targetTrackId) return;
+
+      const duplicate = {
+        ...cloneJson(item),
+        id: newId,
+        timelineStart: newStart,
+      };
+
+      let type: "addTextItem" | "addAudioItem" | "addMediaToTimeline";
+      if (item.type === "text") {
+        type = "addTextItem";
+      } else if (item.type === "audio") {
+        type = "addAudioItem";
+      } else {
+        type = "addMediaToTimeline";
+      }
+
+      operations.push({
+        ...operationMetadata(`paste-clip-${newId}`, "Paste clip", [newId]),
+        type,
+        trackId: targetTrackId,
+        item: duplicate,
+      });
+    });
+
+    if (operations.length > 0) {
+      commitOperations("Paste clips", operations as VideoOperation[]);
+      dispatch(toastShown(`Pasted ${operations.length} clip(s)`));
+    } else {
+      dispatch(toastShown("No unlocked compatible tracks to paste into"));
+    }
+  }, [clipboard, currentTime, commitOperations, dispatch, document, operationMetadata, cloneJson]);
+
+  const toggleLockSelectedTracks = useCallback(() => {
+    if (!document || selectedItemIds.length === 0) return;
+    const tracksToLock = Array.from(new Set(selectedItemIds.map(id => trackForItem(document, id)).filter((t): t is VideoTrack => !!t)));
+    const operations = tracksToLock.map((track) => ({
+      ...operationMetadata(`lock-track-${track.id}`, `${track.locked ? "Unlock" : "Lock"} track`, [track.id]),
+      type: "updateTrack" as const,
+      trackId: track.id,
+      locked: !track.locked,
+    }));
+    commitOperations("Toggle track lock", operations);
+  }, [commitOperations, document, operationMetadata, selectedItemIds]);
 
   if (!timelineOpen) {
     return (
@@ -536,79 +769,252 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
         className="absolute left-0 top-[-3px] z-50 h-1.5 w-full cursor-row-resize bg-transparent transition-colors hover:bg-primary/40 motion-reduce:transition-none"
       />
       <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-outline-variant bg-surface-container-lowest px-2 lg:px-3">
-        <div className="flex min-w-0 items-center gap-1.5 lg:gap-2">
-          <EditorIconButton
-            icon="nest_cam_magnet_mount"
-            label={snappingEnabled ? "Disable snapping" : "Enable snapping"}
-            active={snappingEnabled}
-            className="h-7 w-7"
-            onClick={() => dispatch(snappingToggled())}
-          />
-          <EditorIconButton
-            icon={clipsLinked ? "link" : "link_off"}
-            label={clipsLinked ? "Unlink clips" : "Link clips"}
-            active={clipsLinked}
-            className="h-7 w-7"
-            onClick={() => dispatch(clipsLinkedToggled())}
-          />
-          <EditorIconButton
-            icon="content_cut"
-            label="Split at playhead"
-            active={activeToolId === "split"}
-            className="h-7 w-7"
-            onClick={() => {
-              dispatch(activeToolChanged(activeToolId === "split" ? "select" : "split"));
-              splitAtPlayhead(selectedItems(document, selectedItemIds));
-            }}
-          />
-          <EditorIconButton
-            icon="content_copy"
-            label="Duplicate selected text"
-            className="h-7 w-7"
-            onClick={duplicateSelectedText}
-          />
-          <EditorIconButton
-            icon="delete"
-            label="Delete selected"
-            className="h-7 w-7"
-            onClick={deleteSelected}
-          />
-          <EditorIconButton
-            icon="undo"
-            label="Undo"
-            className="h-7 w-7"
-            disabled={!canUndo}
-            onClick={() => dispatch(videoUndoRequested())}
-          />
-          <EditorIconButton
-            icon="redo"
-            label="Redo"
-            className="h-7 w-7"
-            disabled={!canRedo}
-            onClick={() => dispatch(videoRedoRequested())}
-          />
-          <div className="mx-1 h-4 w-px bg-outline-variant" />
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scrollbar-none py-0.5">
+          {/* History Group */}
+          <div className="flex items-center gap-1 shrink-0">
+            <EditorIconButton
+              icon="undo"
+              label="Undo"
+              className="h-7 w-7 shrink-0"
+              disabled={!canUndo}
+              onClick={() => dispatch(videoUndoRequested())}
+            />
+            <EditorIconButton
+              icon="redo"
+              label="Redo"
+              className="h-7 w-7 shrink-0"
+              disabled={!canRedo}
+              onClick={() => dispatch(videoRedoRequested())}
+            />
+          </div>
+
+          <div className="mx-2 h-4 w-px bg-outline-variant shrink-0" />
+
+          {/* Editing Group */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Split */}
+            <div className="relative flex items-center shrink-0">
+              <button
+                type="button"
+                title="Split at playhead"
+                aria-label="Split at playhead"
+                onClick={handleSplit}
+                className={`flex h-7 items-center justify-center rounded-l-[4px] border border-r-0 border-outline-variant/50 px-2.5 text-label-md font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${activeToolId === "split" ? "bg-surface-container-high text-primary" : ""}`}
+              >
+                <EditorIcon className="text-[15px] mr-1">content_cut</EditorIcon>
+                Split
+              </button>
+              <button
+                type="button"
+                title="Split options"
+                aria-label="Split options"
+                onClick={() => setSplitOpen(!splitOpen)}
+                className="flex h-7 w-4 items-center justify-center rounded-r-[4px] border border-outline-variant/50 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+              >
+                <EditorIcon className="text-[10px]">keyboard_arrow_down</EditorIcon>
+              </button>
+              
+              {splitOpen && (
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={() => setSplitOpen(false)}
+                    aria-label="Close split menu"
+                  />
+                  <div className="absolute left-0 top-8 z-50 w-44 rounded-[4px] border border-outline-variant bg-surface-container-high p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        splitAtPlayhead(selectedItems(document, selectedItemIds));
+                        setSplitOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-[2px] px-2.5 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                    >
+                      Split Selected Clips
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        splitAtPlayhead(document?.tracks.flatMap((t) => t.items) ?? []);
+                        setSplitOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-[2px] px-2.5 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                    >
+                      Split All Tracks
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Trim */}
+            <div className="relative flex items-center shrink-0">
+              <button
+                type="button"
+                title="Toggle Trim Tool"
+                aria-label="Toggle Trim Tool"
+                onClick={() => dispatch(activeToolChanged(activeToolId === "trim" ? "select" : "trim"))}
+                className={`flex h-7 items-center justify-center rounded-l-[4px] border border-r-0 border-outline-variant/50 px-2.5 text-label-md font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${activeToolId === "trim" ? "bg-surface-container-high text-primary" : ""}`}
+              >
+                <EditorIcon className="text-[15px] mr-1">play_arrow</EditorIcon>
+                Trim
+              </button>
+              <button
+                type="button"
+                title="Trim options"
+                aria-label="Trim options"
+                onClick={() => setTrimOpen(!trimOpen)}
+                className="flex h-7 w-4 items-center justify-center rounded-r-[4px] border border-outline-variant/50 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+              >
+                <EditorIcon className="text-[10px]">keyboard_arrow_down</EditorIcon>
+              </button>
+              
+              {trimOpen && (
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={() => setTrimOpen(false)}
+                    aria-label="Close trim menu"
+                  />
+                  <div className="absolute left-0 top-8 z-50 w-44 rounded-[4px] border border-outline-variant bg-surface-container-high p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        trimStartToPlayhead();
+                        setTrimOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-[2px] px-2.5 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                    >
+                      Trim Start to Playhead
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        trimEndToPlayhead();
+                        setTrimOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-[2px] px-2.5 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                    >
+                      Trim End to Playhead
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="mx-2 h-4 w-px bg-outline-variant shrink-0" />
+
+          {/* Selection Group */}
+          <div className="flex items-center gap-1 shrink-0">
+            <EditorIconButton
+              icon="delete"
+              label="Delete selected"
+              className="h-7 w-7 shrink-0"
+              disabled={selectedItemIds.length === 0}
+              onClick={deleteSelected}
+            />
+            <EditorIconButton
+              icon="content_copy"
+              label="Duplicate selected clips"
+              className="h-7 w-7 shrink-0"
+              disabled={selectedItemIds.length === 0}
+              onClick={duplicateSelected}
+            />
+            <div className="mx-1 h-3.5 w-px bg-outline-variant/35 shrink-0" />
+            <EditorIconButton
+              icon="copy_all"
+              label="Copy selected clips"
+              className="h-7 w-7 shrink-0"
+              disabled={selectedItemIds.length === 0}
+              onClick={handleCopy}
+            />
+            <EditorIconButton
+              icon="content_paste"
+              label="Paste clips"
+              className="h-7 w-7 shrink-0"
+              disabled={!clipboard || clipboard.length === 0}
+              onClick={handlePaste}
+            />
+          </div>
+
+          <div className="mx-2 h-4 w-px bg-outline-variant shrink-0" />
+
+          {/* Snap & Ripple Group */}
+          <div className="flex items-center gap-1 shrink-0">
+            <EditorIconButton
+              icon={clipsLinked ? "link" : "link_off"}
+              label={clipsLinked ? "Unlink clips" : "Link clips"}
+              active={clipsLinked}
+              className="h-7 w-7 shrink-0"
+              onClick={() => dispatch(clipsLinkedToggled())}
+            />
+            <EditorIconButton
+              icon="lock"
+              label="Toggle track lock"
+              className="h-7 w-7 shrink-0"
+              disabled={selectedItemIds.length === 0}
+              onClick={toggleLockSelectedTracks}
+            />
+            <div className="mx-1 h-3.5 w-px bg-outline-variant/35 shrink-0" />
+            <EditorIconButton
+              icon="nest_cam_magnet_mount"
+              label={snappingEnabled ? "Disable snapping" : "Enable snapping"}
+              active={snappingEnabled}
+              className="h-7 w-7 shrink-0"
+              onClick={() => dispatch(snappingToggled())}
+            />
+            <EditorIconButton
+              icon="waves"
+              label={rippleEnabled ? "Disable ripple edit" : "Enable ripple edit"}
+              active={rippleEnabled}
+              className="h-7 w-7 shrink-0"
+              onClick={() => {
+                const nextVal = !rippleEnabled;
+                setRippleEnabled(nextVal);
+                dispatch(toastShown(nextVal ? "Ripple edit enabled" : "Ripple edit disabled"));
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5 lg:gap-2">
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 bg-surface-container-low rounded-[4px] border border-outline-variant/50 p-0.5 shrink-0">
+            <EditorIconButton
+              icon="zoom_out"
+              label="Zoom Out"
+              className="h-6 w-6"
+              onClick={() => dispatch(timelineZoomChanged(timelineZoom - 10))}
+            />
+            <button
+              type="button"
+              title="Reset Zoom to 50%"
+              onClick={() => dispatch(timelineZoomChanged(50))}
+              className="h-6 px-1.5 text-[11px] font-bold text-on-surface-variant hover:text-on-surface rounded-[2px] transition-colors"
+            >
+              {timelineZoom}%
+            </button>
+            <EditorIconButton
+              icon="zoom_in"
+              label="Zoom In"
+              className="h-6 w-6"
+              onClick={() => dispatch(timelineZoomChanged(timelineZoom + 10))}
+            />
+          </div>
+
+          <div className="mx-1 h-4 w-px bg-outline-variant/60 shrink-0" />
+
+          {/* Hide Timeline */}
           <EditorIconButton
             icon="keyboard_arrow_down"
             label="Hide timeline"
-            className="h-7 w-7"
+            className="h-7 w-7 shrink-0"
             onClick={() => dispatch(timelineOpenChanged(false))}
           />
         </div>
-        <label className="hidden shrink-0 items-center gap-2 md:flex">
-          <EditorIcon className="text-[16px] text-on-surface-variant">zoom_out</EditorIcon>
-          <input
-            className="h-1 w-32 cursor-pointer appearance-none rounded-lg bg-surface-container-high accent-primary"
-            min={1}
-            max={100}
-            type="range"
-            value={timelineZoom}
-            onChange={(event) => dispatch(timelineZoomChanged(Number(event.target.value)))}
-            aria-label="Timeline zoom"
-            data-editor-shortcuts="ignore"
-          />
-          <EditorIcon className="text-[16px] text-on-surface-variant">zoom_in</EditorIcon>
-        </label>
       </div>
 
       <div className="relative flex flex-1 overflow-hidden">
@@ -1145,27 +1551,64 @@ function TrackHeader({
   onSolo: () => void;
   onDelete: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <div
-      className={`group flex items-center justify-between border-b border-outline-variant px-3 transition-colors hover:bg-surface-container-high motion-reduce:transition-none ${track.hidden ? "opacity-55" : ""}`}
+      className={`group relative flex items-center justify-between border-b border-outline-variant px-3 bg-surface-container transition-colors hover:bg-surface-container-high motion-reduce:transition-none ${track.hidden ? "opacity-75" : ""}`}
       style={{ height }}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <EditorIcon className="text-[16px] text-on-surface-variant">{trackIcon(track.kind)}</EditorIcon>
-        <span className="truncate text-label-md font-semibold text-on-surface">{track.label}</span>
+      <div className="flex min-w-0 items-center gap-1.5 pr-2">
+        <EditorIcon className="text-[15px] text-on-surface-variant shrink-0">{trackIcon(track.kind)}</EditorIcon>
+        <span className="truncate text-label-md font-semibold text-on-surface leading-tight">{track.label}</span>
       </div>
       {showControls && (
-        <div className="flex shrink-0 gap-1 opacity-100">
-          {track.kind === "audio" ? (
-            <SmallIconButton icon="headphones" label={`Solo ${track.label}`} active={soloed} onClick={onSolo} />
-          ) : null}
-          {track.kind === "audio" ? (
-            <SmallIconButton icon={track.muted ? "volume_off" : "volume_up"} label={`Mute ${track.label}`} active={track.muted} onClick={() => onUpdate({ muted: !track.muted })} />
-          ) : (
-            <SmallIconButton icon={track.hidden ? "visibility_off" : "visibility"} label={`Toggle ${track.label} visibility`} active={track.hidden} onClick={() => onUpdate({ hidden: !track.hidden })} />
-          )}
-          <SmallIconButton icon={track.locked ? "lock" : "lock_open"} label={`Toggle ${track.label} lock`} active={track.locked} onClick={() => onUpdate({ locked: !track.locked })} />
-          <SmallIconButton icon="delete" label={`Delete ${track.label}`} onClick={onDelete} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1">
+            {track.kind === "audio" ? (
+              <>
+                <SmallIconButton icon="headphones" label={`Solo ${track.label}`} active={soloed} onClick={onSolo} />
+                <SmallIconButton icon={track.muted ? "volume_off" : "volume_up"} label={`Mute ${track.label}`} active={track.muted} onClick={() => onUpdate({ muted: !track.muted })} />
+              </>
+            ) : (
+              <SmallIconButton icon={track.hidden ? "visibility_off" : "visibility"} label={`Toggle ${track.label} visibility`} active={track.hidden} onClick={() => onUpdate({ hidden: !track.hidden })} />
+            )}
+            <SmallIconButton icon={track.locked ? "lock" : "lock_open"} label={`Toggle ${track.label} lock`} active={track.locked} onClick={() => onUpdate({ locked: !track.locked })} />
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="flex h-6 w-5 items-center justify-center rounded-[3px] text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface transition-colors"
+              aria-label="Track options"
+            >
+              <EditorIcon className="text-[16px]">more_vert</EditorIcon>
+            </button>
+            {menuOpen && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(false)}
+                  className="fixed inset-0 z-30 cursor-default"
+                  aria-label="Close track options"
+                />
+                <div className="absolute right-0 top-7 z-40 w-28 rounded-[4px] border border-outline-variant bg-surface-container-high p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDelete();
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1 text-left text-label-sm text-error hover:bg-error/10 hover:text-error"
+                  >
+                    <EditorIcon className="text-[14px]">delete</EditorIcon>
+                    Delete Track
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -1206,8 +1649,8 @@ function Ruler({ duration, scale }: { duration: number; scale: ReturnType<typeof
     <div
       className="relative h-full"
       style={{
-        backgroundImage: "repeating-linear-gradient(to right, transparent, transparent calc(100% - 1px), rgba(70,69,84,0.7) calc(100% - 1px), rgba(70,69,84,0.7) 100%)",
-        backgroundSize: `${scale.pixelsPerSecond}px 8px`,
+        backgroundImage: "repeating-linear-gradient(to right, transparent, transparent calc(100% - 1px), color-mix(in srgb, var(--color-on-surface) 40%, transparent) calc(100% - 1px), color-mix(in srgb, var(--color-on-surface) 40%, transparent) 100%)",
+        backgroundSize: `${scale.pixelsPerSecond}px 12px`,
         backgroundRepeat: "repeat-x",
         backgroundPosition: "0 bottom",
       }}
@@ -1215,7 +1658,7 @@ function Ruler({ duration, scale }: { duration: number; scale: ReturnType<typeof
       {ticks.map((time) => (
         <span
           key={time}
-          className="absolute top-1 -translate-x-1/2 font-mono text-[10px] text-on-surface-variant"
+          className="absolute top-1 -translate-x-1/2 font-mono text-[10px] font-bold text-on-surface"
           style={{ left: timeToPixel(time, scale) }}
         >
           {formatTimelineTime(time)}
@@ -1245,6 +1688,7 @@ function TimelineItemBlock({
   const item = layout.item;
   const trimActive = activeToolId === "trim";
   const cursorClass = activeToolId === "split" ? "cursor-crosshair" : activeToolId === "trim" ? "cursor-default" : "cursor-grab active:cursor-grabbing";
+  const thumbnailCount = Math.max(1, Math.floor(layout.width / 50));
   return (
     <button
       type="button"
@@ -1269,24 +1713,49 @@ function TimelineItemBlock({
         onPointerDown={(event) => onPointerDown(event, "end")}
       />
       {item.type === "audio" ? (
-        <span
-          className="absolute inset-0 opacity-35"
-          style={{
-            backgroundImage: media?.thumbnailUrl
-              ? `linear-gradient(to right, rgba(12,12,15,0.35), rgba(12,12,15,0.15)), url(${JSON.stringify(media.thumbnailUrl).slice(1, -1)})`
-              : "repeating-linear-gradient(to right, #908fa0, #908fa0 2px, transparent 2px, transparent 5px)",
-            backgroundPosition: "center",
-            backgroundSize: media?.thumbnailUrl ? "cover" : "5px 60%",
-            backgroundRepeat: media?.thumbnailUrl ? "no-repeat" : "repeat-x",
-          }}
-        />
+        <div className="absolute inset-x-0 bottom-1.5 top-6 flex items-end justify-between gap-[1.5px] px-2 opacity-70 pointer-events-none">
+          {getWaveformBars(item.id, Math.max(8, Math.floor(layout.width / 4.5))).map((h, idx) => (
+            <div
+              key={idx}
+              className="flex-1 rounded-t-[1.5px] bg-primary/45"
+              style={{ height: `${h}%` }}
+            />
+          ))}
+        </div>
+      ) : null}
+      {(item.type === "video" || item.type === "overlay") ? (
+        <div className="absolute inset-0 flex overflow-hidden pointer-events-none opacity-45">
+          {Array.from({ length: thumbnailCount }).map((_, idx) => (
+            <div
+              key={idx}
+              className="h-full border-r border-black/10 shrink-0 bg-cover bg-center bg-no-repeat"
+              style={{
+                width: 50,
+                backgroundImage: media?.thumbnailUrl ? `url(${media.thumbnailUrl})` : undefined,
+                backgroundColor: !media?.thumbnailUrl ? "rgba(100, 110, 140, 0.2)" : undefined,
+              }}
+            >
+              {!media?.thumbnailUrl && (
+                <div className="flex h-full w-full items-center justify-center text-on-surface/20">
+                  <EditorIcon className="text-[16px]">movie</EditorIcon>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       ) : null}
       {unavailableBadge(availability) ? (
         <span className="absolute bottom-1 right-1 rounded-[3px] bg-error-container px-1.5 py-0.5 text-[9px] font-semibold uppercase text-on-error-container">
           {unavailableBadge(availability)}
         </span>
       ) : linked ? <EditorIcon className="absolute right-1 top-1 text-[12px] opacity-80">link</EditorIcon> : null}
-      <span className="relative block truncate pr-3">{itemLabel(item, media)}</span>
+      <span className={`relative z-20 block truncate pr-2 font-semibold ${
+        item.type === "video" || item.type === "overlay"
+          ? "text-white drop-shadow-[0_1px_2.5px_rgba(0,0,0,0.85)]"
+          : "text-current"
+      }`}>
+        {itemLabel(item, media)}
+      </span>
     </button>
   );
 }
@@ -1396,4 +1865,21 @@ function formatTimelineTime(time: number): string {
   const minutes = Math.floor(time / 60);
   const seconds = Math.floor(time % 60);
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function getWaveformBars(itemId: string, count: number): number[] {
+  let seed = 0;
+  for (let i = 0; i < itemId.length; i++) {
+    seed = (seed * 31 + itemId.charCodeAt(i)) & 0xffffff;
+  }
+  const bars = [];
+  for (let i = 0; i < count; i++) {
+    const x = i * 0.15 + seed;
+    const y = i * 0.5 + seed;
+    const envelope = Math.abs(Math.sin(x) * 0.7 + Math.sin(x * 0.3) * 0.3);
+    const detail = 0.4 + Math.abs(Math.cos(y)) * 0.6;
+    const height = Math.round(10 + envelope * detail * 80);
+    bars.push(height);
+  }
+  return bars;
 }

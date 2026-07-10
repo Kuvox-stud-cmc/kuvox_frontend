@@ -88,6 +88,7 @@ export interface VideoClipTimelineItem extends VideoTimelineItemBase {
   transform: VideoTransform;
   crop: VideoCrop;
   opacity: number;
+  properties?: VideoItemProperties;
 }
 
 export interface AudioTimelineItem extends VideoTimelineItemBase {
@@ -99,6 +100,7 @@ export interface AudioTimelineItem extends VideoTimelineItemBase {
   muted: boolean;
   fades: VideoAudioFades;
   linkedGroupId?: string;
+  properties?: AudioItemProperties;
 }
 
 export interface TextTimelineItem extends VideoTimelineItemBase {
@@ -107,6 +109,7 @@ export interface TextTimelineItem extends VideoTimelineItemBase {
   style: VideoTextStyle;
   transform: VideoTransform;
   layerOrder: number;
+  properties?: TextItemProperties;
 }
 
 export interface ImageOverlayTimelineItem extends VideoTimelineItemBase {
@@ -115,6 +118,7 @@ export interface ImageOverlayTimelineItem extends VideoTimelineItemBase {
   transform: VideoTransform;
   opacity: number;
   layerOrder: number;
+  properties?: ImageItemProperties;
 }
 
 export interface VideoTransform {
@@ -145,6 +149,14 @@ export interface VideoTextStyle {
   fontWeight?: "normal" | "medium" | "semibold" | "bold";
   fontStyle?: "normal" | "italic";
   textAlign?: "left" | "center" | "right";
+  strokeColor?: string;
+  strokeWidth?: number;
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+  animType?: string;
+  animDur?: number;
 }
 
 export interface VideoTransition {
@@ -1080,4 +1092,144 @@ function isJsonValue(value: unknown): value is JsonValue {
   }
 
   return Object.values(value).every(isJsonValue);
+}
+
+export interface Keyframe<T> {
+  time: number;
+  value: T;
+  easing?: string;
+}
+
+export interface AnimatableProperty<T> {
+  value: T;
+  keyframes?: Keyframe<T>[];
+}
+
+export interface VideoItemProperties {
+  adjust?: {
+    exposure?: AnimatableProperty<number>;
+    brightness?: AnimatableProperty<number>;
+    contrast?: AnimatableProperty<number>;
+    highlights?: AnimatableProperty<number>;
+    shadows?: AnimatableProperty<number>;
+    whites?: AnimatableProperty<number>;
+    blacks?: AnimatableProperty<number>;
+    temperature?: AnimatableProperty<number>;
+    tint?: AnimatableProperty<number>;
+    saturation?: AnimatableProperty<number>;
+    vibrance?: AnimatableProperty<number>;
+    sharpness?: AnimatableProperty<number>;
+  };
+  filters?: {
+    builtIn?: AnimatableProperty<string>;
+    lutLibrary?: AnimatableProperty<string>;
+    favorites?: AnimatableProperty<boolean>;
+    recent?: AnimatableProperty<string>;
+    intensity?: AnimatableProperty<number>;
+    blend?: AnimatableProperty<number>;
+  };
+  color?: {
+    lift?: AnimatableProperty<number>;
+    gamma?: AnimatableProperty<number>;
+    gain?: AnimatableProperty<number>;
+    vignette?: AnimatableProperty<number>;
+    grain?: AnimatableProperty<number>;
+  };
+  mask?: {
+    shape?: AnimatableProperty<string>;
+    top?: AnimatableProperty<number>;
+    bottom?: AnimatableProperty<number>;
+    left?: AnimatableProperty<number>;
+    right?: AnimatableProperty<number>;
+    cornerRadius?: AnimatableProperty<number>;
+    feather?: AnimatableProperty<number>;
+    expansion?: AnimatableProperty<number>;
+    invert?: AnimatableProperty<boolean>;
+  };
+  animation?: {
+    duration?: AnimatableProperty<number>;
+    fadeIn?: AnimatableProperty<number>;
+    fadeOut?: AnimatableProperty<number>;
+    scaleAnim?: AnimatableProperty<number>;
+    rotationAnim?: AnimatableProperty<number>;
+    presets?: AnimatableProperty<string>;
+  };
+  speedSettings?: {
+    reverse?: AnimatableProperty<boolean>;
+    speedCurve?: AnimatableProperty<string>;
+    pitchCorrection?: AnimatableProperty<boolean>;
+  };
+  audioSettings?: {
+    balance?: AnimatableProperty<number>;
+    normalize?: AnimatableProperty<boolean>;
+    fadeIn?: AnimatableProperty<number>;
+    fadeOut?: AnimatableProperty<number>;
+    noiseRem?: AnimatableProperty<boolean>;
+    voiceEnhance?: AnimatableProperty<boolean>;
+    eq?: AnimatableProperty<string>;
+    compressor?: AnimatableProperty<boolean>;
+    limiter?: AnimatableProperty<boolean>;
+  };
+}
+
+export interface AudioItemProperties {
+  noiseReduction?: {
+    enabled?: AnimatableProperty<boolean>;
+    level?: AnimatableProperty<number>;
+  };
+  eq?: {
+    preset?: AnimatableProperty<string>;
+    low?: AnimatableProperty<number>;
+    mid?: AnimatableProperty<number>;
+    high?: AnimatableProperty<number>;
+  };
+  speedSettings?: {
+    speedMultiplier?: AnimatableProperty<number>;
+  };
+}
+
+export interface ImageItemProperties {
+  crop?: {
+    top?: AnimatableProperty<number>;
+    bottom?: AnimatableProperty<number>;
+    left?: AnimatableProperty<number>;
+    right?: AnimatableProperty<number>;
+  };
+  mask?: {
+    maskType?: AnimatableProperty<string>;
+    maskFeather?: AnimatableProperty<number>;
+    maskSize?: AnimatableProperty<number>;
+  };
+  adjust?: {
+    exposure?: AnimatableProperty<number>;
+    brightness?: AnimatableProperty<number>;
+    contrast?: AnimatableProperty<number>;
+    highlights?: AnimatableProperty<number>;
+    shadows?: AnimatableProperty<number>;
+    saturation?: AnimatableProperty<number>;
+  };
+  filters?: {
+    filterType?: AnimatableProperty<string>;
+  };
+  animation?: {
+    fadeIn?: AnimatableProperty<number>;
+    fadeOut?: AnimatableProperty<number>;
+  };
+}
+
+export interface TextItemProperties {
+  stroke?: {
+    color?: AnimatableProperty<string>;
+    width?: AnimatableProperty<number>;
+  };
+  shadow?: {
+    color?: AnimatableProperty<string>;
+    blur?: AnimatableProperty<number>;
+    offsetX?: AnimatableProperty<number>;
+    offsetY?: AnimatableProperty<number>;
+  };
+  animation?: {
+    preset?: AnimatableProperty<string>;
+    duration?: AnimatableProperty<number>;
+  };
 }

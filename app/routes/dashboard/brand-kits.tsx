@@ -15,12 +15,12 @@ export function meta() {
 
 /* ── Type Definitions ────────────────────────────────────────────────────── */
 
-interface ColorPalette {
+export interface ColorPalette {
   name: string;
   colors: string[];
 }
 
-interface BrandAsset {
+export interface BrandAsset {
   id: string;
   name: string;
   size: string;
@@ -28,7 +28,7 @@ interface BrandAsset {
   url?: string; // used for image/svg preview
 }
 
-interface BrandKit {
+export interface BrandKit {
   id: string;
   name: string;
   projects: number;
@@ -46,7 +46,7 @@ interface BrandKit {
 
 /* ── Initial Mock Data ───────────────────────────────────────────────────── */
 
-const INITIAL_KITS: BrandKit[] = [
+export const INITIAL_KITS: BrandKit[] = [
   {
     id: "bk1",
     name: "Kuvox Default",
@@ -165,7 +165,22 @@ function parseColors(text: string): string[] {
 /* ── Main Component ─────────────────────────────────────────────────────── */
 
 export default function BrandKits() {
-  const [kits, setKits] = useState<BrandKit[]>(INITIAL_KITS);
+  const [kits, setKits] = useState<BrandKit[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("kuvox_brand_kits");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    return INITIAL_KITS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("kuvox_brand_kits", JSON.stringify(kits));
+  }, [kits]);
+
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newKitName, setNewKitName] = useState("");
