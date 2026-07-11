@@ -64,8 +64,16 @@ export interface VideoRenderJob {
   timelineId: string;
   revisionNumber: number | null;
   status: Exclude<VideoRenderJobStatus, "idle" | "validating" | "syncing" | "backend-unavailable">;
+  outputAvailable: boolean;
   outputUrl: string | null;
-  outputStorageKey: string | null;
+  outputContentType: string | null;
+  outputSizeBytes: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
   message: string | null;
 }
 
@@ -196,9 +204,6 @@ const exportFormats = ["mp4", "mov"] as const;
 const exportResolutions = ["1280x720", "1920x1080", "3840x2160", "current"] as const;
 const exportQualities = ["draft", "standard", "high"] as const;
 const exportFrameRates = [24, 25, 30, 60] as const;
-
-const storageKeyOutputFields = ["outputStorageKey", "storageKey", "objectStorageKey"] as const;
-const authenticatedOutputUrlFields = ["outputUrl", "downloadUrl", "authenticatedOutputUrl", "url"] as const;
 
 export function createDefaultVideoExportSettings(
   document: VideoProjectDocument | null | undefined,
@@ -599,26 +604,49 @@ export async function requestVideoRenderJob(input: RequestVideoRenderJobInput): 
   return job;
 }
 
+export async function getVideoRenderJob(jobId: string): Promise<VideoRenderJob> {
+  const response = await fetch(`/bff/timelines/render-jobs/${encodeURIComponent(jobId)}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new VideoRenderRequestError(await readRenderJobError(response), {
+      status: response.status,
+      response,
+    });
+  }
+  return normalizeVideoRenderJob(await response.json());
+}
+
 export function normalizeVideoRenderJob(payload: unknown): VideoRenderJob {
   const body = isRecord(payload) ? payload : {};
   const nestedJob = isRecord(body.job) ? body.job : {};
   const source = Object.keys(nestedJob).length > 0 ? nestedJob : body;
   const rawStatus = String(source.status ?? source.state ?? "queued").toLowerCase();
   const status = normalizeRenderStatus(rawStatus);
-  const outputUrl = firstString(source, authenticatedOutputUrlFields);
-  const outputStorageKey = firstString(source, storageKeyOutputFields);
+  const id = String(source.id ?? source.jobId ?? "");
+  const outputAvailable = source.outputAvailable === true;
 
   return {
-    id: String(source.id ?? source.jobId ?? ""),
+    id,
     timelineId: String(source.timelineId ?? body.timelineId ?? ""),
     revisionNumber: numberOrNull(source.revisionNumber ?? body.revisionNumber),
     status,
-    outputUrl: isAuthenticatedOutputUrl(outputUrl) ? outputUrl : null,
-    outputStorageKey,
+    outputAvailable,
+    outputUrl: status === "completed" && outputAvailable && id
+      ? `/bff/timelines/render-jobs/${encodeURIComponent(id)}/output`
+      : null,
+    outputContentType: stringOrNull(source.outputContentType),
+    outputSizeBytes: numberOrNull(source.outputSizeBytes),
+    errorCode: stringOrNull(source.errorCode),
+    errorMessage: stringOrNull(source.errorMessage),
+    startedAt: stringOrNull(source.startedAt),
+    finishedAt: stringOrNull(source.finishedAt),
+    createdAt: stringOrNull(source.createdAt),
+    updatedAt: stringOrNull(source.updatedAt ?? source.occurredAt),
     message: typeof source.message === "string"
       ? source.message
-      : typeof source.error === "string"
-        ? source.error
+      : typeof source.errorMessage === "string"
+        ? source.errorMessage
         : null,
   };
 }
@@ -947,33 +975,19 @@ async function readRenderJobError(response: Response): Promise<string> {
   }
 }
 
-function firstString<T extends readonly string[]>(source: Record<string, unknown>, keys: T): string | null {
-  for (const key of keys) {
-    if (typeof source[key] === "string" && source[key].trim().length > 0) return source[key].trim();
-  }
-  return null;
-}
-
-function isAuthenticatedOutputUrl(url: string | null): boolean {
-  if (!url) return false;
-  if (url.startsWith("/bff/") || url.startsWith("/api/")) return true;
-
-  try {
-    const parsed = new URL(url);
-    return parsed.pathname.startsWith("/bff/") || parsed.pathname.startsWith("/api/");
-  } catch {
-    return false;
-  }
-}
-
 function positiveIntegerOrFallback(value: unknown, fallback: number): number {
   const numeric = Number(value);
   return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
 }
 
 function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function sanitizeLabel(value: string): string {

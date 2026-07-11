@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MediaDto, ProjectMediaDto } from "~/lib/api";
 import {
   createDefaultVideoExportSettings,
+  getVideoRenderJob,
   isRenderBackendUnavailable,
+  normalizeVideoRenderJob,
   requestVideoRenderJob,
   resolveVideoExportDimensions,
   validateVideoExport,
@@ -17,6 +19,7 @@ import {
   type VideoRenderJobStatus,
 } from "~/lib/editor/video-export";
 import type { VideoProjectDocument } from "~/lib/editor/video-document";
+import { getRealtimeConnection } from "~/lib/realtime-connection.client";
 
 import { EditorIcon } from "./editor-ui";
 import type { VideoExportFlushResult } from "./use-video-autosave";
@@ -88,6 +91,51 @@ export function VideoExportModal({
     }
     wasOpen.current = open;
   }, [document, open, projectName]);
+
+  useEffect(() => {
+    if (!open || !job || job.status === "completed" || job.status === "failed") return;
+
+    const activeJobId = job.id;
+    let disposed = false;
+    let reconciling = false;
+    const applyJob = (next: VideoRenderJob) => {
+      if (disposed || next.id !== activeJobId) return;
+      setJob(next);
+      setStatus(next.status);
+      setMessage(next.message);
+    };
+    const reconcile = async () => {
+      if (reconciling) return;
+      reconciling = true;
+      try {
+        applyJob(await getVideoRenderJob(activeJobId));
+      } catch {
+        // The socket remains authoritative during transient reconciliation failures.
+      } finally {
+        reconciling = false;
+      }
+    };
+
+    const realtime = getRealtimeConnection();
+    const unsubscribeJob = realtime.subscribe("renderJobUpdated", (payload) => {
+      const next = normalizeVideoRenderJob(payload);
+      if (next.id === activeJobId) applyJob(next);
+    });
+    const unsubscribeLifecycle = realtime.subscribeLifecycle((connection) => {
+      if (connection.state === "connected" && connection.reconnected) void reconcile();
+    });
+    const handleVisibility = () => {
+      if (window.document.visibilityState === "visible") void reconcile();
+    };
+    window.document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      disposed = true;
+      unsubscribeJob();
+      unsubscribeLifecycle();
+      window.document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [job?.id, job?.status, open]);
 
   const liveValidation = useMemo(
     () => validateVideoExport(document, media, settings, projectMedia),

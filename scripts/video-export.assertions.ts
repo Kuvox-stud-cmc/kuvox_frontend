@@ -206,19 +206,19 @@ function assertObjectStorageKeysDoNotBecomeOutputUrls(): void {
     outputStorageKey: "renders/project/video.mp4",
   });
   assert.equal(storageOnly.status, "completed");
-  assert.equal(storageOnly.outputStorageKey, "renders/project/video.mp4");
   assert.equal(storageOnly.outputUrl, null);
 
-  const apiUrl = normalizeVideoRenderJob({
+  const completed = normalizeVideoRenderJob({
     id: "job-api",
     status: "completed",
-    outputUrl: "/bff/renders/job-api/output",
+    outputAvailable: true,
   });
-  assert.equal(apiUrl.outputUrl, "/bff/renders/job-api/output");
+  assert.equal(completed.outputUrl, "/bff/timelines/render-jobs/job-api/output");
 
   const objectStoreUrl = normalizeVideoRenderJob({
     id: "job-object-store",
     status: "completed",
+    outputAvailable: false,
     outputUrl: "https://objects.example.test/renders/project/video.mp4",
   });
   assert.equal(objectStoreUrl.outputUrl, null);

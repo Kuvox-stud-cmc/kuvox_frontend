@@ -60,6 +60,60 @@ test("video editor route loads, edits timeline, recovers IndexedDB autosave, app
   });
 });
 
+test("render jobs complete over the shared websocket without status polling", async ({ page }) => {
+  await installMockSignalR(page);
+  await page.unroute("**/bff/timelines/*/render");
+  await page.route("**/bff/timelines/*/render", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "render-e2e",
+        timelineId: "timeline-e2e",
+        revisionNumber: 2,
+        status: "queued",
+        outputAvailable: false,
+        message: "Render queued.",
+      }),
+    });
+  });
+  let statusRequests = 0;
+  await page.route("**/bff/timelines/render-jobs/render-e2e", async (route) => {
+    statusRequests += 1;
+    await route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
+  });
+
+  await page.goto("/editor/video/e2e-video-project");
+  await page.getByRole("button", { name: /export video/i }).click();
+  await page.getByRole("button", { name: /create render job/i }).click();
+  await expect(page.getByText("Queued")).toBeVisible();
+
+  await emitSignalR(page, "renderJobUpdated", {
+    jobId: "render-e2e",
+    timelineId: "timeline-e2e",
+    status: "rendering",
+    outputAvailable: false,
+    message: "Rendering video.",
+  });
+  await expect(page.getByText("Rendering")).toBeVisible();
+  await emitSignalR(page, "renderJobUpdated", {
+    jobId: "render-e2e",
+    timelineId: "timeline-e2e",
+    status: "completed",
+    outputAvailable: true,
+    outputContentType: "video/mp4",
+    outputSizeBytes: 456,
+    message: "Export completed.",
+  });
+
+  await expect(page.getByRole("link", { name: /open exported video/i })).toHaveAttribute(
+    "href",
+    "/bff/timelines/render-jobs/render-e2e/output",
+  );
+  await page.waitForTimeout(2200);
+  expect(statusRequests).toBe(0);
+});
+
 test("manual editor adapts across phone, tablet, and desktop layouts", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/editor/video/e2e-video-project");
@@ -191,6 +245,51 @@ async function installBffMocks(page: Page) {
   await page.route("**/bff/media/**", async (route) => {
     await route.fulfill({ status: 204 });
   });
+}
+
+async function installMockSignalR(page: Page) {
+  await page.addInitScript(() => {
+    const sockets: Array<{
+      onmessage: ((event: { data: string }) => void) | null;
+    }> = [];
+
+    class MockWebSocket {
+      static OPEN = 1;
+      readyState = MockWebSocket.OPEN;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_url: string) {
+        sockets.push(this);
+        window.setTimeout(() => this.onopen?.(), 0);
+      }
+
+      send(_value: string) {
+        this.onmessage?.({ data: "{}\x1e" });
+      }
+
+      close() {
+        this.readyState = 3;
+        this.onclose?.();
+      }
+    }
+
+    Object.defineProperty(window, "WebSocket", { configurable: true, value: MockWebSocket });
+    (window as typeof window & { __emitSignalR?: (target: string, payload: unknown) => void }).__emitSignalR =
+      (target, payload) => {
+        const data = `${JSON.stringify({ type: 1, target, arguments: [payload] })}\x1e`;
+        sockets.forEach((socket) => socket.onmessage?.({ data }));
+      };
+  });
+}
+
+async function emitSignalR(page: Page, target: string, payload: unknown) {
+  await page.evaluate(({ target, payload }) => {
+    (window as typeof window & { __emitSignalR?: (target: string, payload: unknown) => void })
+      .__emitSignalR?.(target, payload);
+  }, { target, payload });
 }
 
 function projectMedia(mediaId: string) {

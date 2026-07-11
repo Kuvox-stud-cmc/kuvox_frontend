@@ -3,8 +3,8 @@ import { useRevalidator } from "react-router";
 
 import type { MediaDto } from "./api";
 import { isMediaInProgress, type MediaPipeline } from "./media-pipeline";
+import { getRealtimeConnection } from "./realtime-connection.client";
 
-const RECORD_SEPARATOR = "\x1e";
 const OPTIMISTIC_TTL_MS = 5 * 60 * 1000;
 
 export interface MediaRealtimeUpdate {
@@ -132,61 +132,13 @@ export function useLiveMedia(initialMedia: MediaDto[], options: LiveMediaOptions
 }
 
 export function connectMediaRealtime(onUpdate: (update: MediaRealtimeUpdate) => void) {
-  let socket: WebSocket | null = null;
-  let stopped = false;
-  let retryMs = 1000;
-  let reconnectTimer: number | null = null;
-
-  const connect = () => {
-    if (stopped) return;
-
-    socket = new WebSocket(hubUrl());
-    socket.onopen = () => {
-      retryMs = 1000;
-      socket?.send(`${JSON.stringify({ protocol: "json", version: 1 })}${RECORD_SEPARATOR}`);
-    };
-    socket.onmessage = (event) => {
-      for (const rawMessage of String(event.data).split(RECORD_SEPARATOR)) {
-        if (!rawMessage) continue;
-        const message = parseMessage(rawMessage);
-        if (!message || message.type !== 1 || message.target !== "mediaUpdated") continue;
-        const update = message.arguments?.[0];
-        if (isMediaUpdate(update)) onUpdate(update);
-      }
-    };
-    socket.onclose = () => {
-      socket = null;
-      if (stopped) return;
-      reconnectTimer = window.setTimeout(connect, retryMs);
-      retryMs = Math.min(retryMs * 2, 15000);
-    };
-    socket.onerror = () => {
-      socket?.close();
-    };
-  };
-
-  connect();
+  const unsubscribe = getRealtimeConnection().subscribe("mediaUpdated", (update) => {
+    if (isMediaUpdate(update)) onUpdate(update);
+  });
 
   return {
-    stop() {
-      stopped = true;
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
-      socket?.close();
-    },
+    stop: unsubscribe,
   };
-}
-
-function hubUrl(): string {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/hubs/media`;
-}
-
-function parseMessage(value: string): SignalRMessage | null {
-  try {
-    return JSON.parse(value) as SignalRMessage;
-  } catch {
-    return null;
-  }
 }
 
 function isMediaUpdate(value: unknown): value is MediaRealtimeUpdate {
@@ -245,10 +197,4 @@ function phaseFromMedia(media: MediaDto): MediaRealtimeUpdate["phase"] {
     return status;
   }
   return stage || status || "uploaded";
-}
-
-interface SignalRMessage {
-  type?: number;
-  target?: string;
-  arguments?: unknown[];
 }
