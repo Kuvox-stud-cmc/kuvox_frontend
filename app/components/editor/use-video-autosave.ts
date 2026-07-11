@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef } from "react";
+import type { ProjectMediaDto } from "~/lib/api";
 
 import {
   deletePendingSync,
   deleteVideoTimelineDraft,
-  enqueuePendingSync,
   listPendingSync,
+  persistVideoTimelineMutation,
   saveProjectSnapshot,
   saveVideoTimelineDraft,
   type CachedPendingSyncRecord,
   type EditorCacheScope,
 } from "~/lib/editor/editor-cache";
+import { attachProjectMediaFromBff } from "~/lib/editor/project-media-api.client";
+import { flushVideoEditorPerformanceMetrics } from "~/lib/editor/video-performance.client";
 import {
   createSaveVideoTimelineRequest,
   getVideoTimelineFromBff,
@@ -32,7 +35,11 @@ import {
   editorBackendSyncSucceeded,
   editorConflictResolved,
   editorDocumentLoaded,
+  editorLocalMutationPersisted,
+  editorLocalSaveFailed,
   editorServerChangedDetected,
+  editorSyncBaseUpdated,
+  hasUnsyncedEditorChanges,
   type EditorState,
   type VideoEditorHistoryFrame,
 } from "~/store/slices/editor-slice";
@@ -42,51 +49,86 @@ interface UseVideoAutosaveInput {
   projectName: string;
   cacheScope: EditorCacheScope;
   editor: EditorState;
+  onProjectMediaAttached?: (media: ProjectMediaDto[]) => void;
 }
 
-export type VideoExportFlushResult =
-  | { ok: true; timelineId: string; revisionNumber: number }
-  | { ok: false; reason: "conflict" | "sync-failed"; message: string };
+export type VideoSyncResult =
+  | { status: "success"; timelineId: string; revisionNumber: number }
+  | { status: "conflict"; message: string }
+  | { status: "failure"; message: string };
+
+export type VideoExportFlushResult = VideoSyncResult;
 
 const videoTimelineAutosaveIntervalMs = 15 * 60 * 1000;
 
-export function useVideoAutosave({ projectId, projectName, cacheScope, editor }: UseVideoAutosaveInput) {
+export function useVideoAutosave({ projectId, projectName, cacheScope, editor, onProjectMediaAttached }: UseVideoAutosaveInput) {
   const dispatch = useAppDispatch();
-  const retryTimer = useRef<number | null>(null);
-  const retryCount = useRef(0);
-  const latestDocumentUpdatedAt = useRef<string | null>(null);
-  const syncNowRef = useRef<() => Promise<void>>(async () => undefined);
+  const latestEditor = useRef(editor);
+  const persistedDocumentRevision = useRef<number | null>(null);
+  const persistedHistoryMutationCount = useRef<number | null>(null);
+  const localWriteQueue = useRef<Promise<void>>(Promise.resolve());
+  const autosaveTimer = useRef<number | null>(null);
+  const autosaveDeadlineConsumed = useRef(false);
+  const syncInFlight = useRef<Promise<VideoSyncResult> | null>(null);
+  const syncNowRef = useRef<() => Promise<VideoSyncResult>>(async () => ({
+    status: "failure",
+    message: "Video document is not loaded.",
+  }));
 
-  const clearRetryTimer = useCallback(() => {
-    if (retryTimer.current !== null) {
-      window.clearTimeout(retryTimer.current);
-      retryTimer.current = null;
+  const flushLocalDraft = useCallback(async () => {
+    await localWriteQueue.current.catch(() => undefined);
+    const current = latestEditor.current;
+    if (!current.document || current.projectId !== projectId) return;
+    if (
+      persistedDocumentRevision.current === current.document.history.revision &&
+      persistedHistoryMutationCount.current === current.historyMutationCount
+    ) return;
+
+    const persisted = await persistVideoTimelineMutation({
+      document: current.document,
+      scope: cacheScope,
+      draftOptions: {
+        serverRevisionNumber: current.serverRevisionNumber ?? undefined,
+        lastSyncedAt: current.lastSyncedAt,
+        syncError: current.syncError,
+      },
+      operation: {
+        entityId: `revision:${current.document.history.revision}:flush:${current.historyMutationCount}`,
+        metadata: {
+          localRevision: current.document.history.revision,
+          historyMutationCount: current.historyMutationCount,
+        },
+      },
+    });
+    if (!persisted.ok) {
+      const message = persisted.error ?? "Local timeline draft could not be saved.";
+      const pending = await listPendingSync(cacheScope, projectId);
+      dispatch(editorLocalSaveFailed({
+        error: message,
+        pendingSyncCount: pending.ok ? pending.value.length : undefined,
+      }));
+      throw new Error(message);
     }
-  }, []);
+    persistedDocumentRevision.current = current.document.history.revision;
+    persistedHistoryMutationCount.current = current.historyMutationCount;
+    const pending = await listPendingSync(cacheScope, projectId);
+    dispatch(editorLocalMutationPersisted({
+      documentRevision: current.document.history.revision,
+      pendingSyncCount: pending.ok ? pending.value.length : current.pendingSyncCount,
+    }));
+  }, [cacheScope, dispatch, projectId]);
 
   const syncPending = useCallback(async (
     document: VideoProjectDocument,
-    documentUpdatedAt: string,
     baseRevisionNumber: number,
-    force = false,
-  ) => {
-    if (!force && editor.syncStatus === "server-changed") return;
-
+    capturedHistoryMutationCount: number,
+  ): Promise<VideoSyncResult> => {
     const pending = await listPendingSync(cacheScope, projectId);
-    if (!pending.ok || pending.value.length === 0) {
-      if (editor.syncStatus === "dirty") {
-        await saveVideoTimelineDraft(document, cacheScope, {
-          serverRevisionNumber: baseRevisionNumber,
-          lastSyncedAt: editor.lastSyncedAt,
-          hasUnsyncedChanges: true,
-          syncError: null,
-        });
-      }
-      return;
-    }
-
-    const includedPending = pending.value.filter((entry) => entry.kind === "timelineDraft");
-    const operations = includedPending
+    if (!pending.ok) return { status: "failure", message: "Pending timeline changes could not be read." };
+    const includedPending = pending.value;
+    const timelinePending = includedPending.filter((entry) => entry.kind === "timelineDraft");
+    const attachmentPending = includedPending.filter((entry) => entry.kind === "projectMediaAttach");
+    const operations = timelinePending
       .map(operationEntryFromPending)
       .filter((entry): entry is VideoTimelineSyncOperationEntry => entry !== null)
       .reverse();
@@ -94,6 +136,13 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
 
     dispatch(editorBackendSyncStarted());
     try {
+      const mediaIds = Array.from(new Set(attachmentPending.flatMap(mediaIdFromPending)));
+      if (mediaIds.length > 0) {
+        const attached = await attachProjectMediaFromBff(projectId, mediaIds, { correlationId });
+        await Promise.all(attachmentPending.map((entry) => deletePendingSync(entry.id)));
+        onProjectMediaAttached?.(attached);
+      }
+
       const result = await saveVideoTimelineToBff(
         projectId,
         createSaveVideoTimelineRequest({
@@ -106,37 +155,47 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
         "Video timeline sync failed.",
         {
           correlationId,
-          pendingCount: includedPending.length,
-          timelineId: editor.serverTimelineId,
+          pendingCount: timelinePending.length,
+          timelineId: latestEditor.current.serverTimelineId,
         },
       );
 
       if (!result.ok) {
-        const latestServer = await getVideoTimelineFromBff(projectId, { correlationId }).catch(() => null);
+        const latestResult = await getVideoTimelineFromBff(projectId, { correlationId });
+        const latestServer = latestResult.status === "found" ? latestResult.timeline : null;
+        if (latestServer) {
+          dispatch(editorSyncBaseUpdated({
+            revisionNumber: latestServer.revisionNumber,
+            timelineId: latestServer.timelineId,
+            syncedAt: latestServer.updatedAt,
+          }));
+        }
         dispatch(editorServerChangedDetected({
           reason: "local-unsynced-server-changed",
           serverProjectUpdatedAt: latestServer?.updatedAt ?? new Date().toISOString(),
         }));
         await saveVideoTimelineDraft(document, cacheScope, {
           serverRevisionNumber: latestServer?.revisionNumber ?? baseRevisionNumber,
-          lastSyncedAt: editor.lastSyncedAt,
+          lastSyncedAt: latestEditor.current.lastSyncedAt,
           hasUnsyncedChanges: true,
           syncError: result.message,
         });
-        return;
+        return { status: "conflict", message: result.message };
       }
-
-      clearRetryTimer();
-      retryCount.current = 0;
-      if (latestDocumentUpdatedAt.current !== documentUpdatedAt) return;
 
       const saved = result.timeline;
       const syncedAt = saved.updatedAt ?? new Date().toISOString();
-      await Promise.all(includedPending.map((entry) => deletePendingSync(entry.id)));
-      await saveVideoTimelineDraft(document, cacheScope, {
+      await Promise.all(timelinePending.map((entry) => deletePendingSync(entry.id)));
+      const current = latestEditor.current;
+      const stable = current.document?.history.revision === document.history.revision &&
+        current.historyMutationCount === capturedHistoryMutationCount;
+      const remaining = await listPendingSync(cacheScope, projectId);
+      const remainingCount = remaining.ok ? remaining.value.length : 0;
+      const fullySynced = stable && remaining.ok && remainingCount === 0;
+      await saveVideoTimelineDraft(stable ? document : current.document ?? document, cacheScope, {
         serverRevisionNumber: saved.revisionNumber,
         lastSyncedAt: syncedAt,
-        hasUnsyncedChanges: false,
+        hasUnsyncedChanges: !fullySynced,
         syncError: null,
       });
       await saveProjectSnapshot({
@@ -147,21 +206,42 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
         revision: saved.revisionNumber,
         projectUpdatedAt: syncedAt,
       });
-      dispatch(editorBackendSyncSucceeded({ revisionNumber: saved.revisionNumber, syncedAt, timelineId: saved.timelineId }));
+      dispatch(editorBackendSyncSucceeded({
+        revisionNumber: saved.revisionNumber,
+        savedDocumentRevision: document.history.revision,
+        syncedAt,
+        timelineId: saved.timelineId,
+        pendingSyncCount: remainingCount,
+        fullySynced,
+      }));
+      await flushVideoEditorPerformanceMetrics();
+      if (!fullySynced) {
+        return {
+          status: "failure",
+          message: stable
+            ? "The timeline synchronized, but local pending records could not be cleared. Try again before leaving."
+            : "The timeline changed while synchronization was in progress. Sync again before leaving.",
+        };
+      }
+      return {
+        status: "success",
+        timelineId: saved.timelineId,
+        revisionNumber: saved.revisionNumber,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Video timeline sync failed.";
       logVideoEditorEvent("editor.sync.failure", {
         projectId,
         correlationId,
-        pendingCount: includedPending.length,
+        pendingCount: timelinePending.length,
         baseRevisionNumber,
-        timelineId: editor.serverTimelineId,
+        timelineId: latestEditor.current.serverTimelineId,
         reason: message,
       }, "error");
       const pendingAfterFailure = await listPendingSync(cacheScope, projectId);
       await saveVideoTimelineDraft(document, cacheScope, {
         serverRevisionNumber: baseRevisionNumber,
-        lastSyncedAt: editor.lastSyncedAt,
+        lastSyncedAt: latestEditor.current.lastSyncedAt,
         hasUnsyncedChanges: true,
         syncError: message,
       });
@@ -169,38 +249,65 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
         error: message,
         pendingSyncCount: pendingAfterFailure.ok ? pendingAfterFailure.value.length : undefined,
       }));
-      clearRetryTimer();
-      const delay = Math.min(30_000, 2000 * 2 ** retryCount.current);
-      retryCount.current = Math.min(retryCount.current + 1, 4);
-      retryTimer.current = window.setTimeout(() => {
-        void syncPending(document, documentUpdatedAt, baseRevisionNumber, force);
-      }, delay);
+      return { status: "failure", message };
     }
   }, [
     cacheScope,
-    clearRetryTimer,
     dispatch,
-    editor.lastSyncedAt,
-    editor.syncStatus,
+    onProjectMediaAttached,
     projectId,
   ]);
 
   useEffect(() => {
-    latestDocumentUpdatedAt.current = editor.document?.updatedAt ?? null;
-  }, [editor.document?.updatedAt]);
+    latestEditor.current = editor;
+  }, [editor]);
 
-  const syncNow = useCallback(async () => {
-    if (!editor.document || editor.projectId !== projectId) return;
-    if (editor.syncStatus === "server-changed" || editor.syncStatus === "syncing") return;
-    if (editor.syncStatus !== "dirty" && editor.syncStatus !== "saved-local" && editor.syncStatus !== "sync-failed") return;
+  const syncNow = useCallback(async (): Promise<VideoSyncResult> => {
+    if (syncInFlight.current) return syncInFlight.current;
 
-    const document = editor.document;
-    await syncPending(document, document.updatedAt, editor.serverRevisionNumber ?? 0, true);
+    const operation = (async (): Promise<VideoSyncResult> => {
+      const beforeFlush = latestEditor.current;
+      if (!beforeFlush.document || beforeFlush.projectId !== projectId) {
+        return { status: "failure", message: "Video document is not loaded." };
+      }
+      if (beforeFlush.syncStatus === "server-changed") {
+        return { status: "conflict", message: "Resolve the server changes before synchronizing." };
+      }
+      if (
+        !hasUnsyncedEditorChanges(beforeFlush) &&
+        beforeFlush.serverTimelineId &&
+        beforeFlush.serverRevisionNumber !== null
+      ) {
+        return {
+          status: "success",
+          timelineId: beforeFlush.serverTimelineId,
+          revisionNumber: beforeFlush.serverRevisionNumber,
+        };
+      }
+
+      try {
+        await flushLocalDraft();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Local timeline draft could not be saved.";
+        dispatch(editorLocalSaveFailed({ error: message }));
+        return { status: "failure", message };
+      }
+
+      const current = latestEditor.current;
+      const document = current.document;
+      if (!document) return { status: "failure", message: "Video document is not loaded." };
+      return syncPending(document, current.serverRevisionNumber ?? 0, current.historyMutationCount);
+    })();
+
+    syncInFlight.current = operation;
+    try {
+      return await operation;
+    } finally {
+      if (syncInFlight.current === operation) syncInFlight.current = null;
+    }
   }, [
-    editor.document,
-    editor.projectId,
-    editor.serverRevisionNumber,
-    editor.syncStatus,
+    dispatch,
+    flushLocalDraft,
     projectId,
     syncPending,
   ]);
@@ -210,54 +317,81 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
   }, [syncNow]);
 
   useEffect(() => {
-    if (!editor.document || editor.projectId !== projectId) return;
-    if (editor.syncStatus === "server-changed") return;
-    if (editor.syncStatus !== "dirty" && editor.syncStatus !== "saved-local" && editor.syncStatus !== "sync-failed") return;
+    const unsynced = editor.projectId === projectId && hasUnsyncedEditorChanges(editor);
+    if (!unsynced) {
+      autosaveDeadlineConsumed.current = false;
+      if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
+      return;
+    }
+    if (editor.syncStatus === "server-changed" || autosaveDeadlineConsumed.current || autosaveTimer.current !== null) return;
 
-    const intervalId = window.setInterval(() => {
+    autosaveTimer.current = window.setTimeout(() => {
+      autosaveTimer.current = null;
+      autosaveDeadlineConsumed.current = true;
       void syncNowRef.current();
     }, videoTimelineAutosaveIntervalMs);
 
-    return () => window.clearInterval(intervalId);
+    return () => {
+      if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
+    };
   }, [
-    editor.projectId,
-    editor.syncStatus,
+    editor.projectId === projectId && hasUnsyncedEditorChanges(editor),
+    editor.syncStatus === "server-changed",
     projectId,
   ]);
 
   useEffect(() => {
-    if (!editor.document || !editor.lastHistoryFrame || !editor.lastHistoryAction) return;
+    if (!editor.document || editor.projectId !== projectId || editor.syncStatus !== "dirty") return;
 
     const document = editor.document;
     const frame = editor.lastHistoryFrame;
     const action = editor.lastHistoryAction;
 
     async function saveLocalMutation() {
-      await saveVideoTimelineDraft(document, cacheScope, {
-        serverRevisionNumber: editor.serverRevisionNumber ?? undefined,
-        lastSyncedAt: editor.lastSyncedAt,
-        hasUnsyncedChanges: true,
-        syncError: null,
-      });
-
-      await enqueuePendingSync({
+      const saved = await persistVideoTimelineMutation({
+        document,
         scope: cacheScope,
-        projectId,
-        kind: "timelineDraft",
-        entityId: `${document.history.revision}:${action}:${frame.id}`,
-        operationBatchId: frame.batch.id,
-        metadata: {
-          localRevision: document.history.revision,
-          action,
-          operation: toJsonValue(operationEntryFromFrame(frame, action)),
+        draftOptions: {
+          serverRevisionNumber: editor.serverRevisionNumber ?? undefined,
+          lastSyncedAt: editor.lastSyncedAt,
+          syncError: null,
         },
+        operation: {
+          entityId: frame && action
+            ? `${document.history.revision}:${action}:${frame.id}`
+            : `${document.history.revision}:mutation`,
+          operationBatchId: frame?.batch.id,
+          metadata: {
+            localRevision: document.history.revision,
+            action: action ?? "edit",
+            operation: toJsonValue(frame && action
+              ? operationEntryFromFrame(frame, action)
+              : genericOperationEntry(document)),
+          },
+        },
+        projectMediaIds: frame ? projectMediaIdsFromFrame(frame) : [],
       });
+      if (!saved.ok) throw new Error("Local timeline mutation could not be saved.");
+      persistedDocumentRevision.current = document.history.revision;
+      persistedHistoryMutationCount.current = editor.historyMutationCount;
+      const pending = await listPendingSync(cacheScope, projectId);
+      dispatch(editorLocalMutationPersisted({
+        documentRevision: document.history.revision,
+        pendingSyncCount: pending.ok ? pending.value.length : editor.pendingSyncCount,
+      }));
     }
 
-    void saveLocalMutation().catch((error: unknown) => {
-      dispatch(editorBackendSyncFailed({
-        error: error instanceof Error ? error.message : "Local timeline draft could not be saved.",
-      }));
+    const queuedWrite = localWriteQueue.current.catch(() => undefined).then(saveLocalMutation);
+    localWriteQueue.current = queuedWrite;
+    void queuedWrite.catch((error: unknown) => {
+      void listPendingSync(cacheScope, projectId).then((pending) => {
+        dispatch(editorLocalSaveFailed({
+          error: error instanceof Error ? error.message : "Local timeline draft could not be saved.",
+          pendingSyncCount: pending.ok ? pending.value.length : undefined,
+        }));
+      });
     });
   }, [
     cacheScope,
@@ -267,17 +401,37 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
     editor.lastHistoryAction,
     editor.lastHistoryFrame,
     editor.lastSyncedAt,
+    editor.pendingSyncCount,
+    editor.projectId,
     editor.serverRevisionNumber,
+    editor.syncStatus,
     projectId,
   ]);
 
   const keepLocalEdits = useCallback(async () => {
     if (!editor.document) return;
+    const latestResult = await getVideoTimelineFromBff(projectId, {
+      correlationId: createEditorCorrelationId("conflict-keep-local"),
+    });
+    const latestServer = latestResult.status === "found" ? latestResult.timeline : null;
+    if (latestServer) {
+      dispatch(editorSyncBaseUpdated({
+        revisionNumber: latestServer.revisionNumber,
+        timelineId: latestServer.timelineId,
+        syncedAt: latestServer.updatedAt,
+      }));
+    }
     dispatch(editorConflictResolved({ resolution: "keep-local" }));
-    const correlationId = createEditorCorrelationId("conflict-keep-local");
-    const latestServer = await getVideoTimelineFromBff(projectId, { correlationId });
-    void syncPending(editor.document, editor.document.updatedAt, latestServer?.revisionNumber ?? 0, true);
-  }, [dispatch, editor.document, projectId, syncPending]);
+    await flushLocalDraft();
+    if (latestServer) {
+      await saveVideoTimelineDraft(editor.document, cacheScope, {
+        serverRevisionNumber: latestServer.revisionNumber,
+        lastSyncedAt: latestServer.updatedAt,
+        hasUnsyncedChanges: true,
+        syncError: null,
+      });
+    }
+  }, [cacheScope, dispatch, editor.document, flushLocalDraft, projectId]);
 
   const reloadServerCopy = useCallback(async () => {
     const currentDocument = editor.document;
@@ -303,10 +457,11 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
         });
       }
 
-      const server = await getVideoTimelineFromBff(projectId);
+      const serverResult = await getVideoTimelineFromBff(projectId);
+      if (serverResult.status === "unavailable") throw new Error(serverResult.message);
       dispatch(editorConflictResolved({ resolution: "reload-server" }));
 
-      if (!server) {
+      if (serverResult.status === "not-found") {
         dispatch(editorDocumentLoaded({
           document: createEmptyVideoProjectDocument({ id: projectId, name: projectName }),
           source: "empty",
@@ -320,6 +475,8 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
         await clearLocalTimelineDraftAfterServerReload(cacheScope, projectId).catch(() => undefined);
         return;
       }
+
+      const server = serverResult.timeline;
 
       dispatch(editorDocumentLoaded({
         document: server.document,
@@ -352,160 +509,55 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor }:
   ]);
 
   const retryNow = useCallback(() => {
-    clearRetryTimer();
     void syncNow();
-  }, [clearRetryTimer, syncNow]);
+  }, [syncNow]);
 
   const flushForExport = useCallback(async (): Promise<VideoExportFlushResult> => {
     if (!editor.document) {
-      return { ok: false, reason: "sync-failed", message: "Video document is not loaded." };
+      return { status: "failure", message: "Video document is not loaded." };
     }
 
     if (editor.syncStatus === "server-changed") {
-      return { ok: false, reason: "conflict", message: "Resolve the server changes before exporting." };
+      return { status: "conflict", message: "Resolve the server changes before exporting." };
     }
 
-    if (
-      (editor.syncStatus === "clean" || editor.syncStatus === "synced") &&
-      editor.serverRevisionNumber !== null
-    ) {
+    if (!hasUnsyncedEditorChanges(editor) && editor.serverRevisionNumber !== null) {
       if (editor.serverTimelineId) {
         return {
-          ok: true,
+          status: "success",
           timelineId: editor.serverTimelineId,
           revisionNumber: editor.serverRevisionNumber,
         };
       }
 
       try {
-        const latest = await getVideoTimelineFromBff(projectId, {
+        const latestResult = await getVideoTimelineFromBff(projectId, {
           correlationId: createEditorCorrelationId("export-sync-check"),
         });
-        if (latest) {
+        if (latestResult.status === "found") {
+          const latest = latestResult.timeline;
           return {
-            ok: true,
+            status: "success",
             timelineId: latest.timelineId,
             revisionNumber: latest.revisionNumber,
           };
         }
       } catch {
         return {
-          ok: false,
-          reason: "sync-failed",
+          status: "failure",
           message: "Could not confirm the server timeline before export.",
         };
       }
     }
 
-    const document = editor.document;
-    const baseRevisionNumber = editor.serverRevisionNumber ?? 0;
-    const pending = await listPendingSync(cacheScope, projectId);
-    const includedPending = pending.ok
-      ? pending.value.filter((entry) => entry.kind === "timelineDraft")
-      : [];
-    const operations = includedPending
-      .map(operationEntryFromPending)
-      .filter((entry): entry is VideoTimelineSyncOperationEntry => entry !== null)
-      .reverse();
-    const correlationId = createEditorCorrelationId("export-sync");
-
-    dispatch(editorBackendSyncStarted());
-    try {
-      const result = await saveVideoTimelineToBff(
-        projectId,
-        createSaveVideoTimelineRequest({
-          document,
-          operations,
-          baseRevisionNumber,
-          source: operations.at(-1)?.source ?? "manual",
-          label: operations.at(-1)?.label ?? "Timeline export sync",
-        }),
-        "Timeline export sync failed.",
-        {
-          correlationId,
-          pendingCount: includedPending.length,
-          timelineId: editor.serverTimelineId,
-        },
-      );
-
-      if (!result.ok) {
-        const latestServer = await getVideoTimelineFromBff(projectId, { correlationId }).catch(() => null);
-        dispatch(editorServerChangedDetected({
-          reason: "local-unsynced-server-changed",
-          serverProjectUpdatedAt: latestServer?.updatedAt ?? new Date().toISOString(),
-        }));
-        await saveVideoTimelineDraft(document, cacheScope, {
-          serverRevisionNumber: latestServer?.revisionNumber ?? baseRevisionNumber,
-          lastSyncedAt: editor.lastSyncedAt,
-          hasUnsyncedChanges: true,
-          syncError: result.message,
-        });
-        return { ok: false, reason: "conflict", message: result.message };
-      }
-
-      const saved = result.timeline;
-      const syncedAt = saved.updatedAt ?? new Date().toISOString();
-      await Promise.all(includedPending.map((entry) => deletePendingSync(entry.id)));
-      await saveVideoTimelineDraft(document, cacheScope, {
-        serverRevisionNumber: saved.revisionNumber,
-        lastSyncedAt: syncedAt,
-        hasUnsyncedChanges: false,
-        syncError: null,
-      });
-      await saveProjectSnapshot({
-        scope: cacheScope,
-        projectId,
-        snapshot: toJsonValue(document),
-        documentSchemaVersion: document.schemaVersion,
-        revision: saved.revisionNumber,
-        projectUpdatedAt: syncedAt,
-      });
-      dispatch(editorBackendSyncSucceeded({
-        revisionNumber: saved.revisionNumber,
-        syncedAt,
-        timelineId: saved.timelineId,
-      }));
-
-      return {
-        ok: true,
-        timelineId: saved.timelineId,
-        revisionNumber: saved.revisionNumber,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Timeline export sync failed.";
-      logVideoEditorEvent("editor.sync.failure", {
-        projectId,
-        correlationId,
-        pendingCount: includedPending.length,
-        baseRevisionNumber,
-        timelineId: editor.serverTimelineId,
-        reason: message,
-      }, "error");
-      const pendingAfterFailure = await listPendingSync(cacheScope, projectId);
-      await saveVideoTimelineDraft(document, cacheScope, {
-        serverRevisionNumber: baseRevisionNumber,
-        lastSyncedAt: editor.lastSyncedAt,
-        hasUnsyncedChanges: true,
-        syncError: message,
-      });
-      dispatch(editorBackendSyncFailed({
-        error: message,
-        pendingSyncCount: pendingAfterFailure.ok ? pendingAfterFailure.value.length : undefined,
-      }));
-      return { ok: false, reason: "sync-failed", message };
-    }
+    return syncNow();
   }, [
-    cacheScope,
-    dispatch,
-    editor.document,
-    editor.lastSyncedAt,
-    editor.serverRevisionNumber,
-    editor.serverTimelineId,
-    editor.syncStatus,
+    editor,
     projectId,
+    syncNow,
   ]);
 
-  return { flushForExport, keepLocalEdits, reloadServerCopy, retryNow, syncNow };
+  return { flushForExport, flushLocalDraft, keepLocalEdits, reloadServerCopy, retryNow, syncNow };
 }
 
 async function clearLocalTimelineDraftAfterServerReload(
@@ -531,6 +583,17 @@ function operationEntryFromFrame(
     createdAt: new Date().toISOString(),
     revision: frame.historyEntry.revision,
     operationIds: frame.operationIds,
+  };
+}
+
+function genericOperationEntry(document: VideoProjectDocument): VideoTimelineSyncOperationEntry {
+  return {
+    id: `edit:revision:${document.history.revision}`,
+    type: "edit",
+    label: "Timeline edit",
+    source: "manual",
+    createdAt: document.updatedAt,
+    revision: document.history.revision,
   };
 }
 
@@ -566,6 +629,20 @@ function operationMetadata(value: Record<string, unknown>): VideoTimelineSyncOpe
       ? value.operationIds.filter((item): item is string => typeof item === "string")
       : undefined,
   };
+}
+
+function projectMediaIdsFromFrame(frame: VideoEditorHistoryFrame): string[] {
+  return frame.batch.operations.flatMap((operation) => {
+    if (operation.type !== "addMediaToTimeline" && operation.type !== "addAudioItem") return [];
+    return typeof operation.item.mediaId === "string" ? [operation.item.mediaId] : [];
+  });
+}
+
+function mediaIdFromPending(record: CachedPendingSyncRecord): string[] {
+  if (record.entityId) return [record.entityId];
+  if (!record.metadata || typeof record.metadata !== "object" || Array.isArray(record.metadata)) return [];
+  const mediaId = (record.metadata as Record<string, unknown>).mediaId;
+  return typeof mediaId === "string" ? [mediaId] : [];
 }
 
 function toJsonValue(value: unknown): JsonValue {

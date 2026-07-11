@@ -41,22 +41,37 @@ export interface ServerVideoTimeline {
   updatedByUserId: string | null;
 }
 
+export type VideoTimelineLoadResult =
+  | { status: "found"; timeline: ServerVideoTimeline }
+  | { status: "not-found" }
+  | { status: "unavailable"; message: string };
+
 export async function getVideoTimelineFromBff(
   projectId: string,
   options: { correlationId?: string } = {},
-): Promise<ServerVideoTimeline | null> {
+): Promise<VideoTimelineLoadResult> {
   const correlationId = options.correlationId ?? createEditorCorrelationId("timeline-load");
-  const response = await fetch(videoTimelineUrl(projectId), {
-    headers: withEditorCorrelationHeaders({ Accept: "application/json" }, correlationId),
-  });
-  if (response.status === 404) {
-    logVideoEditorEvent("editor.cache.miss", { projectId, correlationId, source: "server-timeline" }, "warn");
-    return null;
+  try {
+    const response = await fetch(videoTimelineUrl(projectId), {
+      headers: withEditorCorrelationHeaders({ Accept: "application/json" }, correlationId),
+    });
+    if (response.status === 404) {
+      logVideoEditorEvent("editor.cache.miss", { projectId, correlationId, source: "server-timeline" }, "warn");
+      return { status: "not-found" };
+    }
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        message: await readVideoTimelineError(response, "Server timeline could not be loaded."),
+      };
+    }
+    return { status: "found", timeline: normalizeVideoTimelinePayload(await response.json()) };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      message: error instanceof Error ? error.message : "Server timeline could not be loaded.",
+    };
   }
-  if (!response.ok) {
-    throw new Error(await readVideoTimelineError(response, "Server timeline could not be loaded."));
-  }
-  return normalizeVideoTimelinePayload(await response.json());
 }
 
 export async function saveVideoTimelineToBff(

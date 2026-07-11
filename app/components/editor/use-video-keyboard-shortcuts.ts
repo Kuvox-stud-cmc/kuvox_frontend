@@ -4,10 +4,13 @@ import {
   buildShortcutDeleteOperation,
   buildShortcutNudgeOperations,
   buildShortcutSplitOperations,
+  buildVisualPositionNudgeOperation,
   classifyVideoEditorShortcut,
   frameDurationSeconds,
+  isSingleSelectedVisual,
   resolveEscapeShortcut,
   selectVisibleTimelineItemIds,
+  shouldIgnoreVideoEditorShortcutTarget,
 } from "~/lib/editor/video-keyboard-shortcuts";
 import { createVideoOperationBatch } from "~/lib/editor/video-operations";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
@@ -18,6 +21,7 @@ import {
   playbackStepChanged,
   playbackToggled,
   popoverClosed,
+  selectActiveToolId,
   selectCurrentTimeSeconds,
   selectOverlayState,
   selectSelectedItemIds,
@@ -34,7 +38,7 @@ import {
 
 export function useVideoKeyboardShortcuts(
   rootRef: RefObject<HTMLElement | null>,
-  options: { onSave?: () => void | Promise<void> } = {},
+  options: { onSave?: () => unknown | Promise<unknown> } = {},
 ) {
   const onSave = options.onSave;
   const dispatch = useAppDispatch();
@@ -43,6 +47,7 @@ export function useVideoKeyboardShortcuts(
   const currentTime = useAppSelector(selectCurrentTimeSeconds);
   const timelineZoom = useAppSelector(selectTimelineZoom);
   const { activeModal, activePopover } = useAppSelector(selectOverlayState);
+  const activeToolId = useAppSelector(selectActiveToolId);
   const { clipsLinked } = useAppSelector(selectTimelinePanelState);
 
   useEffect(() => {
@@ -53,6 +58,30 @@ export function useVideoKeyboardShortcuts(
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "s") {
         event.preventDefault();
         void onSave?.();
+        return;
+      }
+
+      const arrowDelta = visualArrowDelta(event);
+      if (
+        arrowDelta
+        && document
+        && activeToolId === "select"
+        && !activeModal
+        && !activePopover
+        && !shouldIgnoreVideoEditorShortcutTarget(event.target)
+        && isSingleSelectedVisual(document, selectedItemIds)
+      ) {
+        const step = event.shiftKey ? 10 : 1;
+        const operation = buildVisualPositionNudgeOperation({
+          document,
+          selectedItemIds,
+          deltaX: arrowDelta.x * step,
+          deltaY: arrowDelta.y * step,
+        });
+        if (operation) {
+          event.preventDefault();
+          dispatch(videoOperationApplied(operation));
+        }
         return;
       }
 
@@ -197,6 +226,7 @@ export function useVideoKeyboardShortcuts(
   }, [
     activeModal,
     activePopover,
+    activeToolId,
     clipsLinked,
     currentTime,
     dispatch,
@@ -206,4 +236,13 @@ export function useVideoKeyboardShortcuts(
     timelineZoom,
     onSave,
   ]);
+}
+
+function visualArrowDelta(event: KeyboardEvent): { x: -1 | 0 | 1; y: -1 | 0 | 1 } | null {
+  if (event.metaKey || event.ctrlKey || event.altKey) return null;
+  if (event.key === "ArrowLeft") return { x: -1, y: 0 };
+  if (event.key === "ArrowRight") return { x: 1, y: 0 };
+  if (event.key === "ArrowUp") return { x: 0, y: -1 };
+  if (event.key === "ArrowDown") return { x: 0, y: 1 };
+  return null;
 }

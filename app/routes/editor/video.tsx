@@ -7,6 +7,7 @@ import { VideoEditorWorkspace } from "~/components/editor/video-editor-workspace
 import type { HeaderNotifications } from "~/routes/dashboard/header-bar";
 import { OwnerKind, ProjectKind, type MediaDto, type NotificationDto, type ProjectMediaDto, type Workspace } from "~/lib/api";
 import {
+  ApiError,
   getProject,
   getStudioClaims,
   getUnreadNotificationCount,
@@ -16,6 +17,7 @@ import {
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { classifyEditorRecoveryError } from "~/lib/editor/editor-recovery";
+import { getEditorBootstrap } from "~/lib/editor/editor-cache";
 import { getSession } from "~/lib/session.server";
 import { makeStore } from "~/store";
 
@@ -37,6 +39,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       notifications: { unreadCount: 0, items: [], error: null } satisfies HeaderNotifications,
       mediaLoadError: null,
       canWrite: true,
+      loadSource: "server" as const,
     };
   }
 
@@ -47,7 +50,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw redirect("/login");
   }
 
-  const project = await getProject(accessToken, params.projectId);
+  let project: import("~/lib/api").ProjectDto;
+  try {
+    project = await getProject(accessToken, params.projectId);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) throw error;
+    return {
+      projectId: params.projectId,
+      project: null,
+      user,
+      media: [] as MediaDto[],
+      projectMedia: [] as ProjectMediaDto[],
+      notifications: { unreadCount: 0, items: [], error: "Couldn't load notifications." } satisfies HeaderNotifications,
+      mediaLoadError: error instanceof Error ? error.message : "Project APIs are unavailable.",
+      canWrite: false,
+      loadSource: "unavailable" as const,
+    };
+  }
   if (project.kind === ProjectKind.Image) {
     throw redirect(`/editor/image/${project.id}`);
   }
@@ -104,6 +123,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     notifications,
     mediaLoadError,
     canWrite: canWriteProject(project, getStudioClaims(accessToken)),
+    loadSource: "server" as const,
   };
 }
 
@@ -179,7 +199,23 @@ function e2eProjectMediaFixture(media: MediaDto): ProjectMediaDto {
 }
 
 export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
-  return await serverLoader();
+  const serverData = await serverLoader();
+  if (serverData.project) return serverData;
+
+  const cached = await getEditorBootstrap(serverData.user.id, serverData.projectId);
+  if (!cached.ok) {
+    throw new Error(serverData.mediaLoadError || "Project APIs are unavailable and this project has not been cached.");
+  }
+
+  return {
+    ...serverData,
+    project: cached.value.project,
+    media: cached.value.media,
+    projectMedia: cached.value.projectMedia,
+    canWrite: cached.value.canWrite,
+    mediaLoadError: [serverData.mediaLoadError, ...cached.value.warnings].filter(Boolean).join(" ") || null,
+    loadSource: "cache" as const,
+  };
 }
 clientLoader.hydrate = true as const;
 
@@ -188,6 +224,7 @@ export function HydrateFallback() {
 }
 
 export default function VideoEditorRoute({ loaderData }: Route.ComponentProps) {
+  if (!loaderData.project) throw new Error("Video project metadata is unavailable.");
   const [store] = useState(() => makeStore());
   const revalidator = useRevalidator();
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -76,6 +76,40 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("VideoExportModal realtime jobs", () => {
+  it("does not create a render job when synchronization fails", async () => {
+    const user = userEvent.setup();
+    const flushForExport = vi.fn().mockResolvedValue({
+      status: "failure",
+      message: "Timeline sync failed.",
+    });
+    renderModal(vi.fn(), flushForExport);
+
+    await user.click(screen.getByRole("button", { name: /create render job/i }));
+
+    expect(await screen.findByText("Timeline sync failed.")).toBeInTheDocument();
+    expect(renderApi.request).not.toHaveBeenCalled();
+  });
+
+  it("renders exactly the synchronized revision and ignores duplicate starts", async () => {
+    let resolveSync!: (value: { status: "success"; timelineId: string; revisionNumber: number }) => void;
+    const flushForExport = vi.fn(() => new Promise<{ status: "success"; timelineId: string; revisionNumber: number }>((resolve) => {
+      resolveSync = resolve;
+    }));
+    renderModal(vi.fn(), flushForExport);
+
+    const start = screen.getByRole("button", { name: /create render job/i });
+    fireEvent.click(start);
+    fireEvent.click(start);
+    resolveSync({ status: "success", timelineId: "timeline-7", revisionNumber: 7 });
+
+    await waitFor(() => expect(renderApi.request).toHaveBeenCalledTimes(1));
+    expect(flushForExport).toHaveBeenCalledTimes(1);
+    expect(renderApi.request).toHaveBeenCalledWith(expect.objectContaining({
+      timelineId: "timeline-7",
+      revisionNumber: 7,
+    }));
+  });
+
   it("follows matching realtime transitions and creates only the authenticated output link", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -120,7 +154,10 @@ describe("VideoExportModal realtime jobs", () => {
   });
 });
 
-function renderModal(onClose: () => void) {
+function renderModal(
+  onClose: () => void,
+  flushForExport = async () => ({ status: "success" as const, timelineId: "timeline-1", revisionNumber: 2 }),
+) {
   render(
     <VideoExportModal
       open
@@ -129,7 +166,7 @@ function renderModal(onClose: () => void) {
       projectMedia={[]}
       projectName="Test project"
       onClose={onClose}
-      flushForExport={async () => ({ ok: true, timelineId: "timeline-1", revisionNumber: 2 })}
+      flushForExport={flushForExport}
     />,
   );
 }

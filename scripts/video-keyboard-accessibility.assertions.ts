@@ -5,6 +5,7 @@ import {
   buildShortcutDeleteOperation,
   buildShortcutNudgeOperations,
   buildShortcutSplitOperations,
+  buildVisualPositionNudgeOperation,
   classifyVideoEditorShortcut,
   resolveEscapeShortcut,
   selectVisibleTimelineItemIds,
@@ -20,9 +21,36 @@ function main(): void {
   assertIgnoredTargets();
   assertSelectAllExcludesHiddenTracks();
   assertNudgeBuildsBoundedUnlockedMoveOperations();
+  assertVisualPositionNudgesUseProjectPixels();
   assertSplitAndDeleteRequireValidUnlockedSelections();
   assertEscapePrefersOverlays();
   assertAccessibilityMarkers();
+}
+
+function assertVisualPositionNudgesUseProjectPixels(): void {
+  const document = createMockVideoProjectDocument("visual-keyboard", "Visual Keyboard");
+  const onePixel = buildVisualPositionNudgeOperation({
+    document,
+    selectedItemIds: ["tl-beach"],
+    deltaX: 1,
+    deltaY: -1,
+  });
+  assert.equal(onePixel?.type, "updateTransformCrop");
+  assert.deepEqual(onePixel?.transform, { x: 1, y: -1, scaleX: 1, scaleY: 1, rotation: 0 });
+
+  const locked = withTracks(document, { v1: { locked: true } });
+  assert.equal(buildVisualPositionNudgeOperation({
+    document: locked,
+    selectedItemIds: ["tl-beach"],
+    deltaX: 10,
+    deltaY: 0,
+  }), null);
+  assert.equal(buildVisualPositionNudgeOperation({
+    document,
+    selectedItemIds: ["tl-beach", "tl-city"],
+    deltaX: 10,
+    deltaY: 0,
+  }), null);
 }
 
 function assertShortcutParser(): void {

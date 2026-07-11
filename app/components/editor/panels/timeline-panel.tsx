@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { MediaKind } from "~/lib/api";
 
 import {
   buildSplitOperation,
@@ -35,11 +36,15 @@ import {
   activeToolChanged,
   clipsLinkedToggled,
   currentTimeChanged,
+  mediaPreparationRetried,
+  pendingTimelineInsertionRemoved,
   selectActiveToolId,
   selectCanUndo,
   selectCanRedo,
   selectCurrentTimeSeconds,
   selectProjectMediaAvailabilityById,
+  selectMediaPreparationState,
+  selectPendingTimelineInsertions,
   selectSelectedItemIds,
   selectTimelinePanelState,
   selectVideoDocument,
@@ -136,6 +141,8 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
   const canUndo = useAppSelector(selectCanUndo);
   const canRedo = useAppSelector(selectCanRedo);
   const projectMediaAvailabilityById = useAppSelector(selectProjectMediaAvailabilityById);
+  const mediaPreparationByKey = useAppSelector(selectMediaPreparationState);
+  const pendingInsertions = useAppSelector(selectPendingTimelineInsertions);
   const {
     open: timelineOpen,
     height: timelineHeight,
@@ -165,6 +172,8 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
   const [rippleEnabled, setRippleEnabled] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [trimOpen, setTrimOpen] = useState(false);
+  const [draggedTrackId, setDraggedTrackId] = useState<string | null>(null);
+  const [trackDropTargetId, setTrackDropTargetId] = useState<string | null>(null);
 
   const getDynamicTrackHeight = useCallback((kind: string) => {
     if (timelineHeight >= 220) {
@@ -286,6 +295,22 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
   const hasTimelineItems = itemLayouts.length > 0;
   const timelineTrackAreaHeight = contentSize.height;
   const playheadLeft = timeToPixel(currentTime, scale);
+  const pendingLayouts = useMemo(() => {
+    if (!document) return [];
+    return pendingInsertions.flatMap((pending) => {
+      const kind = pending.media.kind === MediaKind.Audio ? "audio" : pending.media.kind === MediaKind.Image ? "image" : "video";
+      const track = findCompatibleTrack(document, kind, pending.trackId);
+      const trackLayout = trackLayouts.find((layout) => layout.track.id === track?.id);
+      if (!trackLayout) return [];
+      return [{
+        pending,
+        left: timeToPixel(pending.timelineStart, scale),
+        top: trackLayout.top + 3,
+        width: Math.max(30, timeToPixel(pending.provisionalDuration, scale)),
+        height: Math.max(24, trackLayout.height - 6),
+      }];
+    });
+  }, [document, pendingInsertions, scale, trackLayouts]);
   const deletedMediaTimelineItemIds = useMemo(() => {
     if (!document) return [];
 
@@ -438,6 +463,18 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
       affectedEntityIds: Array.from(new Set(operations.flatMap((operation) => operation.affectedEntityIds))),
     })));
   }, [dispatch]);
+
+  const reorderTrack = useCallback((trackId: string, targetTrackId: string) => {
+    if (!document || trackId === targetTrackId) return;
+    const targetIndex = document.tracks.findIndex((track) => track.id === targetTrackId);
+    if (targetIndex < 0) return;
+    dispatch(videoOperationApplied({
+      ...operationMetadata("reorder-track", "Reorder track", [trackId, targetTrackId]),
+      type: "reorderTrack",
+      trackId,
+      targetIndex,
+    }));
+  }, [dispatch, document, operationMetadata]);
 
   useEffect(() => {
     if (!document || deletedMediaTimelineItemIds.length === 0) return;
@@ -1097,6 +1134,30 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
                     height={height}
                     soloed={soloedAudioTrackIds.includes(track.id)}
                     showControls={trackHeadersWidth >= 140}
+                    dragging={draggedTrackId === track.id}
+                    dropTarget={trackDropTargetId === track.id && draggedTrackId !== track.id}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("application/x-kuvox-track-id", track.id);
+                      setDraggedTrackId(track.id);
+                    }}
+                    onDragOver={(event) => {
+                      if (!draggedTrackId || draggedTrackId === track.id) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setTrackDropTargetId(track.id);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const sourceTrackId = event.dataTransfer.getData("application/x-kuvox-track-id") || draggedTrackId;
+                      if (sourceTrackId) reorderTrack(sourceTrackId, track.id);
+                      setDraggedTrackId(null);
+                      setTrackDropTargetId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedTrackId(null);
+                      setTrackDropTargetId(null);
+                    }}
                     onUpdate={(fields) => {
                       dispatch(videoOperationApplied({
                         ...operationMetadata("update-track", "Update track", [track.id]),
@@ -1420,10 +1481,17 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
                 selected={selectedItemIdSet.has(layout.item.id)}
                 linked={"linkedGroupId" in layout.item && Boolean(layout.item.linkedGroupId)}
                 activeToolId={activeToolId}
+                preparationStatus={"mediaId" in layout.item
+                  ? mediaItemStatus(layout.item.mediaId, mediaPreparationByKey)
+                  : "ready"}
                 onPointerDown={(event, edge) => {
                   event.stopPropagation();
                   if (!document) return;
                   selectItem(layout.item.id, event);
+                  if ("mediaId" in layout.item && mediaItemStatus(layout.item.mediaId, mediaPreparationByKey) !== "ready") {
+                    if (activeToolId !== "select") dispatch(toastShown("Preparing media is locked"));
+                    return;
+                  }
                   const itemIds = expandLinkedItemIds(
                     document,
                     selectedItemIdSet.has(layout.item.id) ? selectedItemIds : [layout.item.id],
@@ -1463,6 +1531,15 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
                   }
                   trackAreaRef.current?.setPointerCapture(event.pointerId);
                 }}
+              />
+            ))}
+            {pendingLayouts.map(({ pending, ...layout }) => (
+              <PendingTimelineItemBlock
+                key={pending.id}
+                pending={pending}
+                layout={layout}
+                onRetry={() => dispatch(mediaPreparationRetried(pending.resourceKey))}
+                onRemove={() => dispatch(pendingTimelineInsertionRemoved(pending.id))}
               />
             ))}
             <button
@@ -1539,6 +1616,12 @@ function TrackHeader({
   height,
   soloed,
   showControls = true,
+  dragging,
+  dropTarget,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
   onUpdate,
   onSolo,
   onDelete,
@@ -1547,6 +1630,12 @@ function TrackHeader({
   height: number;
   soloed: boolean;
   showControls?: boolean;
+  dragging: boolean;
+  dropTarget: boolean;
+  onDragStart: (event: DragEvent<HTMLDivElement>) => void;
+  onDragOver: (event: DragEvent<HTMLDivElement>) => void;
+  onDrop: (event: DragEvent<HTMLDivElement>) => void;
+  onDragEnd: () => void;
   onUpdate: (fields: { locked?: boolean; hidden?: boolean; muted?: boolean }) => void;
   onSolo: () => void;
   onDelete: () => void;
@@ -1555,10 +1644,16 @@ function TrackHeader({
 
   return (
     <div
-      className={`group relative flex items-center justify-between border-b border-outline-variant px-3 bg-surface-container transition-colors hover:bg-surface-container-high motion-reduce:transition-none ${track.hidden ? "opacity-75" : ""}`}
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={`group relative flex items-center justify-between border-b px-2 bg-surface-container transition-colors hover:bg-surface-container-high motion-reduce:transition-none ${dropTarget ? "border-primary bg-primary/10" : "border-outline-variant"} ${dragging ? "opacity-45" : track.hidden ? "opacity-75" : ""}`}
       style={{ height }}
     >
       <div className="flex min-w-0 items-center gap-1.5 pr-2">
+        <EditorIcon className="cursor-grab text-[15px] text-on-surface-variant/70 shrink-0 active:cursor-grabbing">drag_indicator</EditorIcon>
         <EditorIcon className="text-[15px] text-on-surface-variant shrink-0">{trackIcon(track.kind)}</EditorIcon>
         <span className="truncate text-label-md font-semibold text-on-surface leading-tight">{track.label}</span>
       </div>
@@ -1571,7 +1666,12 @@ function TrackHeader({
                 <SmallIconButton icon={track.muted ? "volume_off" : "volume_up"} label={`Mute ${track.label}`} active={track.muted} onClick={() => onUpdate({ muted: !track.muted })} />
               </>
             ) : (
-              <SmallIconButton icon={track.hidden ? "visibility_off" : "visibility"} label={`Toggle ${track.label} visibility`} active={track.hidden} onClick={() => onUpdate({ hidden: !track.hidden })} />
+              <>
+                <SmallIconButton icon={track.hidden ? "visibility_off" : "visibility"} label={`Toggle ${track.label} visibility`} active={track.hidden} onClick={() => onUpdate({ hidden: !track.hidden })} />
+                {track.kind === "video" ? (
+                  <SmallIconButton icon={track.muted ? "volume_off" : "volume_up"} label={`Mute ${track.label}`} active={track.muted} onClick={() => onUpdate({ muted: !track.muted })} />
+                ) : null}
+              </>
             )}
             <SmallIconButton icon={track.locked ? "lock" : "lock_open"} label={`Toggle ${track.label} lock`} active={track.locked} onClick={() => onUpdate({ locked: !track.locked })} />
           </div>
@@ -1631,6 +1731,7 @@ function SmallIconButton({
       type="button"
       className={`flex h-5 w-5 items-center justify-center rounded-[3px] transition-colors hover:bg-surface-container-highest motion-reduce:transition-none ${active ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
       aria-label={label}
+      aria-pressed={active}
       title={label}
       onClick={onClick}
     >
@@ -1675,6 +1776,7 @@ function TimelineItemBlock({
   selected,
   linked,
   activeToolId,
+  preparationStatus,
   onPointerDown,
 }: {
   layout: TimelineItemLayout;
@@ -1683,11 +1785,13 @@ function TimelineItemBlock({
   selected: boolean;
   linked: boolean;
   activeToolId: ReturnType<typeof selectActiveToolId>;
+  preparationStatus: "queued" | "loading" | "ready" | "failed";
   onPointerDown: (event: PointerEvent<HTMLElement>, edge: "start" | "end" | null) => void;
 }) {
   const item = layout.item;
   const trimActive = activeToolId === "trim";
-  const cursorClass = activeToolId === "split" ? "cursor-crosshair" : activeToolId === "trim" ? "cursor-default" : "cursor-grab active:cursor-grabbing";
+  const preparing = preparationStatus !== "ready";
+  const cursorClass = preparing ? "cursor-default" : activeToolId === "split" ? "cursor-crosshair" : activeToolId === "trim" ? "cursor-default" : "cursor-grab active:cursor-grabbing";
   const thumbnailCount = Math.max(1, Math.floor(layout.width / 50));
   return (
     <button
@@ -1756,8 +1860,73 @@ function TimelineItemBlock({
       }`}>
         {itemLabel(item, media)}
       </span>
+      {preparing ? (
+        <span className="absolute inset-0 z-30 flex items-center justify-center gap-1 bg-surface-container-high/85 text-[9px] font-semibold text-on-surface">
+          <EditorIcon className={`text-[13px] ${preparationStatus === "failed" ? "text-error" : "animate-spin motion-reduce:animate-none"}`}>
+            {preparationStatus === "failed" ? "error" : "progress_activity"}
+          </EditorIcon>
+          {preparationStatus === "failed" ? "Failed" : "Preparing"}
+        </span>
+      ) : null}
     </button>
   );
+}
+
+function PendingTimelineItemBlock({
+  pending,
+  layout,
+  onRetry,
+  onRemove,
+}: {
+  pending: ReturnType<typeof selectPendingTimelineInsertions>[number];
+  layout: { left: number; top: number; width: number; height: number };
+  onRetry: () => void;
+  onRemove: () => void;
+}) {
+  const failed = pending.status === "failed";
+  return (
+    <div
+      className={`absolute z-20 overflow-hidden rounded-[4px] border px-2 py-1 text-left text-[10px] font-mono ${failed ? "border-error bg-error-container text-on-error-container" : "border-primary/70 bg-surface-container-high text-on-surface"}`}
+      style={layout}
+      aria-label={`${pending.media.filename}, ${failed ? "preparation failed" : "preparing"}`}
+    >
+      {!failed ? <span className="absolute inset-0 animate-[pulse_1.4s_ease-in-out_infinite] bg-[repeating-linear-gradient(135deg,transparent_0,transparent_8px,rgba(255,255,255,0.08)_8px,rgba(255,255,255,0.08)_16px)] motion-reduce:animate-none" /> : null}
+      <span className="relative z-10 flex min-w-0 items-center gap-1.5">
+        <EditorIcon className={`shrink-0 text-[14px] ${failed ? "text-error" : "animate-spin motion-reduce:animate-none"}`}>
+          {failed ? "error" : "progress_activity"}
+        </EditorIcon>
+        <span className="min-w-0 flex-1 truncate font-semibold">{pending.media.filename}</span>
+      </span>
+      <span className="relative z-10 mt-0.5 block truncate text-[9px] opacity-75">{failed ? "Preparation failed" : "Preparing"}</span>
+      {failed ? (
+        <span className="absolute bottom-1 right-1 z-20 flex gap-1">
+          <button type="button" className="rounded-[3px] bg-surface px-1.5 py-0.5 font-semibold text-on-surface" onClick={onRetry}>Retry</button>
+          <button type="button" className="rounded-[3px] bg-surface px-1.5 py-0.5 font-semibold text-on-surface" onClick={onRemove}>Remove</button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-label={`Remove preparing ${pending.media.filename}`}
+          className="absolute right-1 top-1 z-20 flex h-5 w-5 items-center justify-center rounded-[3px] bg-surface/80 text-on-surface opacity-0 transition-opacity hover:opacity-100 focus:opacity-100 motion-reduce:transition-none"
+          onClick={onRemove}
+        >
+          <EditorIcon className="text-[13px]">close</EditorIcon>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function mediaItemStatus(
+  mediaId: string,
+  resources: ReturnType<typeof selectMediaPreparationState>,
+): "queued" | "loading" | "ready" | "failed" {
+  const matches = Object.values(resources).filter((resource) => resource.mediaId === mediaId);
+  if (matches.length === 0) return "ready";
+  if (matches.some((resource) => resource.status === "ready")) return "ready";
+  if (matches.some((resource) => resource.status === "failed")) return "failed";
+  if (matches.some((resource) => resource.status === "loading")) return "loading";
+  return "queued";
 }
 
 function Marquee({ rect }: { rect: MarqueeRect }) {

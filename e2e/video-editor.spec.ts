@@ -1,7 +1,129 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+
+const testVideoObject = readFile(new URL("../public/test-media.mp4", import.meta.url));
 
 test.beforeEach(async ({ page }) => {
   await installBffMocks(page);
+});
+
+test("timeline shows a session-only preparing block before committing media", async ({ page }, testInfo) => {
+  await page.unroute("**/bff/media/**");
+  await page.route("**/bff/media/**", async (route) => {
+    if (/\/object\/(proxy|canonical|raw)(\?|$)/.test(new URL(route.request().url()).pathname)) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await route.fulfill({ status: 200, contentType: "video/mp4", body: await testVideoObject });
+      return;
+    }
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.goto("/editor/video/e2e-video-project");
+  await page.getByRole("button", { name: /beach ready/i }).click();
+  await expect(page.getByLabel(/beach ready\.mp4, preparing/i)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("timeline-preparing.png") });
+  await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("timeline-ready.png") });
+});
+
+test("local timeline recovery syncs once and exports the exact saved revision", async ({ page }) => {
+  const timelinePuts: Array<Record<string, unknown>> = [];
+  const renderPosts: Array<Record<string, unknown>> = [];
+  const backgroundMutations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "GET" || request.method() === "HEAD") return;
+    const url = new URL(request.url());
+    if (request.method() === "PUT" && url.pathname.endsWith("/video-timeline")) {
+      timelinePuts.push(request.postDataJSON());
+      return;
+    }
+    if (request.method() === "POST" && /\/bff\/timelines\/[^/]+\/render$/.test(url.pathname)) {
+      renderPosts.push(request.postDataJSON());
+      return;
+    }
+    if (
+      (request.method() === "POST" && url.pathname === "/bff/projects/e2e-video-project/media") ||
+      (request.method() === "POST" && url.pathname.endsWith("/performance"))
+    ) {
+      backgroundMutations.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  let timelineGets = 0;
+  await page.unroute("**/bff/projects/e2e-video-project/video-timeline");
+  await page.route("**/bff/projects/e2e-video-project/video-timeline", async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          projectId: "e2e-video-project",
+          timelineId: "timeline-e2e",
+          revisionId: "revision-e2e-8",
+          documentJson: body.documentJson,
+          revisionNumber: 8,
+          documentSchemaVersion: 1,
+          source: "manual",
+          label: "Explicit save",
+          updatedAt: "2026-07-11T08:00:00.000Z",
+          updatedByUserId: "user-e2e",
+        }),
+      });
+      return;
+    }
+
+    timelineGets += 1;
+    if (timelineGets <= 2) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          projectId: "e2e-video-project",
+          timelineId: "timeline-e2e",
+          revisionId: "revision-e2e-7",
+          documentJson: emptyTimelineDocument(),
+          revisionNumber: 7,
+          documentSchemaVersion: 1,
+          source: "manual",
+          label: "Existing revision",
+          updatedAt: "2026-07-11T07:00:00.000Z",
+          updatedByUserId: "user-e2e",
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Timeline unavailable" }) });
+  });
+
+  await page.goto("/editor/video/e2e-video-project");
+  await page.getByRole("button", { name: /beach ready/i }).click();
+  await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
+  await expect(page.getByText(/Saved locally/)).toBeVisible();
+  const beforeRefresh = await readCanonicalTimelineDraft(page, "e2e-video-project");
+  const pendingBeforeRefresh = await readPendingTimelineRecords(page, "e2e-video-project");
+
+  expect(timelinePuts).toHaveLength(0);
+  expect(renderPosts).toHaveLength(0);
+  expect(backgroundMutations).toEqual([]);
+  expect(pendingBeforeRefresh.map((record) => record.kind)).toEqual(expect.arrayContaining(["timelineDraft", "projectMediaAttach"]));
+
+  await page.reload();
+  await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
+  const afterRefresh = await readCanonicalTimelineDraft(page, "e2e-video-project");
+  expect(afterRefresh).toEqual(beforeRefresh);
+
+  await page.getByRole("button", { name: /^sync$/i }).click();
+  await expect.poll(() => timelinePuts.length).toBe(1);
+  await expect(page.getByText(/Synced/)).toBeVisible();
+
+  await page.getByRole("button", { name: /export video/i }).click();
+  await page.getByRole("button", { name: /create render job/i }).click();
+  await expect(page.getByText("Render job creation is not available from the backend yet.")).toBeVisible();
+  expect(timelinePuts).toHaveLength(1);
+  expect(renderPosts).toHaveLength(1);
+  expect(timelineGets).toBeGreaterThan(2);
+  expect(renderPosts[0]).toMatchObject({ timelineId: "timeline-e2e", revisionNumber: 8 });
 });
 
 test("video editor route loads, edits timeline, recovers IndexedDB autosave, applies AI, and handles export backend outage", async ({ page }) => {
@@ -32,10 +154,11 @@ test("video editor route loads, edits timeline, recovers IndexedDB autosave, app
   await page.getByRole("button", { name: /undo/i }).first().click();
   await page.getByRole("button", { name: /redo/i }).first().click();
 
+  await page.getByLabel(/video timeline item/i).first().click();
   await page.getByRole("button", { name: /delete selected/i }).click();
   await page.reload();
   await expect(page.getByText(/Saved locally|Synced/)).toBeVisible();
-  await expect(page.getByLabel(/video timeline item/i)).toBeVisible();
+  await expect(page.getByText("Empty timeline")).toBeVisible();
 
   await page.getByRole("button", { name: /AI Agent editing mode/i }).click();
   await expect(page.getByRole("complementary", { name: "AI Assistant" })).toBeVisible();
@@ -243,8 +366,71 @@ async function installBffMocks(page: Page) {
   });
 
   await page.route("**/bff/media/**", async (route) => {
+    if (/\/object\/(proxy|canonical|raw)(\?|$)/.test(new URL(route.request().url()).pathname)) {
+      await route.fulfill({ status: 200, contentType: "video/mp4", body: await testVideoObject });
+      return;
+    }
     await route.fulfill({ status: 204 });
   });
+}
+
+async function readCanonicalTimelineDraft(page: Page, projectId: string) {
+  return page.evaluate(async ({ databaseName, projectId }) => new Promise<unknown>((resolve, reject) => {
+    const request = indexedDB.open(databaseName);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction("videoTimelineDrafts", "readonly");
+      const records = transaction.objectStore("videoTimelineDrafts").getAll();
+      records.onerror = () => reject(records.error);
+      records.onsuccess = () => {
+        const record = records.result.find((candidate) => candidate.projectId === projectId);
+        resolve(record?.document ?? null);
+      };
+    };
+  }), { databaseName: "kuvox-editor-cache", projectId });
+}
+
+async function readPendingTimelineRecords(page: Page, projectId: string) {
+  return page.evaluate(async ({ databaseName, projectId }) => new Promise<Array<{ kind: string; entityId?: string }>>((resolve, reject) => {
+    const request = indexedDB.open(databaseName);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction("pendingSync", "readonly");
+      const records = transaction.objectStore("pendingSync").getAll();
+      records.onerror = () => reject(records.error);
+      records.onsuccess = () => resolve(records.result.filter((candidate) => candidate.projectId === projectId));
+    };
+  }), { databaseName: "kuvox-editor-cache", projectId });
+}
+
+function emptyTimelineDocument() {
+  return {
+    schemaVersion: 1,
+    projectId: "e2e-video-project",
+    name: "E2E Video Project",
+    createdAt: "2026-07-11T07:00:00.000Z",
+    updatedAt: "2026-07-11T07:00:00.000Z",
+    settings: {
+      width: 1920,
+      height: 1080,
+      aspectRatio: "16:9",
+      frameRate: 30,
+      previewQuality: "balanced",
+      defaultTransitionDuration: 0.4,
+      exportPreset: "h264-1080p",
+    },
+    media: {},
+    tracks: [
+      { id: "v1", kind: "video", label: "V1", locked: false, hidden: false, muted: false, items: [] },
+      { id: "a1", kind: "audio", label: "A1", locked: false, hidden: false, muted: false, items: [] },
+      { id: "t1", kind: "text", label: "T1", locked: false, hidden: false, muted: false, items: [] },
+    ],
+    transitions: [],
+    effects: [],
+    history: { revision: 0, canUndo: false, canRedo: false },
+  };
 }
 
 async function installMockSignalR(page: Page) {

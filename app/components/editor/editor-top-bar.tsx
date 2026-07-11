@@ -6,6 +6,8 @@ import {
 } from "~/routes/dashboard/header-bar";
 import { useState } from "react";
 import { Form, Link } from "react-router";
+import type { ProjectDto } from "~/lib/api";
+import { setProjectSettingsOperation } from "~/lib/editor/video-operations";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   editorModeChanged,
@@ -14,22 +16,22 @@ import {
   selectCanUndo,
   selectChromeState,
   selectEditorSyncChromeState,
+  selectVideoDocument,
   timelineToggled,
-  toastShown,
   type EditorSyncStatus,
   type EditorMode,
+  videoOperationApplied,
   videoRedoRequested,
   videoUndoRequested,
 } from "~/store/slices/editor-slice";
 
-import type { EditorProjectMock } from "./mock-editor-data";
 import { EditorIcon, EditorIconButton } from "./editor-ui";
 
 interface EditorTopBarProps {
-  project: EditorProjectMock;
+  project: ProjectDto;
   user?: HeaderActionUser;
   notifications?: HeaderNotifications;
-  onSync?: () => void | Promise<void>;
+  onSync?: () => unknown | Promise<unknown>;
   conflict?: boolean;
   onKeepLocal?: () => void | Promise<void>;
   onReloadServer?: () => void | Promise<void>;
@@ -67,17 +69,22 @@ export function EditorTopBar({
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [aspectRatioOpen, setAspectRatioOpen] = useState(false);
-  const [selectedRatio, setSelectedRatio] = useState("16:9");
   const { editorMode } = useAppSelector(selectChromeState);
-  const { syncStatus, pendingSyncCount } = useAppSelector(selectEditorSyncChromeState);
+  const document = useAppSelector(selectVideoDocument);
+  const { syncStatus, pendingSyncCount, localSaveStatus } = useAppSelector(selectEditorSyncChromeState);
   const canUndo = useAppSelector(selectCanUndo);
   const canRedo = useAppSelector(selectCanRedo);
-  const syncCopy = syncStatusCopy(syncStatus, pendingSyncCount);
+  const syncCopy = localSaveStatus === "failed"
+    ? { label: "Local save failed", className: "border-error/40 bg-error-container text-on-error-container" }
+    : localSaveStatus === "saving"
+      ? { label: "Saving locally", className: "border-tertiary/40 bg-tertiary-container text-on-tertiary-container" }
+      : syncStatusCopy(syncStatus, pendingSyncCount);
   const syncDisabled = !onSync || syncStatus === "syncing" || syncStatus === "server-changed";
   const headerNotifications = notifications ?? DEFAULT_EDITOR_NOTIFICATIONS;
   const unreadCount = Math.max(0, Number(headerNotifications.unreadCount) || 0);
   const badgeLabel = unreadCount > 99 ? "99+" : String(unreadCount);
   const initials = getHeaderInitials(user);
+  const selectedRatio = document?.settings.aspectRatio ?? "16:9";
 
   return (
     <header className="z-50 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 border-b border-outline-variant bg-surface px-1 min-[760px]:h-16 min-[760px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[760px]:gap-2 min-[760px]:px-3 lg:gap-3 2xl:px-5">
@@ -198,9 +205,11 @@ export function EditorTopBar({
                     key={ratio.value}
                     type="button"
                     onClick={() => {
-                      setSelectedRatio(ratio.value);
                       setAspectRatioOpen(false);
-                      dispatch(toastShown(`Aspect ratio changed to ${ratio.label}`));
+                      dispatch(videoOperationApplied(setProjectSettingsOperation(
+                        { aspectRatio: ratio.value },
+                        `Change aspect ratio to ${ratio.value}`,
+                      )));
                     }}
                     className={`flex w-full items-center justify-between rounded-[4px] px-2.5 py-1.5 text-left text-label-sm transition-colors ${
                       selectedRatio === ratio.value

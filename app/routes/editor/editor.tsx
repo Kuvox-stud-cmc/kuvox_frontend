@@ -1,14 +1,10 @@
-import { useState } from "react";
-import { Provider } from "react-redux";
 import { redirect } from "react-router";
 
 import { EditorSkeleton } from "~/components/editor/editor-skeleton";
-import { EditorWorkspace } from "~/components/editor/editor-workspace";
 import { ProjectKind } from "~/lib/api";
 import { getProject } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { getSession } from "~/lib/session.server";
-import { makeStore } from "~/store";
 
 import type { Route } from "./+types/editor";
 
@@ -53,12 +49,6 @@ export function HydrateFallback() {
 }
 
 export default function EditorRoute({ loaderData }: Route.ComponentProps) {
-  // Lazily create the store once per mount — this only ever runs on the client.
-  const [store] = useState(() => makeStore());
-
-  return (
-    <Provider store={store}>
-      <EditorWorkspace projectId={(loaderData as { projectId?: string } | undefined)?.projectId ?? ""} />
-    </Provider>
-  );
+  void loaderData;
+  return <LegacyEditorRoute />;
 }

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import type {
   AudioTimelineItem,
   ImageOverlayTimelineItem,
   TextTimelineItem,
   VideoClipTimelineItem,
+  VideoAdvancedItemState,
   VideoProjectSettings,
   VideoTextStyle,
   VideoTimelineItem,
@@ -25,20 +26,32 @@ import {
   updateAudioOperation,
   updateSpeedOperation,
   updateTransformCropOperation,
+  updateAdvancedItemOperation,
   setProjectSettingsOperation,
 } from "~/lib/editor/video-operations";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   inspectorWidthChanged,
   selectInspectorPanelState,
+  selectMediaPreparationState,
+  selectCurrentTimeSeconds,
+  selectVideoDocument,
   selectVideoInspectorState,
+  selectVisualScalesLinked,
   videoOperationApplied,
+  visualScalesLinkedChanged,
   type InspectorSubject,
 } from "~/store/slices/editor-slice";
 
 import { useDragResize } from "./use-drag-resize";
 import { EditorIcon } from "./editor-ui";
 import { EditorPropertyService, getTimelineItemPropertyValue, PROPERTY_REGISTRY } from "~/lib/editor/editor-property-service";
+import {
+  computeVisualTransformPreset,
+  normalizeRotation,
+  roundCropForCommit,
+  type VisualTransformPreset,
+} from "~/lib/editor/editor-preview";
 
 export function useInspectorCommands() {
   const dispatch = useAppDispatch();
@@ -110,7 +123,14 @@ export function VideoInspectorPanel({
 }: VideoInspectorPanelProps) {
   const dispatch = useAppDispatch();
   const inspector = useAppSelector(selectVideoInspectorState);
+  const preparationByKey = useAppSelector(selectMediaPreparationState);
   const { width: inspectorWidth } = useAppSelector(selectInspectorPanelState);
+  const preparing = inspector.kind === "item" && inspector.media
+    ? (() => {
+        const resources = Object.values(preparationByKey).filter((resource) => resource.mediaId === inspector.media!.id);
+        return resources.length > 0 && !resources.some((resource) => resource.status === "ready");
+      })()
+    : false;
 
   const handleResizeStart = useDragResize({
     axis: "x",
@@ -168,11 +188,19 @@ export function VideoInspectorPanel({
             {inspector.selectedCount} selected. Editing the active item.
           </div>
         ) : null}
-        <InspectorBody
-          inspector={inspector}
-          activeSection={activeSection}
-          onSectionChange={onSectionChange}
-        />
+        {preparing ? (
+          <div className="flex items-center gap-2 rounded-[6px] border border-primary/30 bg-primary-container px-3 py-2 text-label-md font-semibold text-on-primary-container">
+            <EditorIcon className="animate-spin text-[16px] motion-reduce:animate-none">progress_activity</EditorIcon>
+            Preparing media. Editing is locked.
+          </div>
+        ) : null}
+        <fieldset disabled={preparing} className="contents" aria-label={preparing ? "Preparing media controls" : undefined}>
+          <InspectorBody
+            inspector={inspector}
+            activeSection={activeSection}
+            onSectionChange={onSectionChange}
+          />
+        </fieldset>
       </div>
     </aside>
   );
@@ -187,20 +215,6 @@ function InspectorBody({
   activeSection: string;
   onSectionChange?: (section: string) => void;
 }) {
-  if (inspector.kind === "project" && inspector.selectedCount === 0) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-surface-container-lowest">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary-container text-secondary mb-4">
-          <EditorIcon className="text-3xl">tune</EditorIcon>
-        </div>
-        <h3 className="text-title-md font-bold text-on-surface mb-2">No Item Selected</h3>
-        <p className="text-body-sm text-on-surface-variant max-w-[200px]">
-          Select a clip, audio track, image, or text item on the timeline to edit properties.
-        </p>
-      </div>
-    );
-  }
-
   if (inspector.kind === "transition") {
     return <TransitionInspector inspector={inspector} />;
   }
@@ -244,6 +258,7 @@ function InspectorBody({
     <ImageOverlayInspector
       item={inspector.item}
       mediaName={inspector.media?.name}
+      disabled={inspector.track.locked || inspector.track.hidden}
       activeSection={activeSection}
       onSectionChange={onSectionChange}
     />
@@ -517,11 +532,11 @@ function MockSelectField({ label, options }: { label: string; options: string[] 
   return <SelectField label={label} value={val} options={options} onChange={setVal} />;
 }
 
-function MockButtonField({ label }: { label: string }) {
+function MockButtonField({ label, onClick, disabled = false }: { label: string; onClick?: () => void; disabled?: boolean }) {
   return (
     <label className="grid items-center gap-2 text-[13px] font-medium" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
       <span className="text-on-surface-variant"></span>
-      <button type="button" className="h-7 w-full rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[12px] font-medium text-on-surface transition-colors hover:bg-surface-container-high focus:border-primary">
+      <button type="button" aria-label={label} onClick={onClick} disabled={disabled || !onClick} className="h-7 w-full rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[12px] font-medium text-on-surface transition-colors hover:bg-surface-container-high focus:border-primary disabled:cursor-not-allowed disabled:opacity-50">
         {label}
       </button>
     </label>
@@ -553,6 +568,8 @@ function VideoClipInspector({
 }) {
   const dispatch = useInspectorDispatch();
   const { updateProperty } = useInspectorCommands();
+  const currentTime = useAppSelector(selectCurrentTimeSeconds);
+  const document = useAppSelector(selectVideoDocument);
   const item = inspector.item;
   const linkedMuted = inspector.linkedAudioItems.length > 0
     ? inspector.linkedAudioItems.every(({ item: audio }) => audio.muted)
@@ -565,16 +582,12 @@ function VideoClipInspector({
 
   const [pitchCorrection, setPitchCorrection] = useState(true);
 
-  // Local state for mock transform values
-  const [posX, setPosX] = useState(item.transform.x);
-  const [posY, setPosY] = useState(item.transform.y);
-  const [scaleX, setScaleX] = useState(item.transform.scaleX);
-  const [scaleY, setScaleY] = useState(item.transform.scaleY);
-  const [rotation, setRotation] = useState(item.transform.rotation);
-  const [flipH, setFlipH] = useState(item.transform.scaleX < 0);
-  const [flipV, setFlipV] = useState(item.transform.scaleY < 0);
   const [opacity, setOpacity] = useState(item.opacity);
   const [speed, setSpeed] = useState(item.speed);
+
+  const updateAdvanced = (patch: Partial<VideoAdvancedItemState>, label: string) => {
+    dispatch(updateAdvancedItemOperation(item.id, mergeAdvancedState(item.advanced, patch), label));
+  };
 
   const renderSectionContent = (sectionId: string) => {
     switch (sectionId) {
@@ -769,9 +782,9 @@ function VideoClipInspector({
               onChange={(val) => updateProperty(item, "gain", val, { squash: true })}
               onChangeEnd={(val) => updateProperty(item, "gain", val, { squash: false })}
             />
-            <MockButtonField label="Curves" />
-            <MockButtonField label="HSL" />
-            <MockButtonField label="RGB Mixer" />
+            <MockButtonField label="Curves" onClick={() => updateAdvanced({ color: { ...item.advanced?.color, curves: identityCurves() } }, "Initialize color curves")} />
+            <MockButtonField label="HSL" onClick={() => updateAdvanced({ color: { ...item.advanced?.color, hsl: neutralHsl() } }, "Initialize HSL controls")} />
+            <MockButtonField label="RGB Mixer" onClick={() => updateAdvanced({ color: { ...item.advanced?.color, rgbMatrix: [1, 0, 0, 0, 1, 0, 0, 0, 1] } }, "Initialize RGB mixer")} />
             <RealtimeSliderField
               label="Vignette"
               min={0}
@@ -793,98 +806,7 @@ function VideoClipInspector({
       case "transform":
         return (
           <>
-            <NumberField
-              label="Position X"
-              value={isMock ? posX : item.transform.x}
-              step={1}
-              precision={1}
-              onCommit={(x) => {
-                if (isMock) {
-                  setPosX(x);
-                } else {
-                  dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, x } }, "Update transform"));
-                }
-              }}
-            />
-            <NumberField
-              label="Position Y"
-              value={isMock ? posY : item.transform.y}
-              step={1}
-              precision={1}
-              onCommit={(y) => {
-                if (isMock) {
-                  setPosY(y);
-                } else {
-                  dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, y } }, "Update transform"));
-                }
-              }}
-            />
-            <NumberField
-              label="Scale X"
-              value={isMock ? scaleX : item.transform.scaleX}
-              min={0.01}
-              step={0.05}
-              precision={3}
-              onCommit={(sx) => {
-                if (isMock) {
-                  setScaleX(sx);
-                } else {
-                  dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, scaleX: sx } }, "Update transform"));
-                }
-              }}
-            />
-            <NumberField
-              label="Scale Y"
-              value={isMock ? scaleY : item.transform.scaleY}
-              min={0.01}
-              step={0.05}
-              precision={3}
-              onCommit={(sy) => {
-                if (isMock) {
-                  setScaleY(sy);
-                } else {
-                  dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, scaleY: sy } }, "Update transform"));
-                }
-              }}
-            />
-            <NumberField
-              label="Rotation"
-              value={isMock ? rotation : item.transform.rotation}
-              step={1}
-              precision={1}
-              suffix="deg"
-              onCommit={(rot) => {
-                if (isMock) {
-                  setRotation(rot);
-                } else {
-                  dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, rotation: rot } }, "Update transform"));
-                }
-              }}
-            />
-            <ToggleField
-              label="Flip H"
-              checked={isMock ? flipH : item.transform.scaleX < 0}
-              onChange={(h) => {
-                if (isMock) {
-                  setFlipH(h);
-                  setScaleX(Math.abs(scaleX) * (h ? -1 : 1));
-                } else {
-                  dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, scaleX: Math.abs(item.transform.scaleX) * (h ? -1 : 1) } }, "Flip transform"));
-                }
-              }}
-            />
-            <ToggleField
-              label="Flip V"
-              checked={isMock ? flipV : item.transform.scaleY < 0}
-              onChange={(v) => {
-                if (isMock) {
-                  setFlipV(v);
-                  setScaleY(Math.abs(scaleY) * (v ? -1 : 1));
-                } else {
-                  dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, scaleY: Math.abs(item.transform.scaleY) * (v ? -1 : 1) } }, "Flip transform"));
-                }
-              }}
-            />
+            <VisualTransformControls item={item} disabled={inspector.track.locked || inspector.track.hidden} />
             <NumberField
               label="Opacity"
               value={isMock ? opacity : item.opacity}
@@ -892,6 +814,7 @@ function VideoClipInspector({
               max={1}
               step={0.01}
               precision={3}
+              disabled={inspector.track.locked || inspector.track.hidden}
               onCommit={(op) => {
                 if (isMock) {
                   setOpacity(op);
@@ -900,66 +823,30 @@ function VideoClipInspector({
                 }
               }}
             />
-            <MockSliderField label="Anchor X" min={0} max={100} defaultValue={50} suffix="%" />
-            <MockSliderField label="Anchor Y" min={0} max={100} defaultValue={50} suffix="%" />
           </>
         );
       case "crop":
         return (
           <>
-            <RealtimeSliderField
-              label="Top"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "top")}
-              onChange={(val) => updateProperty(item, "top", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "top", val, { squash: false })}
-              suffix="%"
-            />
-            <RealtimeSliderField
-              label="Bottom"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "bottom")}
-              onChange={(val) => updateProperty(item, "bottom", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "bottom", val, { squash: false })}
-              suffix="%"
-            />
-            <RealtimeSliderField
-              label="Left"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "left")}
-              onChange={(val) => updateProperty(item, "left", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "left", val, { squash: false })}
-              suffix="%"
-            />
-            <RealtimeSliderField
-              label="Right"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "right")}
-              onChange={(val) => updateProperty(item, "right", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "right", val, { squash: false })}
-              suffix="%"
-            />
-            <RealtimeSliderField
-              label="Corner Rad."
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "cornerRadius")}
-              onChange={(val) => updateProperty(item, "cornerRadius", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "cornerRadius", val, { squash: false })}
-            />
-            <RealtimeSliderField
-              label="Feather"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "feather")}
-              onChange={(val) => updateProperty(item, "feather", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "feather", val, { squash: false })}
-            />
-            <MockButtonField label="Auto Crop" />
+            <StructuralCropControls item={item} disabled={inspector.track.locked || inspector.track.hidden} />
+            <MockButtonField label="Auto Crop" onClick={() => {
+              const now = new Date().toISOString();
+              updateAdvanced({
+                autoReframe: {
+                  targetAspectRatio: document?.settings.aspectRatio ?? "16:9",
+                  safeMargin: 0.1,
+                  smoothing: 0.65,
+                  generatedAt: now,
+                },
+                crop: {
+                  ...item.advanced?.crop,
+                  top: { value: item.crop.top, keyframes: [{ id: `auto-crop-top-${now}`, time: 0, value: item.crop.top }] },
+                  right: { value: item.crop.right, keyframes: [{ id: `auto-crop-right-${now}`, time: 0, value: item.crop.right }] },
+                  bottom: { value: item.crop.bottom, keyframes: [{ id: `auto-crop-bottom-${now}`, time: 0, value: item.crop.bottom }] },
+                  left: { value: item.crop.left, keyframes: [{ id: `auto-crop-left-${now}`, time: 0, value: item.crop.left }] },
+                },
+              }, "Generate auto crop");
+            }} />
           </>
         );
       case "mask":
@@ -992,7 +879,18 @@ function VideoClipInspector({
               onChange={(val) => updateProperty(item, "expansion", val, { squash: true })}
               onChangeEnd={(val) => updateProperty(item, "expansion", val, { squash: false })}
             />
-            <MockButtonField label="Tracking" />
+            <MockButtonField label="Tracking" onClick={() => {
+              const now = new Date().toISOString();
+              const itemTime = Math.max(0, Math.min(item.duration, currentTime - item.timelineStart));
+              const target = {
+                id: `tracking-${now.replace(/[^0-9]/g, "")}`,
+                label: "Tracked region",
+                initialBox: { x: 0.25, y: 0.2, width: 0.5, height: 0.6 },
+                path: [{ time: itemTime, box: { x: 0.25, y: 0.2, width: 0.5, height: 0.6 }, confidence: 1 }],
+                analysis: { model: "manual-region", analyzedAt: now, frameInterval: 1 },
+              };
+              updateAdvanced({ trackingTargets: [...(item.advanced?.trackingTargets ?? []), target] }, "Create tracking target");
+            }} />
           </>
         );
       case "speed":
@@ -1018,7 +916,16 @@ function VideoClipInspector({
               checked={getTimelineItemPropertyValue(item, "speedSettings", "reverse") || false}
               onChange={(val) => updateProperty(item, "reverse", val, { groupName: "speedSettings", squash: false })}
             />
-            <MockButtonField label="Freeze Frame" />
+            <MockButtonField label="Freeze Frame" onClick={() => {
+              const itemTime = Math.max(0, Math.min(item.duration, currentTime - item.timelineStart));
+              const sourceTime = item.sourceIn + itemTime * item.speed;
+              updateAdvanced({ freezeFrames: [...(item.advanced?.freezeFrames ?? []), {
+                id: `freeze-${Date.now()}`,
+                timelineStart: itemTime,
+                duration: Math.min(1, Math.max(1 / (document?.settings.frameRate ?? 30), item.duration - itemTime)),
+                sourceTime: Math.min(item.sourceOut, sourceTime),
+              }] }, "Insert freeze frame");
+            }} />
             <MockSliderField label="Duration" min={0} max={60} defaultValue={item.duration} suffix="s" />
             <SelectField
               label="Speed Curve"
@@ -1026,7 +933,14 @@ function VideoClipInspector({
               value={getTimelineItemPropertyValue(item, "speedSettings", "speedCurve") || "Linear"}
               onChange={(val) => updateProperty(item, "speedCurve", val, { groupName: "speedSettings", squash: false })}
             />
-            <MockButtonField label="Time Remap" />
+            <MockButtonField label="Time Remap" onClick={() => updateAdvanced({ timeRemap: {
+              points: [
+                { timelineTime: 0, sourceTime: item.sourceIn },
+                { timelineTime: item.duration, sourceTime: item.sourceOut },
+              ],
+              preservePitch: true,
+              audioBehavior: "remap",
+            } }, "Initialize time remap")} />
             <ToggleField
               label="Pitch Corr."
               checked={getTimelineItemPropertyValue(item, "speedSettings", "pitchCorrection") !== false}
@@ -1203,6 +1117,11 @@ function VideoClipInspector({
           <ReadOnlyRow label="Name" value={inspector.media?.name ?? item.mediaId} />
           <ReadOnlyRow label="Track" value={inspector.track.label} />
         </Section>
+        <TimingFields
+          item={item}
+          includeSource
+          onCommit={(fields) => dispatch(trimOperation(item, fields, "Update clip timing"))}
+        />
         {videoSections.map((sec) => (
           <div key={sec.id} data-testid={`section-${sec.id}`}>
             <h3 className="text-[12px] font-bold text-on-surface uppercase tracking-[0.02em] py-2">{sec.label}</h3>
@@ -1226,6 +1145,11 @@ function VideoClipInspector({
           <ReadOnlyRow label="Name" value={inspector.media?.name ?? item.mediaId} />
           <ReadOnlyRow label="Track" value={inspector.track.label} />
         </Section>
+        <TimingFields
+          item={item}
+          includeSource
+          onCommit={(fields) => dispatch(trimOperation(item, fields, "Update clip timing"))}
+        />
 
         <div className="flex flex-col gap-1.5 pt-1">
           <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-[0.05em] px-1 pb-1">Editing Category</span>
@@ -1254,6 +1178,11 @@ function VideoClipInspector({
 
   return (
     <div className="flex flex-col gap-3">
+      <TimingFields
+        item={item}
+        includeSource
+        onCommit={(fields) => dispatch(trimOperation(item, fields, "Update clip timing"))}
+      />
       <div className="flex items-center gap-2 pb-2 mb-1 border-b border-outline-variant">
         <button
           type="button"
@@ -1516,11 +1445,13 @@ const imageSections = [
 function ImageOverlayInspector({
   item,
   mediaName,
+  disabled,
   activeSection,
   onSectionChange,
 }: {
   item: ImageOverlayTimelineItem;
   mediaName?: string;
+  disabled: boolean;
   activeSection: string;
   onSectionChange?: (section: string) => void;
 }) {
@@ -1537,44 +1468,7 @@ function ImageOverlayInspector({
       case "transform":
         return (
           <>
-            <NumberField
-              label="Position X"
-              value={item.transform.x}
-              step={1}
-              precision={1}
-              onCommit={(x) => dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, x } }, "Update transform"))}
-            />
-            <NumberField
-              label="Position Y"
-              value={item.transform.y}
-              step={1}
-              precision={1}
-              onCommit={(y) => dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, y } }, "Update transform"))}
-            />
-            <NumberField
-              label="Scale X"
-              value={item.transform.scaleX}
-              min={0.01}
-              step={0.05}
-              precision={3}
-              onCommit={(scaleX) => dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, scaleX } }, "Update transform"))}
-            />
-            <NumberField
-              label="Scale Y"
-              value={item.transform.scaleY}
-              min={0.01}
-              step={0.05}
-              precision={3}
-              onCommit={(scaleY) => dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, scaleY } }, "Update transform"))}
-            />
-            <NumberField
-              label="Rotation"
-              value={item.transform.rotation}
-              step={1}
-              precision={1}
-              suffix="deg"
-              onCommit={(rotation) => dispatch(updateTransformCropOperation(item.id, { transform: { ...item.transform, rotation } }, "Update transform"))}
-            />
+            <VisualTransformControls item={item} disabled={disabled} />
             <NumberField
               label="Opacity"
               value={item.opacity}
@@ -1582,6 +1476,7 @@ function ImageOverlayInspector({
               max={1}
               step={0.01}
               precision={3}
+              disabled={disabled}
               onCommit={(opacity) => dispatch(updateTransformCropOperation(item.id, { opacity }, "Update opacity"))}
             />
             <NumberField
@@ -1589,50 +1484,14 @@ function ImageOverlayInspector({
               value={item.layerOrder}
               step={1}
               precision={0}
+              disabled={disabled}
               onCommit={(layerOrder) => dispatch(updateTransformCropOperation(item.id, { layerOrder }, "Update layer"))}
             />
           </>
         );
       case "crop":
         return (
-          <>
-            <RealtimeSliderField
-              label="Top"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "top")}
-              onChange={(val) => updateProperty(item, "top", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "top", val, { squash: false })}
-              suffix="%"
-            />
-            <RealtimeSliderField
-              label="Right"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "right")}
-              onChange={(val) => updateProperty(item, "right", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "right", val, { squash: false })}
-              suffix="%"
-            />
-            <RealtimeSliderField
-              label="Bottom"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "bottom")}
-              onChange={(val) => updateProperty(item, "bottom", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "bottom", val, { squash: false })}
-              suffix="%"
-            />
-            <RealtimeSliderField
-              label="Left"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "crop", "left")}
-              onChange={(val) => updateProperty(item, "left", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "left", val, { squash: false })}
-              suffix="%"
-            />
-          </>
+          <StructuralCropControls item={item} disabled={disabled} />
         );
       case "mask":
         return (
@@ -2234,6 +2093,192 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function VisualTransformControls({
+  item,
+  disabled,
+}: {
+  item: VideoClipTimelineItem | ImageOverlayTimelineItem;
+  disabled: boolean;
+}) {
+  const dispatchOperation = useInspectorDispatch();
+  const dispatch = useAppDispatch();
+  const scalesLinked = useAppSelector(selectVisualScalesLinked);
+  const document = useAppSelector(selectVideoDocument);
+  const media = document?.media[item.mediaId];
+  const hasMediaDimensions = Boolean(
+    media && typeof media.width === "number" && media.width > 0 && typeof media.height === "number" && media.height > 0,
+  );
+
+  const commitTransform = (transform: VideoTransform, label = "Update transform") => {
+    dispatchOperation(updateTransformCropOperation(item.id, { transform }, label));
+  };
+  const applyPreset = (preset: VisualTransformPreset, label: string) => {
+    const settings = document?.settings;
+    if (!settings) return;
+    const nextTransform = computeVisualTransformPreset({
+      preset,
+      transform: item.transform,
+      projectWidth: settings.width,
+      projectHeight: settings.height,
+      mediaWidth: media?.width,
+      mediaHeight: media?.height,
+      crop: item.crop,
+    });
+    if (nextTransform && !sameVideoTransform(nextTransform, item.transform)) {
+      commitTransform(nextTransform, label);
+    }
+  };
+  const commitScale = (axis: "scaleX" | "scaleY", value: number) => {
+    const nextValue = roundTo(Math.max(0.01, Math.abs(value)), 6);
+    const otherAxis = axis === "scaleX" ? "scaleY" : "scaleX";
+    const currentValue = Math.max(0.01, Math.abs(item.transform[axis]));
+    const multiplier = nextValue / currentValue;
+    commitTransform({
+      ...item.transform,
+      [axis]: nextValue,
+      ...(scalesLinked
+        ? { [otherAxis]: roundTo(Math.max(0.01, Math.abs(item.transform[otherAxis]) * multiplier), 6) }
+        : {}),
+    });
+  };
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-1.5 pb-1" aria-label="Transform sizing commands">
+        {([
+          ["fit", "Fit", "fit_screen", "Fit visual to frame", true],
+          ["fill", "Fill", "fullscreen", "Fill frame with visual", true],
+          ["center", "Center", "center_focus_strong", "Center visual", false],
+          ["original-size", "Original", "photo_size_select_actual", "Set visual to original size", true],
+          ["reset", "Reset", "restart_alt", "Reset visual transform", false],
+        ] as const).map(([preset, text, icon, label, needsDimensions]) => (
+          <button
+            key={preset}
+            type="button"
+            aria-label={label}
+            title={label}
+            disabled={disabled || (needsDimensions && !hasMediaDimensions)}
+            onClick={() => applyPreset(preset, label)}
+            className="flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-container-high focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <EditorIcon className="shrink-0 text-[16px]">{icon}</EditorIcon>
+            <span className="truncate">{text}</span>
+          </button>
+        ))}
+      </div>
+      <NumberField
+        label="Position X"
+        value={item.transform.x}
+        step={1}
+        precision={0}
+        disabled={disabled}
+        onCommit={(x) => commitTransform({ ...item.transform, x: Math.round(x) })}
+      />
+      <NumberField
+        label="Position Y"
+        value={item.transform.y}
+        step={1}
+        precision={0}
+        disabled={disabled}
+        onCommit={(y) => commitTransform({ ...item.transform, y: Math.round(y) })}
+      />
+      <ToggleField
+        label="Link scales"
+        checked={scalesLinked}
+        disabled={disabled}
+        onChange={(linked) => dispatch(visualScalesLinkedChanged(linked))}
+      />
+      <NumberField
+        label="Scale X"
+        value={Math.abs(item.transform.scaleX)}
+        min={0.01}
+        step={0.05}
+        precision={6}
+        disabled={disabled}
+        onCommit={(scaleX) => commitScale("scaleX", scaleX)}
+      />
+      <NumberField
+        label="Scale Y"
+        value={Math.abs(item.transform.scaleY)}
+        min={0.01}
+        step={0.05}
+        precision={6}
+        disabled={disabled}
+        onCommit={(scaleY) => commitScale("scaleY", scaleY)}
+      />
+      <NumberField
+        label="Rotation"
+        value={normalizeRotation(item.transform.rotation)}
+        step={1}
+        precision={1}
+        suffix="deg"
+        disabled={disabled}
+        onCommit={(rotation) => commitTransform({
+          ...item.transform,
+          rotation: roundTo(normalizeRotation(rotation), 1),
+        })}
+      />
+    </>
+  );
+}
+
+function StructuralCropControls({
+  item,
+  disabled,
+}: {
+  item: VideoClipTimelineItem | ImageOverlayTimelineItem;
+  disabled: boolean;
+}) {
+  const dispatchOperation = useInspectorDispatch();
+  const document = useAppSelector(selectVideoDocument);
+  const media = document?.media[item.mediaId];
+  const width = media?.width;
+  const height = media?.height;
+  const dimensionsValid = typeof width === "number" && width > 0 && typeof height === "number" && height > 0;
+  const controlsDisabled = disabled || !dimensionsValid;
+
+  const commitSide = (side: keyof typeof item.crop, percent: number) => {
+    if (!dimensionsValid) return;
+    const horizontal = side === "left" || side === "right";
+    const opposite = ({ top: "bottom", right: "left", bottom: "top", left: "right" } as const)[side];
+    const sourceDimension = horizontal ? width : height;
+    const maximum = Math.max(0, 1 - item.crop[opposite] - 1 / sourceDimension);
+    const crop = roundCropForCommit({
+      ...item.crop,
+      [side]: Math.min(maximum, Math.max(0, percent / 100)),
+    }, width, height);
+    dispatchOperation(updateTransformCropOperation(item.id, { crop }, `Update crop ${side}`));
+  };
+
+  return (
+    <>
+      {(["top", "right", "bottom", "left"] as const).map((side) => (
+        <NumberField
+          key={side}
+          label={capitalize(side)}
+          value={roundTo(item.crop[side] * 100, 4)}
+          min={0}
+          max={100}
+          step={0.1}
+          precision={4}
+          suffix="%"
+          disabled={controlsDisabled}
+          onCommit={(value) => commitSide(side, value)}
+        />
+      ))}
+      <MockButtonField
+        label="Reset Crop"
+        disabled={controlsDisabled || Object.values(item.crop).every((value) => value === 0)}
+        onClick={() => dispatchOperation(updateTransformCropOperation(
+          item.id,
+          { crop: { top: 0, right: 0, bottom: 0, left: 0 } },
+          "Reset crop",
+        ))}
+      />
+    </>
+  );
+}
+
 function NumberField({
   label,
   value,
@@ -2248,15 +2293,16 @@ function NumberField({
 }: NumberFieldProps) {
   const formattedValue = useMemo(() => formatNumber(value, precision), [precision, value]);
   const [draft, setDraft] = useState(formattedValue);
+  const previousFormattedValue = useRef(formattedValue);
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    if (!isFocused) {
+    if (!isFocused || draft === previousFormattedValue.current) {
       setDraft(formattedValue);
-      setError(null);
     }
-  }, [formattedValue, isFocused]);
+    previousFormattedValue.current = formattedValue;
+  }, [draft, formattedValue, isFocused]);
 
   function commit() {
     setIsFocused(false);
@@ -2505,6 +2551,44 @@ function formatNumber(value: number, precision: number): string {
   return Number(value.toFixed(precision)).toString();
 }
 
+function roundTo(value: number, precision: number): number {
+  const multiplier = 10 ** precision;
+  return Math.round(value * multiplier) / multiplier;
+}
+
+function sameVideoTransform(left: VideoTransform, right: VideoTransform): boolean {
+  return left.x === right.x &&
+    left.y === right.y &&
+    left.scaleX === right.scaleX &&
+    left.scaleY === right.scaleY &&
+    left.rotation === right.rotation &&
+    left.anchorX === right.anchorX &&
+    left.anchorY === right.anchorY;
+}
+
 function capitalize(value: string): string {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+}
+
+function mergeAdvancedState(
+  current: VideoAdvancedItemState | undefined,
+  patch: Partial<VideoAdvancedItemState>,
+): VideoAdvancedItemState {
+  return {
+    ...current,
+    ...patch,
+    transform: patch.transform ? { ...current?.transform, ...patch.transform } : current?.transform,
+    crop: patch.crop ? { ...current?.crop, ...patch.crop } : current?.crop,
+    color: patch.color ? { ...current?.color, ...patch.color } : current?.color,
+  };
+}
+
+function identityCurves() {
+  const line = [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+  return { master: line, red: line, green: line, blue: line };
+}
+
+function neutralHsl() {
+  const band = { hue: 0, saturation: 0, lightness: 0 };
+  return { red: band, yellow: band, green: band, cyan: band, blue: band, magenta: band };
 }

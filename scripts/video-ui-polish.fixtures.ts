@@ -33,7 +33,7 @@ export const videoUiPolishMarkers = {
     "Empty timeline",
     "No active visual",
     "Media unavailable",
-    "No selection",
+    "Canvas size",
     "No matching moments found.",
     "Suggestions appear when the timeline or selection changes.",
   ],

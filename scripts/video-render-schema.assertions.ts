@@ -19,6 +19,8 @@ function main(): void {
   assertManifestIncludesRenderableSubset();
   assertMissingCanonicalSourceBlocksExport();
   assertUnsupportedFeaturesBlockManifest();
+  assertSupportedAnimationIsNormalized();
+  assertMissingDimensionsBlockExport();
 }
 
 function assertManifestIncludesRenderableSubset(): void {
@@ -32,7 +34,7 @@ function assertManifestIncludesRenderableSubset(): void {
 
   assert.equal(result.ok, true);
   const manifest = result.manifest;
-  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.schemaVersion, 2);
   assert.equal(manifest.projectId, document.projectId);
   assert.equal(manifest.settings.destinationLabel, "Renderable h264-1080p");
   assert.equal(manifest.durationSeconds, 66.4);
@@ -57,10 +59,13 @@ function assertManifestIncludesRenderableSubset(): void {
   assert.equal(beach.sourceOut, 21);
   assert.equal(beach.speed, 1);
   assert.deepEqual(beach.crop, { top: 0, right: 0, bottom: 0, left: 0 });
+  assert.equal(typeof beach.stackOrder, "number");
 
   const city = manifest.visualItems.find((item) => item.itemId === "tl-city");
   assert.equal(city?.shotId, "shot-city-middle");
-  assert.ok(manifest.visualItems.some((item) => item.type === "image" && item.itemId === "image-1"));
+  const image = manifest.visualItems.find((item) => item.type === "image" && item.itemId === "image-1");
+  assert.ok(image);
+  assert.deepEqual(image.crop, { top: 0, right: 0, bottom: 0, left: 0 });
   assert.ok(manifest.audioItems.some((item) => item.itemId === "tl-audio-main" && item.volume === 1));
   assert.equal(manifest.audioItems.some((item) => item.itemId === "muted-audio"), false);
   assert.ok(manifest.textOverlays.some((item) => item.itemId === "tl-caption" && item.text === "Welcome to summer"));
@@ -77,6 +82,41 @@ function assertManifestIncludesRenderableSubset(): void {
   const validation = validateVideoExport(document, media, settings(document));
   assert.equal(validation.ok, true);
   assert.deepEqual(validation.manifest, manifest);
+}
+
+function assertSupportedAnimationIsNormalized(): void {
+  const document = renderableDocument();
+  const beach = document.tracks[0].items.find((item) => item.id === "tl-beach");
+  if (beach?.type !== "video") throw new Error("Expected video fixture");
+  beach.advanced = {
+    transform: {
+      x: {
+        value: 0,
+        keyframes: [
+          { id: "start", time: 0, value: 0 },
+          { id: "end", time: 2, value: 120, easing: [0.42, 0, 0.58, 1] },
+        ],
+      },
+    },
+    crop: {
+      left: { value: 0, keyframes: [{ id: "c0", time: 0, value: 0 }, { id: "c1", time: 2, value: 0.2 }] },
+    },
+    opacity: { value: 1, keyframes: [{ id: "o0", time: 0, value: 1 }, { id: "o1", time: 2, value: 0.5 }] },
+  };
+  const result = buildVideoRenderManifest({ document, media: readyMediaForDocument(document), settings: settings(document) });
+  assert.equal(result.ok, true);
+  const rendered = result.manifest.visualItems.find((item) => item.itemId === beach.id);
+  assert.deepEqual(rendered?.animation?.transform?.x?.keyframes.map((keyframe) => keyframe.time), [0, 2]);
+  assert.equal(rendered?.animation?.crop?.left?.keyframes[1].value, 0.2);
+  assert.equal(rendered?.animation?.opacity?.keyframes[1].value, 0.5);
+}
+
+function assertMissingDimensionsBlockExport(): void {
+  const document = renderableDocument();
+  delete document.media["still-poster"].width;
+  const result = buildVideoRenderManifest({ document, media: readyMediaForDocument(document), settings: settings(document) });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((issue) => issue.code === "missing-source-dimensions"));
 }
 
 function assertMissingCanonicalSourceBlocksExport(): void {
@@ -215,6 +255,7 @@ function imageItem(id: string, mediaId: string): ImageOverlayTimelineItem {
     timelineStart: 1,
     duration: 5,
     transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    crop: { top: 0, right: 0, bottom: 0, left: 0 },
     opacity: 1,
     layerOrder: 2,
   };

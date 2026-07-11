@@ -1,52 +1,80 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type Konva from "konva";
-import { Group, Image as KonvaImage, Layer, Rect, Stage, Text } from "react-konva";
+import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from "react-konva";
 
 import {
+  applyHandlePointerOffset,
+  applyEvaluatedCropTransformDeltasToRaw,
+  clampInteractiveHandle,
+  computeCenterOriginMediaGeometry,
+  computeCroppedSourceGeometry,
   computeFrameBounds,
-  computeMediaBounds,
   computeSafeGuides,
   computeTextOverlayBounds,
   createProgramMonitorPlan,
   mediaSourceTimeToTimelineTime,
+  normalizeRotation,
+  panCropSourceWindow,
+  previewDeltaToProjectDelta,
+  previewPointToProjectPoint,
+  resizeVisualFromOppositeCorner,
+  resizeCropFromOppositeEdge,
+  rotationForPointer,
+  roundVisualTransformForCommit,
+  roundCropForCommit,
+  type CropEdge,
+  type InteractiveHandlePlacement,
   type PreviewAudioPlan,
   type PreviewMediaOverlayPlan,
   type PreviewOverlayPlan,
   type PreviewQualityPreference,
   type PreviewRect,
   type PreviewVisualPlan,
+  type VisualResizeCorner,
   stepPreviewTime,
 } from "~/lib/editor/editor-preview";
+import { mediaPreparationKey, type MediaPreparationRequest } from "~/lib/editor/media-preparation";
 import {
   createVideoEditorPerformanceMetric,
   queueVideoEditorPerformanceMetric,
 } from "~/lib/editor/video-performance.client";
 import { createEditorCorrelationId, logVideoEditorEvent } from "~/lib/editor/editor-observability.client";
-import type { VideoProjectSettings, VideoTextStyle, VideoTransform } from "~/lib/editor/video-document";
+import type { VideoCrop, VideoProjectDocument, VideoProjectSettings, VideoTextStyle, VideoTransform, VideoTransition } from "~/lib/editor/video-document";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   currentTimeChanged,
+  activeInspectorSectionChanged,
   modalClosed,
   modalOpened,
   muteToggled,
   playbackFrameStepped,
+  playbackClockTimeChanged,
   playbackPaused,
   playbackStepChanged,
   playbackToggled,
+  mediaPreparationRequested,
+  mediaPreparationRetried,
+  previewBufferingResolved,
+  previewBufferingStarted,
+  selectActiveToolId,
+  selectInspectorPanelState,
   selectOverlayState,
   selectProgramMonitorState,
+  selectMediaPreparationState,
+  selectMediaPreparationEnabled,
+  selectPreviewBufferingState,
   selectSelectedItemIds,
+  selectVisualScalesLinked,
   timelineItemsSelected,
   videoOperationApplied,
 } from "~/store/slices/editor-slice";
-import type { UpdateTextOperation } from "~/lib/editor/video-operations";
+import { updateTransformCropOperation, type UpdateTextOperation } from "~/lib/editor/video-operations";
 
-import { editorProject, type EditorProjectMock } from "../mock-editor-data";
 import { EditorIcon, EditorIconButton } from "../editor-ui";
 import { getActiveDraggedMedia } from "~/lib/editor/editor-media";
+import "~/styles/video-fonts.css";
 
 interface PreviewPanelProps {
-  project: EditorProjectMock;
   className?: string;
   onMediaDrop?: (mediaId: string, placement?: { trackId?: string; timelineStart: number }) => void;
 }
@@ -57,12 +85,20 @@ interface StageSize {
 }
 
 type MediaErrorMap = Record<string, string>;
-type ResizeCorner = "nw" | "ne" | "sw" | "se";
+type ResizeCorner = VisualResizeCorner;
 type TextTransformPreview = Record<string, VideoTransform>;
+type VisualTransformPreview = Record<string, VideoTransform>;
+type VisualCropPreview = Record<string, { crop: VideoCrop; transform: VideoTransform }>;
 type HTMLVideoElementWithFrameCallback = HTMLVideoElement & {
   requestVideoFrameCallback: (callback: () => void) => number;
   cancelVideoFrameCallback?: (handle: number) => void;
 };
+
+declare global {
+  interface Window {
+    __KUVOX_CAPTURE_PREVIEW_PNG__?: () => string | null;
+  }
+}
 type TextGesture = {
   kind: "move" | "resize";
   itemId: string;
@@ -70,73 +106,80 @@ type TextGesture = {
   startTransform: VideoTransform;
   corner?: ResizeCorner;
 };
+type VisualGesture = {
+  kind: "move" | "resize" | "rotate";
+  activated: boolean;
+  pointerCaptured: boolean;
+  itemId: string;
+  pointerId: number;
+  pointerContainer: HTMLDivElement;
+  startPointer: { x: number; y: number };
+  documentTransform: VideoTransform;
+  renderedTransform: VideoTransform;
+  mediaWidth?: number;
+  mediaHeight?: number;
+  corner?: ResizeCorner;
+  handlePlacement?: InteractiveHandlePlacement;
+};
+type CropGesture = {
+  kind: "pan" | "edge";
+  itemId: string;
+  pointerId: number;
+  pointerContainer: HTMLDivElement;
+  startPointer: { x: number; y: number };
+  documentCrop: VideoCrop;
+  documentTransform: VideoTransform;
+  renderedCrop: VideoCrop;
+  renderedTransform: VideoTransform;
+  mediaWidth: number;
+  mediaHeight: number;
+  edge?: CropEdge;
+  handlePlacement?: InteractiveHandlePlacement;
+};
 
 const defaultStageSize: StageSize = { width: 960, height: 540 };
 const mediaClockEndEpsilon = 0.01;
+const visualMoveDragThreshold = 5;
 const decodedImageCache = new Map<string, HTMLImageElement>();
 
+function findActiveTransition(document: VideoProjectDocument, currentTime: number): VideoTransition | null {
+  for (const transition of document.transitions) {
+    const targets = transition.targetItemIds.flatMap((itemId) =>
+      document.tracks.flatMap((track) => track.items.filter((item) => item.id === itemId)),
+    );
+    const boundary = targets.length > 1
+      ? Math.max(...targets.slice(0, -1).map((item) => item.timelineStart + item.duration))
+      : targets[0]?.timelineStart;
+    if (boundary !== undefined && Math.abs(currentTime - boundary) <= transition.duration / 2) {
+      return transition;
+    }
+  }
+  return null;
+}
+
 export function PreviewPanel({
-  project = editorProject,
   className = "",
   onMediaDrop,
-}: Partial<PreviewPanelProps>) {
+}: PreviewPanelProps) {
   const [dragOverActive, setDragOverActive] = useState(false);
   const dispatch = useAppDispatch();
-  const { document, playback, timelineDuration, soloedAudioTrackIds } = useAppSelector(selectProgramMonitorState);
+  const { document, playback, playbackSeekRevision, timelineDuration, soloedAudioTrackIds } = useAppSelector(selectProgramMonitorState);
   const selectedItemIds = useAppSelector(selectSelectedItemIds);
+  const activeToolId = useAppSelector(selectActiveToolId);
+  const visualScalesLinked = useAppSelector(selectVisualScalesLinked);
+  const inspectorPanel = useAppSelector(selectInspectorPanelState);
   const activeModal = useAppSelector((state) => selectOverlayState(state).activeModal);
+  const preparationByKey = useAppSelector(selectMediaPreparationState);
+  const preparationEnabled = useAppSelector(selectMediaPreparationEnabled);
+  const previewBuffering = useAppSelector(selectPreviewBufferingState);
   const [qualityPreference, setQualityPreference] = useState<PreviewQualityPreference>("balanced");
   const [timecodeDraft, setTimecodeDraft] = useState<string | null>(null);
   const [mediaErrors, setMediaErrors] = useState<MediaErrorMap>({});
   const [previewAreaSize, setPreviewAreaSize] = useElementSize(defaultStageSize);
   const [fullscreenStageSize, setFullscreenStageSize] = useElementSize(defaultStageSize);
   const mediaLayerRef = useRef<Konva.Layer>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  const [activeEffect, setActiveEffect] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("kuvox_active_effect");
-    }
-    return null;
-  });
-
-  const [activeTransition, setActiveTransition] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("kuvox_active_transition");
-    }
-    return null;
-  });
-
-  const [transitionTrigger, setTransitionTrigger] = useState(0);
-
-  useEffect(() => {
-    const handleEffectChange = () => {
-      setActiveEffect(localStorage.getItem("kuvox_active_effect"));
-    };
-    const handleTransitionChange = () => {
-      setActiveTransition(localStorage.getItem("kuvox_active_transition"));
-      setTransitionTrigger(prev => prev + 1);
-    };
-    window.addEventListener("kuvox-effect-changed", handleEffectChange);
-    window.addEventListener("kuvox-transition-changed", handleTransitionChange);
-    return () => {
-      window.removeEventListener("kuvox-effect-changed", handleEffectChange);
-      window.removeEventListener("kuvox-transition-changed", handleTransitionChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const linkId = "kuvox-google-fonts";
-      if (!window.document.getElementById(linkId)) {
-        const link = window.document.createElement("link");
-        link.id = linkId;
-        link.href = "https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;600;700&family=Outfit:wght@400;600;700&family=Pacifico&family=Playfair+Display:wght@700&family=Poppins:wght@400;600;700&family=Roboto:wght@400;700&family=Space+Grotesk:wght@500;700&family=Syne:wght@700;800&display=swap";
-        link.rel = "stylesheet";
-        window.document.head.appendChild(link);
-      }
-    }
-  }, []);
+  const videoRefA = useRef<HTMLVideoElement>(null);
+  const videoRefB = useRef<HTMLVideoElement>(null);
 
   const plan = useMemo(
     () =>
@@ -154,10 +197,58 @@ export function PreviewPanel({
   );
   const frameRate = document?.settings.frameRate ?? 30;
   const activeVideo =
-    plan?.activeVisual?.item.type === "video" && plan.activeVisual.objectUrl
-      ? plan.activeVisual
+    plan?.activeVideo?.item.type === "video" && plan.activeVideo.objectUrl
+      ? plan.activeVideo
       : null;
+  const nextVideo = useMemo(
+    () => document && activeVideo
+      ? nextVideoPreviewPlan({
+        document,
+        activeVideo,
+        currentTime: playback.currentTime,
+        previewQuality: qualityPreference,
+        soloedAudioTrackIds,
+        previewVolume: playback.volume,
+        previewMuted: playback.muted,
+      })
+      : null,
+    [activeVideo, document, playback.currentTime, playback.muted, playback.volume, qualityPreference, soloedAudioTrackIds],
+  );
+  const activeVideoRef = videoRefForSource(videoRefA, videoRefB, activeVideo?.objectUrl ?? null);
+  const preloadVideoRef = activeVideoRef === videoRefA ? videoRefB : videoRefA;
+  const activeEffect = document && plan?.activeVisual
+    ? document.effects.find((effect) => effect.enabled && effect.targetItemIds.includes(plan.activeVisual!.item.id))?.type ?? null
+    : null;
+  const activeTransition = document
+    ? findActiveTransition(document, playback.currentTime)
+    : null;
   const activeAudio = plan?.activeAudio.filter((audio) => audio.objectUrl) ?? [];
+  const requiredPreparationRequests = useMemo(() => {
+    if (!plan) return [];
+    const requests = new Map<string, MediaPreparationRequest>();
+    const add = (media: PreviewVisualPlan["media"], objectUrl: string | null, sourceTime: number | null) => {
+      if (!objectUrl) return;
+      const request: MediaPreparationRequest = {
+        key: mediaPreparationKey(media.kind, objectUrl),
+        mediaId: media.id,
+        kind: media.kind,
+        objectUrl,
+        sourceTime: sourceTime ?? 0,
+        timelineStart: playback.currentTime,
+        priority: "playhead",
+      };
+      requests.set(request.key, request);
+    };
+    plan.visuals.forEach((visual) => add(visual.media, visual.objectUrl, visual.sourceTime));
+    plan.overlays.forEach((overlay) => {
+      if (overlay.kind === "media") add(overlay.media, overlay.objectUrl, null);
+    });
+    plan.activeAudio.filter((audio) => !audio.muted).forEach((audio) => add(audio.media, audio.objectUrl, audio.sourceTime));
+    return [...requests.values()];
+  }, [plan, playback.currentTime]);
+  const activeVisualVideoObjectUrls = plan?.visuals.flatMap((visual) =>
+    visual.item.type === "video" && visual.objectUrl ? [visual.objectUrl] : []
+  ) ?? [];
   const primaryClockAudio = activeVideo ? null : activeAudio[0] ?? null;
   const mediaClockActive = Boolean(activeVideo || primaryClockAudio);
   const stageSize = useMemo(
@@ -169,6 +260,42 @@ export function PreviewPanel({
   const planWarnings = plan?.warnings.map((warning) => warning.message) ?? [];
   const objectErrorMessages = Object.values(mediaErrors);
   const monitorMessages = [...planWarnings, ...objectErrorMessages];
+  const bufferingSignatureRef = useRef("");
+
+  useEffect(() => {
+    if (!preparationEnabled) return;
+    for (const request of requiredPreparationRequests) dispatch(mediaPreparationRequested(request));
+    const unready = requiredPreparationRequests.filter((request) => preparationByKey[request.key]?.status !== "ready");
+    if (unready.length === 0) {
+      bufferingSignatureRef.current = "";
+      if (previewBuffering.buffering) {
+        const durationMs = previewBuffering.startedAt === null ? 0 : Math.max(0, performance.now() - previewBuffering.startedAt);
+        logVideoEditorEvent("editor.preview.buffering.end", {
+          projectId: document?.projectId,
+          durationMs,
+          automaticResume: previewBuffering.resumeIntent,
+        }, "debug");
+        dispatch(previewBufferingResolved());
+      }
+      return;
+    }
+    const keys = unready.map((request) => request.key).sort();
+    const signature = `${playback.currentTime}:${keys.map((key) => `${key}:${preparationByKey[key]?.status ?? "queued"}`).join("|")}`;
+    if (bufferingSignatureRef.current === signature && previewBuffering.buffering) return;
+    bufferingSignatureRef.current = signature;
+    const failureResourceKey = keys.find((key) => preparationByKey[key]?.status === "failed");
+    logVideoEditorEvent("editor.preview.buffering.start", {
+      projectId: document?.projectId,
+      requiredResourceCount: keys.length,
+      requestedTime: playback.currentTime,
+    }, "debug");
+    dispatch(previewBufferingStarted({
+      requestedTime: playback.currentTime,
+      requiredResourceKeys: keys,
+      startedAt: performance.now(),
+      failureResourceKey,
+    }));
+  }, [dispatch, document?.projectId, playback.currentTime, preparationByKey, preparationEnabled, previewBuffering.buffering, previewBuffering.resumeIntent, previewBuffering.startedAt, requiredPreparationRequests]);
 
   const recordPlaybackSeek = useCallback((startedAt: number) => {
     if (!document) return;
@@ -184,18 +311,20 @@ export function PreviewPanel({
     currentTime: playback.currentTime,
     timelineDuration,
     frameRate,
-    onTimeChange: (time) => dispatch(currentTimeChanged(time)),
+    onTimeChange: (time) => dispatch(playbackClockTimeChanged(time)),
     onEnd: () => dispatch(playbackPaused()),
   });
 
   useVideoElementSync({
-    ref: videoRef,
+    ref: activeVideoRef,
     activeVideo,
+    seekRevision: playbackSeekRevision,
     playing: playback.playing,
-    muted: playback.muted,
-    volume: playback.volume,
+    muted: activeVideo?.audioMuted ?? playback.muted,
+    volume: activeVideo?.audioVolume ?? playback.volume,
+    activeVisualObjectUrls: activeVisualVideoObjectUrls,
     timelineDuration,
-    onTimeChange: (time) => dispatch(currentTimeChanged(time)),
+    onTimeChange: (time) => dispatch(playbackClockTimeChanged(time)),
     onEnd: () => dispatch(playbackPaused()),
     onError: (message) => {
       logMediaObjectFailure(document?.projectId, activeVideo?.media.id, activeVideo?.item.id, activeVideo?.objectVariant, "video", message);
@@ -203,6 +332,11 @@ export function PreviewPanel({
       dispatch(playbackPaused());
     },
     onDrawNeeded: () => mediaLayerRef.current?.batchDraw(),
+  });
+  useVideoElementPreload({
+    ref: preloadVideoRef,
+    video: nextVideo,
+    activeObjectUrl: activeVideo?.objectUrl ?? null,
   });
 
   useEffect(() => {
@@ -258,6 +392,25 @@ export function PreviewPanel({
     dispatch(timelineItemsSelected({ itemIds: [itemId], activeItemId: itemId }));
   }, [dispatch]);
 
+  const selectVisual = useCallback((itemId: string) => {
+    dispatch(timelineItemsSelected({ itemIds: [itemId], activeItemId: itemId }));
+  }, [dispatch]);
+
+  const commitVisualTransform = useCallback((itemId: string, transform: VideoTransform) => {
+    dispatch(videoOperationApplied(updateTransformCropOperation(itemId, { transform }, "Move visual")));
+  }, [dispatch]);
+  const commitVisualCrop = useCallback((
+    itemId: string,
+    crop: VideoCrop,
+    transform?: VideoTransform,
+  ) => {
+    dispatch(videoOperationApplied(updateTransformCropOperation(
+      itemId,
+      { crop, ...(transform ? { transform } : {}) },
+      transform ? "Resize crop" : "Pan crop",
+    )));
+  }, [dispatch]);
+
   const commitTextTransform = useCallback((itemId: string, transform: VideoTransform) => {
     const timestamp = new Date().toISOString();
     const operation: UpdateTextOperation = {
@@ -275,15 +428,17 @@ export function PreviewPanel({
 
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest">
-      <video ref={videoRef} className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
+      <video ref={videoRefA} data-preview-video-slot="a" className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
+      <video ref={videoRefB} data-preview-video-slot="b" className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
       {activeAudio.map((audioPlan) => (
         <PreviewAudioElement
           key={audioPlan.item.id}
           activeAudio={audioPlan}
+          seekRevision={playbackSeekRevision}
           playing={playback.playing}
           primaryClock={primaryClockAudio?.item.id === audioPlan.item.id}
           timelineDuration={timelineDuration}
-          onTimeChange={(time) => dispatch(currentTimeChanged(time))}
+          onTimeChange={(time) => dispatch(playbackClockTimeChanged(time))}
           onEnd={() => dispatch(playbackPaused())}
           onError={(message) => {
             logMediaObjectFailure(document?.projectId, audioPlan.media.id, audioPlan.item.id, audioPlan.objectVariant, "audio", message);
@@ -332,21 +487,52 @@ export function PreviewPanel({
             <ProgramMonitorStage
               plan={plan}
               stageSize={stageSize}
-              videoElement={videoRef.current}
+              activeVideoId={activeVideo?.item.id ?? null}
+              activeVideoElement={activeVideoRef.current}
+              videoElements={[videoRefA.current, videoRefB.current]}
+              playing={playback.playing}
               mediaLayerRef={mediaLayerRef}
               messages={monitorMessages}
-              fallbackTitle={project.previewTitle}
+              fallbackTitle={document?.name ?? "Untitled video"}
               selectedItemIds={selectedItemIds}
+              selectToolActive={activeToolId === "select"}
+              visualScalesLinked={visualScalesLinked}
+              cropModeRequested={inspectorPanel.open && inspectorPanel.activeSection === "crop"}
+              onSelectVisual={selectVisual}
+              onCommitVisualTransform={commitVisualTransform}
+              onCommitVisualCrop={commitVisualCrop}
+              onExitCropMode={() => dispatch(activeInspectorSectionChanged("transform"))}
               onSelectTextOverlay={selectTextOverlay}
               onCommitTextTransform={commitTextTransform}
             />
+            {previewBuffering.buffering ? (
+              <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55">
+                <div className="flex max-w-[260px] flex-col items-center gap-2 rounded-[6px] border border-white/15 bg-surface-container-high px-4 py-3 text-center shadow-xl">
+                  <EditorIcon className={`text-[24px] ${previewBuffering.failureResourceKey ? "text-error" : "animate-spin text-primary motion-reduce:animate-none"}`}>
+                    {previewBuffering.failureResourceKey ? "error" : "progress_activity"}
+                  </EditorIcon>
+                  <span className="text-body-sm font-semibold text-on-surface">
+                    {previewBuffering.failureResourceKey ? "Media preparation failed" : "Preparing media"}
+                  </span>
+                  {previewBuffering.failureResourceKey ? (
+                    <button
+                      type="button"
+                      className="rounded-[4px] bg-primary px-3 py-1.5 text-label-md font-semibold text-on-primary"
+                      onClick={() => dispatch(mediaPreparationRetried(previewBuffering.failureResourceKey!))}
+                    >
+                      Retry
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {activeEffect === "Vignette" && (
               <div className="pointer-events-none absolute inset-0 z-30 bg-[radial-gradient(circle,transparent_40%,rgba(0,0,0,0.65)_100%)]" />
             )}
-            {transitionTrigger > 0 && (
+            {activeTransition && (
               <TransitionPreviewOverlay
-                key={transitionTrigger}
-                transitionType={activeTransition}
+                key={`${activeTransition.id}:${Math.floor(playback.currentTime * frameRate)}`}
+                transitionType={activeTransition.type}
               />
             )}
             <style>{`
@@ -503,11 +689,21 @@ export function PreviewPanel({
             <ProgramMonitorStage
               plan={plan}
               stageSize={fullscreenStageSize}
-              videoElement={videoRef.current}
+              activeVideoId={activeVideo?.item.id ?? null}
+              activeVideoElement={activeVideoRef.current}
+              videoElements={[videoRefA.current, videoRefB.current]}
+              playing={playback.playing}
               mediaLayerRef={mediaLayerRef}
               messages={monitorMessages}
-              fallbackTitle={project.previewTitle}
+              fallbackTitle={document?.name ?? "Untitled video"}
               selectedItemIds={selectedItemIds}
+              selectToolActive={activeToolId === "select"}
+              visualScalesLinked={visualScalesLinked}
+              cropModeRequested={inspectorPanel.open && inspectorPanel.activeSection === "crop"}
+              onSelectVisual={selectVisual}
+              onCommitVisualTransform={commitVisualTransform}
+              onCommitVisualCrop={commitVisualCrop}
+              onExitCropMode={() => dispatch(activeInspectorSectionChanged("transform"))}
               onSelectTextOverlay={selectTextOverlay}
               onCommitTextTransform={commitTextTransform}
             />
@@ -521,21 +717,41 @@ export function PreviewPanel({
 function ProgramMonitorStage({
   plan,
   stageSize,
-  videoElement,
+  activeVideoId,
+  activeVideoElement,
+  videoElements,
+  playing,
   mediaLayerRef,
   messages,
   fallbackTitle,
   selectedItemIds,
+  selectToolActive,
+  visualScalesLinked,
+  cropModeRequested,
+  onSelectVisual,
+  onCommitVisualTransform,
+  onCommitVisualCrop,
+  onExitCropMode,
   onSelectTextOverlay,
   onCommitTextTransform,
 }: {
   plan: ReturnType<typeof createProgramMonitorPlan> | null;
   stageSize: StageSize;
-  videoElement: HTMLVideoElement | null;
+  activeVideoId: string | null;
+  activeVideoElement: HTMLVideoElement | null;
+  videoElements: Array<HTMLVideoElement | null>;
+  playing: boolean;
   mediaLayerRef: RefObject<Konva.Layer | null>;
   messages: string[];
   fallbackTitle: string;
   selectedItemIds: string[];
+  selectToolActive: boolean;
+  visualScalesLinked: boolean;
+  cropModeRequested: boolean;
+  onSelectVisual: (itemId: string) => void;
+  onCommitVisualTransform: (itemId: string, transform: VideoTransform) => void;
+  onCommitVisualCrop: (itemId: string, crop: VideoCrop, transform?: VideoTransform) => void;
+  onExitCropMode: () => void;
   onSelectTextOverlay: (itemId: string) => void;
   onCommitTextTransform: (itemId: string, transform: VideoTransform) => void;
 }) {
@@ -552,7 +768,319 @@ function ProgramMonitorStage({
   const safeGuides = computeSafeGuides(frameBounds);
   const selectedTextIds = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
   const [textPreview, setTextPreview] = useState<TextTransformPreview>({});
+  const [visualPreview, setVisualPreview] = useState<VisualTransformPreview>({});
+  const [cropPreview, setCropPreview] = useState<VisualCropPreview>({});
   const textGestureRef = useRef<TextGesture | null>(null);
+  const visualGestureRef = useRef<VisualGesture | null>(null);
+  const cropGestureRef = useRef<CropGesture | null>(null);
+  const stageRef = useRef<Konva.Stage>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !new URLSearchParams(window.location.search).has("previewTest")) return;
+    window.__KUVOX_CAPTURE_PREVIEW_PNG__ = () => {
+      const stage = stageRef.current;
+      if (!stage || frameBounds.width <= 0) return null;
+      return stage.toCanvas({
+        x: frameBounds.x,
+        y: frameBounds.y,
+        width: frameBounds.width,
+        height: frameBounds.height,
+        pixelRatio: settings.width / frameBounds.width,
+      }).toDataURL("image/png");
+    };
+    return () => {
+      delete window.__KUVOX_CAPTURE_PREVIEW_PNG__;
+    };
+  }, [frameBounds.height, frameBounds.width, frameBounds.x, frameBounds.y, settings.width]);
+
+  const clearVisualPreview = useCallback((itemId: string) => {
+    setVisualPreview((current) => {
+      if (!current[itemId]) return current;
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
+  }, []);
+
+  const cancelVisualGesture = useCallback(() => {
+    const gesture = visualGestureRef.current;
+    if (!gesture) return;
+    visualGestureRef.current = null;
+    if (gesture.pointerCaptured) {
+      try {
+        gesture.pointerContainer.releasePointerCapture(gesture.pointerId);
+      } catch {
+        // The pointer may already be released by the browser.
+      }
+    }
+    clearVisualPreview(gesture.itemId);
+  }, [clearVisualPreview]);
+
+  const clearCropPreview = useCallback((itemId: string) => {
+    setCropPreview((current) => {
+      if (!current[itemId]) return current;
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
+  }, []);
+
+  const cancelCropGesture = useCallback(() => {
+    const gesture = cropGestureRef.current;
+    if (!gesture) return;
+    cropGestureRef.current = null;
+    try {
+      gesture.pointerContainer.releasePointerCapture(gesture.pointerId);
+    } catch {
+      // The pointer may already be released by the browser.
+    }
+    clearCropPreview(gesture.itemId);
+  }, [clearCropPreview]);
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (cropGestureRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        cancelCropGesture();
+        return;
+      }
+      if (visualGestureRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelVisualGesture();
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape, true);
+    return () => window.removeEventListener("keydown", handleEscape, true);
+  }, [cancelCropGesture, cancelVisualGesture]);
+
+  useEffect(() => {
+    const gesture = visualGestureRef.current;
+    if (!gesture) return;
+    if (!selectToolActive || selectedItemIds.length !== 1 || selectedItemIds[0] !== gesture.itemId) {
+      cancelVisualGesture();
+    }
+  }, [cancelVisualGesture, selectToolActive, selectedItemIds]);
+
+  useEffect(() => {
+    const cancelPendingVisualClick = (event: PointerEvent) => {
+      const gesture = visualGestureRef.current;
+      if (!gesture || gesture.activated || event.pointerId !== gesture.pointerId) return;
+      cancelVisualGesture();
+    };
+    const cancelVisualOnBlur = () => cancelVisualGesture();
+
+    window.addEventListener("pointerup", cancelPendingVisualClick, true);
+    window.addEventListener("pointercancel", cancelPendingVisualClick, true);
+    window.addEventListener("blur", cancelVisualOnBlur);
+    return () => {
+      window.removeEventListener("pointerup", cancelPendingVisualClick, true);
+      window.removeEventListener("pointercancel", cancelPendingVisualClick, true);
+      window.removeEventListener("blur", cancelVisualOnBlur);
+    };
+  }, [cancelVisualGesture]);
+
+  useEffect(() => {
+    const gesture = cropGestureRef.current;
+    if (!gesture) return;
+    if (!cropModeRequested || selectedItemIds.length !== 1 || selectedItemIds[0] !== gesture.itemId) {
+      cancelCropGesture();
+    }
+  }, [cancelCropGesture, cropModeRequested, selectedItemIds]);
+
+  const handleVisualGestureStart = useCallback((
+    event: Konva.KonvaEventObject<PointerEvent>,
+    visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+    kind: VisualGesture["kind"] = "move",
+    corner?: ResizeCorner,
+    handlePlacement?: InteractiveHandlePlacement,
+  ) => {
+    if (!selectToolActive || event.evt.isPrimary === false) return;
+    if (event.evt.pointerType === "mouse" && event.evt.button !== 0) return;
+    event.cancelBubble = true;
+    if (kind === "move") onSelectVisual(visual.item.id);
+
+    const track = plan?.document.tracks.find((candidate) =>
+      candidate.items.some((item) => item.id === visual.item.id),
+    );
+    if (!track || track.locked || track.hidden) return;
+
+    const documentItem = track.items.find((item) => item.id === visual.item.id);
+    if (!documentItem || (documentItem.type !== "video" && documentItem.type !== "image")) return;
+    const pointer = event.target.getStage()?.getPointerPosition();
+    if (!pointer) return;
+
+    const pointerId = event.evt.pointerId ?? 0;
+    const pointerContainer = event.target.getStage()?.container();
+    if (!pointerContainer) return;
+    const activated = kind !== "move";
+    let pointerCaptured = false;
+    if (activated) {
+      try {
+        pointerContainer.setPointerCapture(pointerId);
+        pointerCaptured = true;
+      } catch {
+        // Pointer capture can fail when the browser has already released the pointer.
+      }
+    }
+    visualGestureRef.current = {
+      kind,
+      activated,
+      pointerCaptured,
+      itemId: visual.item.id,
+      pointerId,
+      pointerContainer,
+      startPointer: handlePlacement ? applyHandlePointerOffset(pointer, handlePlacement) : pointer,
+      documentTransform: { ...documentItem.transform },
+      renderedTransform: { ...visual.item.transform },
+      mediaWidth: visual.media.width,
+      mediaHeight: visual.media.height,
+      corner,
+      handlePlacement,
+    };
+  }, [onSelectVisual, plan?.document.tracks, selectToolActive]);
+
+  const updateVisualGesturePreview = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    const gesture = visualGestureRef.current;
+    if (!gesture) return;
+    const pointer = event.target.getStage()?.getPointerPosition();
+    if (!pointer) return;
+    if (gesture.kind === "move" && !gesture.activated) {
+      const distance = Math.hypot(
+        pointer.x - gesture.startPointer.x,
+        pointer.y - gesture.startPointer.y,
+      );
+      if (distance < visualMoveDragThreshold) return;
+      gesture.activated = true;
+      try {
+        gesture.pointerContainer.setPointerCapture(gesture.pointerId);
+        gesture.pointerCaptured = true;
+      } catch {
+        // The drag can continue inside the preview even if capture is unavailable.
+      }
+    }
+    const next = transformsForVisualGesture({
+      gesture,
+      pointer,
+      shiftKey: event.evt.shiftKey,
+      frameBounds,
+      settings,
+      visualScalesLinked,
+    });
+    setVisualPreview({
+      [gesture.itemId]: next.rendered,
+    });
+  }, [frameBounds, settings, visualScalesLinked]);
+
+  const commitVisualGesture = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    const gesture = visualGestureRef.current;
+    if (!gesture) return;
+    visualGestureRef.current = null;
+    clearVisualPreview(gesture.itemId);
+    if (!gesture.activated) return;
+    const pointer = event.target.getStage()?.getPointerPosition() ?? gesture.startPointer;
+    const next = transformsForVisualGesture({
+      gesture,
+      pointer,
+      shiftKey: event.evt.shiftKey,
+      frameBounds,
+      settings,
+      visualScalesLinked,
+    });
+    const nextTransform = roundVisualTransformForCommit(next.document);
+    if (gesture.pointerCaptured) {
+      try {
+        gesture.pointerContainer.releasePointerCapture(gesture.pointerId);
+      } catch {
+        // The pointer may already be released by the browser.
+      }
+    }
+    if (!sameTransform(nextTransform, gesture.documentTransform)) {
+      onCommitVisualTransform(gesture.itemId, nextTransform);
+    }
+  }, [clearVisualPreview, frameBounds, onCommitVisualTransform, settings, visualScalesLinked]);
+
+  const handleCropGestureStart = useCallback((
+    event: Konva.KonvaEventObject<PointerEvent>,
+    visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+    kind: CropGesture["kind"],
+    edge?: CropEdge,
+    handlePlacement?: InteractiveHandlePlacement,
+  ) => {
+    if (event.evt.isPrimary === false) return;
+    if (event.evt.pointerType === "mouse" && event.evt.button !== 0) return;
+    const width = visual.media.width;
+    const height = visual.media.height;
+    if (!width || !height) return;
+    const track = plan?.document.tracks.find((candidate) => candidate.items.some((item) => item.id === visual.item.id));
+    const documentItem = track?.items.find((item) => item.id === visual.item.id);
+    if (!track || track.locked || track.hidden || !documentItem || documentItem.type === "audio" || documentItem.type === "text") return;
+    const pointer = event.target.getStage()?.getPointerPosition();
+    const pointerContainer = event.target.getStage()?.container();
+    if (!pointer || !pointerContainer) return;
+    event.cancelBubble = true;
+    const pointerId = event.evt.pointerId ?? 0;
+    try {
+      pointerContainer.setPointerCapture(pointerId);
+    } catch {
+      // Pointer capture can fail when the browser has already released the pointer.
+    }
+    cropGestureRef.current = {
+      kind,
+      itemId: visual.item.id,
+      pointerId,
+      pointerContainer,
+      startPointer: handlePlacement ? applyHandlePointerOffset(pointer, handlePlacement) : pointer,
+      documentCrop: { ...documentItem.crop },
+      documentTransform: { ...documentItem.transform },
+      renderedCrop: { ...visual.item.crop },
+      renderedTransform: { ...visual.item.transform },
+      mediaWidth: width,
+      mediaHeight: height,
+      edge,
+      handlePlacement,
+    };
+  }, [plan?.document.tracks]);
+
+  const updateCropGesturePreview = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    const gesture = cropGestureRef.current;
+    if (!gesture) return;
+    const pointer = event.target.getStage()?.getPointerPosition();
+    if (!pointer) return;
+    const next = cropResultForGesture({ gesture, pointer, frameBounds, settings });
+    setCropPreview({ [gesture.itemId]: next });
+  }, [frameBounds, settings]);
+
+  const commitCropGesture = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    const gesture = cropGestureRef.current;
+    if (!gesture) return;
+    const pointer = event.target.getStage()?.getPointerPosition() ?? gesture.startPointer;
+    const evaluatedNext = cropResultForGesture({ gesture, pointer, frameBounds, settings });
+    const rawNext = applyEvaluatedCropTransformDeltasToRaw({
+      rawCrop: gesture.documentCrop,
+      rawTransform: gesture.documentTransform,
+      evaluatedCrop: gesture.renderedCrop,
+      evaluatedTransform: gesture.renderedTransform,
+      nextEvaluatedCrop: evaluatedNext.crop,
+      nextEvaluatedTransform: evaluatedNext.transform,
+    });
+    const crop = roundCropForCommit(rawNext.crop, gesture.mediaWidth, gesture.mediaHeight);
+    const transform = roundVisualTransformForCommit(rawNext.transform);
+    cropGestureRef.current = null;
+    clearCropPreview(gesture.itemId);
+    try {
+      gesture.pointerContainer.releasePointerCapture(gesture.pointerId);
+    } catch {
+      // The pointer may already be released by the browser.
+    }
+    if (!sameCrop(crop, gesture.documentCrop) || (gesture.kind === "edge" && !sameTransform(transform, gesture.documentTransform))) {
+      onCommitVisualCrop(gesture.itemId, crop, gesture.kind === "edge" ? transform : undefined);
+    }
+  }, [clearCropPreview, frameBounds, onCommitVisualCrop, settings]);
 
   const handleTextGestureStart = useCallback((
     event: Konva.KonvaEventObject<PointerEvent>,
@@ -599,16 +1127,68 @@ function ProgramMonitorStage({
     }
   }, [frameBounds, onCommitTextTransform, settings]);
 
-  const hasActiveVisual = Boolean(plan?.activeVisual);
+  const hasActiveVisual = Boolean(plan?.visuals.length);
+  const selectedVisual = useMemo(() => {
+    if (selectedItemIds.length !== 1) return null;
+    const selectedId = selectedItemIds[0];
+    return plan?.visuals.find((visual) => visual.item.id === selectedId)
+      ?? plan?.overlays.find((overlay): overlay is PreviewMediaOverlayPlan =>
+        overlay.kind === "media" && overlay.item.id === selectedId,
+      )
+      ?? null;
+  }, [plan?.overlays, plan?.visuals, selectedItemIds]);
+  const selectedVisualEditable = useMemo(() => {
+    if (!selectedVisual) return false;
+    const track = plan?.document.tracks.find((candidate) =>
+      candidate.items.some((item) => item.id === selectedVisual.item.id),
+    );
+    return Boolean(track && !track.locked && !track.hidden);
+  }, [plan?.document.tracks, selectedVisual]);
+  const cropModeActive = Boolean(
+    cropModeRequested &&
+    selectedVisual &&
+    selectedVisualEditable &&
+    selectedVisual.media.width && selectedVisual.media.width > 0 &&
+    selectedVisual.media.height && selectedVisual.media.height > 0,
+  );
+
+  useEffect(() => {
+    if (!cropGestureRef.current) return;
+    if (!cropModeActive || cropGestureRef.current.itemId !== selectedVisual?.item.id) cancelCropGesture();
+  }, [cancelCropGesture, cropModeActive, selectedVisual?.item.id]);
+
+  useEffect(() => {
+    function handleCropModeEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || !cropModeActive || cropGestureRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onExitCropMode();
+    }
+    window.addEventListener("keydown", handleCropModeEscape, true);
+    return () => window.removeEventListener("keydown", handleCropModeEscape, true);
+  }, [cropModeActive, onExitCropMode]);
 
   return (
     <Stage
+      ref={stageRef}
       width={stageSize.width}
       height={stageSize.height}
       className="h-full w-full bg-black"
-      onPointerMove={updateTextGesturePreview}
-      onPointerUp={commitTextGesture}
-      onPointerCancel={commitTextGesture}
+      onPointerMove={(event) => {
+        updateTextGesturePreview(event);
+        updateVisualGesturePreview(event);
+        updateCropGesturePreview(event);
+      }}
+      onPointerUp={(event) => {
+        commitTextGesture(event);
+        commitVisualGesture(event);
+        commitCropGesture(event);
+      }}
+      onPointerCancel={(event) => {
+        commitTextGesture(event);
+        cancelVisualGesture();
+        cancelCropGesture();
+      }}
     >
       <Layer>
         <Rect x={0} y={0} width={stageSize.width} height={stageSize.height} fill="#050505" />
@@ -622,14 +1202,26 @@ function ProgramMonitorStage({
 
       <Layer ref={mediaLayerRef}>
         <Group clip={frameBounds}>
-          {plan?.activeVisual ? (
-            <VisualNode
-              visual={plan.activeVisual}
-              projectId={plan.document.projectId}
-              videoElement={videoElement}
-              frameBounds={frameBounds}
-              settings={settings}
-            />
+          {plan?.visuals.length ? (
+            plan.visuals.map((visual) => (
+              <VisualNode
+                key={visual.item.id}
+                visual={visual}
+                projectId={plan.document.projectId}
+                clockVideo={visual.item.id === activeVideoId}
+                videoElement={visual.item.id === activeVideoId
+                  ? activeVideoElement
+                  : videoElementForSource(videoElements, visual.item.type === "video" ? visual.objectUrl : null)}
+                playing={playing}
+                frameBounds={frameBounds}
+                settings={settings}
+                interactive={selectToolActive && !cropModeActive}
+                previewTransform={visualPreview[visual.item.id]}
+                cropPreview={cropPreview[visual.item.id]}
+                cropModeActive={cropModeActive && selectedVisual?.item.id === visual.item.id}
+                onGestureStart={handleVisualGestureStart}
+              />
+            ))
           ) : (
             <EmptyFrame frameBounds={frameBounds} />
           )}
@@ -641,6 +1233,11 @@ function ProgramMonitorStage({
               frameBounds={frameBounds}
               settings={settings}
               selected={selectedTextIds.has(overlay.item.id)}
+              visualInteractive={selectToolActive && !cropModeActive}
+              visualPreviewTransform={visualPreview[overlay.item.id]}
+              cropPreview={cropPreview[overlay.item.id]}
+              cropModeActive={cropModeActive && selectedVisual?.item.id === overlay.item.id}
+              onVisualGestureStart={handleVisualGestureStart}
               previewTransform={textPreview[overlay.item.id]}
               onTextGestureStart={handleTextGestureStart}
             />
@@ -648,7 +1245,27 @@ function ProgramMonitorStage({
         </Group>
       </Layer>
 
-      <Layer listening={false}>
+      <Layer>
+        {selectedVisual && selectedVisualEditable && selectToolActive && !cropModeActive ? (
+          <VisualTransformOverlay
+            visual={selectedVisual}
+            frameBounds={frameBounds}
+            stageSize={stageSize}
+            settings={settings}
+            previewTransform={visualPreview[selectedVisual.item.id]}
+            onGestureStart={handleVisualGestureStart}
+          />
+        ) : null}
+        {selectedVisual && cropModeActive ? (
+          <VisualCropOverlay
+            visual={selectedVisual}
+            frameBounds={frameBounds}
+            stageSize={stageSize}
+            settings={settings}
+            preview={cropPreview[selectedVisual.item.id]}
+            onGestureStart={handleCropGestureStart}
+          />
+        ) : null}
         {!hasActiveVisual && safeGuides.map((guide, index) => (
           <Rect
             key={index}
@@ -667,16 +1284,34 @@ function ProgramMonitorStage({
 function VisualNode({
   visual,
   projectId,
+  clockVideo,
   videoElement,
+  playing,
   frameBounds,
   settings,
+  interactive,
+  previewTransform,
+  cropPreview,
+  cropModeActive,
+  onGestureStart,
 }: {
   visual: PreviewVisualPlan;
   projectId: string;
+  clockVideo: boolean;
   videoElement: HTMLVideoElement | null;
+  playing: boolean;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
+  interactive: boolean;
+  previewTransform?: VideoTransform;
+  cropPreview?: { crop: VideoCrop; transform: VideoTransform };
+  cropModeActive: boolean;
+  onGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+  ) => void;
 }) {
+  const groupRef = useRef<Konva.Group>(null);
   const image = useLoadedImage(visual.item.type === "video" ? null : visual.objectUrl, () => {
     logMediaObjectFailure(
       projectId,
@@ -687,31 +1322,113 @@ function VisualNode({
       "Preview image could not be decoded.",
     );
   });
-  const bounds = computeMediaBounds({
+  const layerVideoElement = useLayerVideoElement({
+    enabled: visual.item.type === "video" && videoElement === null,
+    objectUrl: visual.item.type === "video" ? visual.objectUrl : null,
+    sourceTime: visual.item.type === "video" ? visual.sourceTime ?? 0 : 0,
+    speed: visual.item.type === "video" ? visual.item.speed : 1,
+    playing,
+    muted: visual.audioMuted ?? true,
+    volume: visual.audioVolume ?? 0,
+    onError: () => {
+      logMediaObjectFailure(
+        projectId,
+        visual.media.id,
+        visual.item.id,
+        visual.objectVariant,
+        "video",
+        "Preview video could not be decoded.",
+      );
+    },
+    onDrawNeeded: () => groupRef.current?.getLayer()?.batchDraw(),
+  });
+  useExistingLayerVideoPlayback({
+    enabled: visual.item.type === "video" && videoElement !== null && !clockVideo,
+    video: videoElement,
+    sourceTime: visual.item.type === "video" ? visual.sourceTime ?? 0 : 0,
+    speed: visual.item.type === "video" ? visual.item.speed : 1,
+    playing,
+    muted: visual.audioMuted ?? true,
+    volume: visual.audioVolume ?? 0,
+    onError: () => {
+      logMediaObjectFailure(
+        projectId,
+        visual.media.id,
+        visual.item.id,
+        visual.objectVariant,
+        "video",
+        "Preview video could not continue playback.",
+      );
+    },
+    onDrawNeeded: () => groupRef.current?.getLayer()?.batchDraw(),
+  });
+  const transform = cropPreview?.transform ?? previewTransform ?? visual.item.transform;
+  const crop = cropPreview?.crop ?? visual.item.crop;
+  const geometry = computeCenterOriginMediaGeometry({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
     mediaWidth: visual.media.width,
     mediaHeight: visual.media.height,
-    transform: visual.item.transform,
+    transform,
+    crop,
   });
+  const sourceCrop = computeCroppedSourceGeometry(
+    visual.media.width ?? settings.width,
+    visual.media.height ?? settings.height,
+    crop,
+  );
+  const densityX = sourceCrop.width > 0 ? geometry.width / sourceCrop.width : 0;
+  const densityY = sourceCrop.height > 0 ? geometry.height / sourceCrop.height : 0;
   const opacity = "opacity" in visual.item ? visual.item.opacity : 1;
-  const sourceImage = visual.item.type === "video" ? videoElement : image;
-
-  if (!visual.objectUrl || !sourceImage) {
-    return <MediaPlaceholder bounds={bounds} label={visual.media.name} />;
-  }
+  const sourceImage = visual.item.type === "video" ? videoElement ?? layerVideoElement : image;
 
   return (
-    <KonvaImage
-      image={sourceImage}
-      x={bounds.x}
-      y={bounds.y}
-      width={bounds.width}
-      height={bounds.height}
-      rotation={visual.item.transform.rotation}
-      opacity={opacity}
-    />
+    <Group
+      ref={groupRef}
+      name={`preview-visual-${visual.item.id}`}
+      listening={interactive}
+      onPointerDown={(event) => onGestureStart(event, visual)}
+    >
+      <Group
+        x={geometry.center.x}
+        y={geometry.center.y}
+        rotation={geometry.rotation}
+        scaleX={transform.scaleX < 0 ? -1 : 1}
+        scaleY={transform.scaleY < 0 ? -1 : 1}
+      >
+        {!visual.objectUrl || !sourceImage ? (
+          <MediaPlaceholder bounds={{ x: -geometry.width / 2, y: -geometry.height / 2, width: geometry.width, height: geometry.height }} label={visual.media.name} />
+        ) : (
+          <>
+            {cropModeActive ? (
+              <KonvaImage
+                name={`preview-crop-ghost-${visual.item.id}`}
+                image={sourceImage}
+                x={-geometry.width / 2 - sourceCrop.x * densityX}
+                y={-geometry.height / 2 - sourceCrop.y * densityY}
+                width={(visual.media.width ?? settings.width) * densityX}
+                height={(visual.media.height ?? settings.height) * densityY}
+                opacity={opacity * 0.3}
+                listening={false}
+              />
+            ) : null}
+            <KonvaImage
+              image={sourceImage}
+              x={-geometry.width / 2}
+              y={-geometry.height / 2}
+              width={geometry.width}
+              height={geometry.height}
+              cropX={sourceCrop.x}
+              cropY={sourceCrop.y}
+              cropWidth={sourceCrop.width}
+              cropHeight={sourceCrop.height}
+              opacity={opacity}
+            />
+          </>
+        )}
+      </Group>
+    </Group>
   );
 }
 
@@ -721,6 +1438,11 @@ function OverlayNode({
   frameBounds,
   settings,
   selected,
+  visualInteractive,
+  visualPreviewTransform,
+  cropPreview,
+  cropModeActive,
+  onVisualGestureStart,
   previewTransform,
   onTextGestureStart,
 }: {
@@ -729,6 +1451,14 @@ function OverlayNode({
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
   selected: boolean;
+  visualInteractive: boolean;
+  visualPreviewTransform?: VideoTransform;
+  cropPreview?: { crop: VideoCrop; transform: VideoTransform };
+  cropModeActive: boolean;
+  onVisualGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+  ) => void;
   previewTransform?: VideoTransform;
   onTextGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
@@ -751,7 +1481,19 @@ function OverlayNode({
     );
   }
 
-  return <MediaOverlayNode overlay={overlay} projectId={projectId} frameBounds={frameBounds} settings={settings} />;
+  return (
+    <MediaOverlayNode
+      overlay={overlay}
+      projectId={projectId}
+      frameBounds={frameBounds}
+      settings={settings}
+      interactive={visualInteractive}
+      previewTransform={visualPreviewTransform}
+      cropPreview={cropPreview}
+      cropModeActive={cropModeActive}
+      onGestureStart={onVisualGestureStart}
+    />
+  );
 }
 
 function TextOverlayNode({
@@ -791,6 +1533,7 @@ function TextOverlayNode({
       x={bounds.x}
       y={bounds.y}
       rotation={transform.rotation}
+      opacity={overlay.opacity}
       onPointerDown={(event) => onGestureStart(event, overlay.item.id, transform, "move")}
     >
       {overlay.item.style.backgroundColor ? (
@@ -861,11 +1604,24 @@ function MediaOverlayNode({
   projectId,
   frameBounds,
   settings,
+  interactive,
+  previewTransform,
+  cropPreview,
+  cropModeActive,
+  onGestureStart,
 }: {
   overlay: PreviewMediaOverlayPlan;
   projectId: string;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
+  interactive: boolean;
+  previewTransform?: VideoTransform;
+  cropPreview?: { crop: VideoCrop; transform: VideoTransform };
+  cropModeActive: boolean;
+  onGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+  ) => void;
 }) {
   const image = useLoadedImage(overlay.objectUrl, () => {
     logMediaObjectFailure(
@@ -877,29 +1633,262 @@ function MediaOverlayNode({
       "Preview overlay image could not be decoded.",
     );
   });
-  const bounds = computeMediaBounds({
+  const transform = cropPreview?.transform ?? previewTransform ?? overlay.item.transform;
+  const crop = cropPreview?.crop ?? overlay.item.crop;
+  const geometry = computeCenterOriginMediaGeometry({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
     mediaWidth: overlay.media.width,
     mediaHeight: overlay.media.height,
-    transform: overlay.item.transform,
+    transform,
+    crop,
   });
-
-  if (!image) {
-    return <MediaPlaceholder bounds={bounds} label={overlay.media.name} />;
-  }
+  const sourceCrop = computeCroppedSourceGeometry(
+    overlay.media.width ?? settings.width,
+    overlay.media.height ?? settings.height,
+    crop,
+  );
+  const densityX = sourceCrop.width > 0 ? geometry.width / sourceCrop.width : 0;
+  const densityY = sourceCrop.height > 0 ? geometry.height / sourceCrop.height : 0;
 
   return (
-    <KonvaImage
-      image={image}
-      x={bounds.x}
-      y={bounds.y}
-      width={bounds.width}
-      height={bounds.height}
-      rotation={overlay.item.transform.rotation}
-      opacity={overlay.item.opacity}
-    />
+    <Group
+      name={`preview-visual-${overlay.item.id}`}
+      listening={interactive}
+      onPointerDown={(event) => onGestureStart(event, overlay)}
+    >
+      <Group
+        x={geometry.center.x}
+        y={geometry.center.y}
+        rotation={geometry.rotation}
+        scaleX={transform.scaleX < 0 ? -1 : 1}
+        scaleY={transform.scaleY < 0 ? -1 : 1}
+      >
+        {!image ? (
+          <MediaPlaceholder bounds={{ x: -geometry.width / 2, y: -geometry.height / 2, width: geometry.width, height: geometry.height }} label={overlay.media.name} />
+        ) : (
+          <>
+            {cropModeActive ? (
+              <KonvaImage
+                name={`preview-crop-ghost-${overlay.item.id}`}
+                image={image}
+                x={-geometry.width / 2 - sourceCrop.x * densityX}
+                y={-geometry.height / 2 - sourceCrop.y * densityY}
+                width={(overlay.media.width ?? settings.width) * densityX}
+                height={(overlay.media.height ?? settings.height) * densityY}
+                opacity={overlay.item.opacity * 0.3}
+                listening={false}
+              />
+            ) : null}
+            <KonvaImage
+              image={image}
+              x={-geometry.width / 2}
+              y={-geometry.height / 2}
+              width={geometry.width}
+              height={geometry.height}
+              cropX={sourceCrop.x}
+              cropY={sourceCrop.y}
+              cropWidth={sourceCrop.width}
+              cropHeight={sourceCrop.height}
+              opacity={overlay.item.opacity}
+            />
+          </>
+        )}
+      </Group>
+    </Group>
+  );
+}
+
+function VisualTransformOverlay({
+  visual,
+  frameBounds,
+  stageSize,
+  settings,
+  previewTransform,
+  onGestureStart,
+}: {
+  visual: PreviewVisualPlan | PreviewMediaOverlayPlan;
+  frameBounds: PreviewRect;
+  stageSize: StageSize;
+  settings: VideoProjectSettings;
+  previewTransform?: VideoTransform;
+  onGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+    kind?: VisualGesture["kind"],
+    corner?: ResizeCorner,
+    placement?: InteractiveHandlePlacement,
+  ) => void;
+}) {
+  const transform = previewTransform ?? visual.item.transform;
+  const geometry = computeCenterOriginMediaGeometry({
+    frameBounds,
+    frameWidth: settings.width,
+    frameHeight: settings.height,
+    mediaWidth: visual.media.width,
+    mediaHeight: visual.media.height,
+    transform,
+    crop: visual.item.crop,
+  });
+  const stageBounds = { x: 0, y: 0, width: stageSize.width, height: stageSize.height };
+  const handleRadius = 5;
+  const cornerPlacements = (Object.keys(geometry.corners) as ResizeCorner[]).map((corner) => ({
+    corner,
+    placement: clampInteractiveHandle(geometry.corners[corner], stageBounds, handleRadius + 2),
+  }));
+  const topVector = {
+    x: geometry.edgeCenters.top.x - geometry.center.x,
+    y: geometry.edgeCenters.top.y - geometry.center.y,
+  };
+  const topLength = Math.hypot(topVector.x, topVector.y) || 1;
+  const rotationActual = {
+    x: geometry.edgeCenters.top.x + topVector.x / topLength * 28,
+    y: geometry.edgeCenters.top.y + topVector.y / topLength * 28,
+  };
+  const rotationPlacement = clampInteractiveHandle(rotationActual, stageBounds, handleRadius + 2);
+  const outlinePoints = [
+    geometry.corners.nw.x, geometry.corners.nw.y,
+    geometry.corners.ne.x, geometry.corners.ne.y,
+    geometry.corners.se.x, geometry.corners.se.y,
+    geometry.corners.sw.x, geometry.corners.sw.y,
+  ];
+
+  return (
+    <Group name={`preview-selection-${visual.item.id}`}>
+      <Line points={outlinePoints} closed stroke="rgba(192,193,255,0.95)" strokeWidth={1.5} dash={[6, 4]} listening={false} />
+      <Line
+        points={[geometry.edgeCenters.top.x, geometry.edgeCenters.top.y, rotationPlacement.reachable.x, rotationPlacement.reachable.y]}
+        stroke="rgba(192,193,255,0.8)"
+        strokeWidth={1.25}
+        listening={false}
+      />
+      {cornerPlacements.map(({ corner, placement }) => (
+        <Rect
+          key={corner}
+          name={`preview-resize-${corner}-${visual.item.id}`}
+          x={placement.reachable.x - handleRadius}
+          y={placement.reachable.y - handleRadius}
+          width={handleRadius * 2}
+          height={handleRadius * 2}
+          fill="#c0c1ff"
+          stroke="#050505"
+          strokeWidth={1}
+          cornerRadius={2}
+          onPointerDown={(event) => onGestureStart(event, visual, "resize", corner, placement)}
+        />
+      ))}
+      <Circle
+        name={`preview-rotate-${visual.item.id}`}
+        x={rotationPlacement.reachable.x}
+        y={rotationPlacement.reachable.y}
+        radius={handleRadius + 1}
+        fill="#c0c1ff"
+        stroke="#050505"
+        strokeWidth={1}
+        onPointerDown={(event) => onGestureStart(event, visual, "rotate", undefined, rotationPlacement)}
+      />
+    </Group>
+  );
+}
+
+function VisualCropOverlay({
+  visual,
+  frameBounds,
+  stageSize,
+  settings,
+  preview,
+  onGestureStart,
+}: {
+  visual: PreviewVisualPlan | PreviewMediaOverlayPlan;
+  frameBounds: PreviewRect;
+  stageSize: StageSize;
+  settings: VideoProjectSettings;
+  preview?: { crop: VideoCrop; transform: VideoTransform };
+  onGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+    kind: CropGesture["kind"],
+    edge?: CropEdge,
+    placement?: InteractiveHandlePlacement,
+  ) => void;
+}) {
+  const crop = preview?.crop ?? visual.item.crop;
+  const transform = preview?.transform ?? visual.item.transform;
+  const geometry = computeCenterOriginMediaGeometry({
+    frameBounds,
+    frameWidth: settings.width,
+    frameHeight: settings.height,
+    mediaWidth: visual.media.width,
+    mediaHeight: visual.media.height,
+    transform,
+    crop,
+  });
+  const stageBounds = { x: 0, y: 0, width: stageSize.width, height: stageSize.height };
+  const handleHalfWidth = 7;
+  const handleHalfHeight = 4;
+  const placements = (Object.keys(geometry.edgeCenters) as CropEdge[]).map((edge) => ({
+    edge,
+    placement: clampInteractiveHandle(geometry.edgeCenters[edge], stageBounds, handleHalfWidth + 2),
+  }));
+  const outlinePoints = [
+    geometry.corners.nw.x, geometry.corners.nw.y,
+    geometry.corners.ne.x, geometry.corners.ne.y,
+    geometry.corners.se.x, geometry.corners.se.y,
+    geometry.corners.sw.x, geometry.corners.sw.y,
+  ];
+
+  return (
+    <Group name={`preview-crop-overlay-${visual.item.id}`}>
+      <Group listening={false}>
+        <Rect x={0} y={0} width={stageSize.width} height={stageSize.height} fill="rgba(0,0,0,0.5)" />
+        <Group x={geometry.center.x} y={geometry.center.y} rotation={geometry.rotation}>
+          <Rect
+            x={-geometry.width / 2}
+            y={-geometry.height / 2}
+            width={geometry.width}
+            height={geometry.height}
+            fill="#000"
+            globalCompositeOperation="destination-out"
+          />
+        </Group>
+      </Group>
+      <Group
+        x={geometry.center.x}
+        y={geometry.center.y}
+        rotation={geometry.rotation}
+        onPointerDown={(event) => onGestureStart(event, visual, "pan")}
+      >
+        <Rect
+          name={`preview-crop-pan-${visual.item.id}`}
+          x={-geometry.width / 2}
+          y={-geometry.height / 2}
+          width={geometry.width}
+          height={geometry.height}
+          fill="rgba(0,0,0,0.001)"
+        />
+      </Group>
+      <Line points={outlinePoints} closed stroke="rgba(0,0,0,0.8)" strokeWidth={3.5} listening={false} />
+      <Line points={outlinePoints} closed stroke="#ffffff" strokeWidth={1.5} listening={false} />
+      {placements.map(({ edge, placement }) => {
+        const vertical = edge === "left" || edge === "right";
+        return (
+          <Rect
+            key={edge}
+            name={`preview-crop-${edge}-${visual.item.id}`}
+            x={placement.reachable.x - (vertical ? handleHalfHeight : handleHalfWidth)}
+            y={placement.reachable.y - (vertical ? handleHalfWidth : handleHalfHeight)}
+            width={(vertical ? handleHalfHeight : handleHalfWidth) * 2}
+            height={(vertical ? handleHalfWidth : handleHalfHeight) * 2}
+            fill="#ffffff"
+            stroke="#050505"
+            strokeWidth={1}
+            cornerRadius={2}
+            onPointerDown={(event) => onGestureStart(event, visual, "edge", edge, placement)}
+          />
+        );
+      })}
+    </Group>
   );
 }
 
@@ -909,7 +1898,7 @@ function EmptyFrame({ frameBounds }: { frameBounds: PreviewRect }) {
     <>
       <Rect {...frameBounds} fillLinearGradientStartPoint={{ x: frameBounds.x, y: frameBounds.y }} fillLinearGradientEndPoint={{ x: frameBounds.x + frameBounds.width, y: frameBounds.y + frameBounds.height }} fillLinearGradientColorStops={[0, "#111111", 0.55, "#1b2426", 1, "#191919"]} />
       <Text
-        text="Preview"
+        text="No active visual"
         x={frameBounds.x}
         y={frameBounds.y + frameBounds.height / 2 - calculatedFontSize / 2}
         width={frameBounds.width}
@@ -1049,12 +2038,312 @@ function usePlaybackClock({
   }, [mediaClockActive, playing]);
 }
 
-function useVideoElementSync({
-  ref,
+function nextVideoPreviewPlan({
+  document,
   activeVideo,
+  currentTime,
+  previewQuality,
+  soloedAudioTrackIds,
+  previewVolume,
+  previewMuted,
+}: {
+  document: VideoProjectDocument;
+  activeVideo: PreviewVisualPlan;
+  currentTime: number;
+  previewQuality: PreviewQualityPreference;
+  soloedAudioTrackIds: string[];
+  previewVolume: number;
+  previewMuted: boolean;
+}): PreviewVisualPlan | null {
+  const nextStart = document.tracks
+    .filter((track) => !track.hidden)
+    .flatMap((track) => track.items)
+    .filter((item) =>
+      item.type === "video"
+      && item.id !== activeVideo.item.id
+      && item.timelineStart > currentTime + mediaClockEndEpsilon
+    )
+    .sort((left, right) => left.timelineStart - right.timelineStart)[0]?.timelineStart;
+  if (nextStart === undefined) return null;
+
+  const nextPlan = createProgramMonitorPlan({
+    document,
+    currentTime: nextStart + Math.min(mediaClockEndEpsilon, 1 / Math.max(1, document.settings.frameRate)),
+    previewQuality,
+    soloedAudioTrackIds,
+    previewVolume,
+    previewMuted,
+  });
+  return nextPlan.activeVideo?.item.type === "video" && nextPlan.activeVideo.objectUrl
+    ? nextPlan.activeVideo
+    : null;
+}
+
+function videoRefForSource(
+  first: RefObject<HTMLVideoElement | null>,
+  second: RefObject<HTMLVideoElement | null>,
+  objectUrl: string | null,
+): RefObject<HTMLVideoElement | null> {
+  if (!objectUrl) return first;
+  const resolvedUrl = new URL(objectUrl, window.location.href).href;
+  if (first.current?.src === resolvedUrl) return first;
+  if (second.current?.src === resolvedUrl) return second;
+  return first;
+}
+
+function videoElementForSource(
+  elements: Array<HTMLVideoElement | null>,
+  objectUrl: string | null,
+): HTMLVideoElement | null {
+  if (!objectUrl || typeof window === "undefined") return null;
+  const resolvedUrl = new URL(objectUrl, window.location.href).href;
+  return elements.find((element) => element?.src === resolvedUrl) ?? null;
+}
+
+function useLayerVideoElement({
+  enabled,
+  objectUrl,
+  sourceTime,
+  speed,
   playing,
   muted,
   volume,
+  onError,
+  onDrawNeeded,
+}: {
+  enabled: boolean;
+  objectUrl: string | null;
+  sourceTime: number;
+  speed: number;
+  playing: boolean;
+  muted: boolean;
+  volume: number;
+  onError: () => void;
+  onDrawNeeded: () => void;
+}): HTMLVideoElement | null {
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+  const sourceTimeRef = useRef(sourceTime);
+  const onErrorRef = useRef(onError);
+  const onDrawNeededRef = useRef(onDrawNeeded);
+
+  useEffect(() => {
+    sourceTimeRef.current = sourceTime;
+    onErrorRef.current = onError;
+    onDrawNeededRef.current = onDrawNeeded;
+  }, [onDrawNeeded, onError, sourceTime]);
+
+  useEffect(() => {
+    if (!enabled || typeof document === "undefined") {
+      setVideo(null);
+      return undefined;
+    }
+    const element = document.createElement("video");
+    element.muted = muted;
+    element.volume = Math.max(0, Math.min(1, volume));
+    element.playsInline = true;
+    element.preload = "auto";
+    setVideo(element);
+    return () => {
+      element.pause();
+      element.removeAttribute("src");
+      element.load();
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!video || !objectUrl) return undefined;
+    const resolvedUrl = new URL(objectUrl, window.location.href).href;
+    const handleMetadataLoaded = () => syncElementCurrentTime(video, sourceTimeRef.current);
+    const handleDecodedFrame = () => onDrawNeededRef.current();
+    const handleError = () => onErrorRef.current();
+    video.addEventListener("loadedmetadata", handleMetadataLoaded);
+    video.addEventListener("loadeddata", handleDecodedFrame);
+    video.addEventListener("canplay", handleDecodedFrame);
+    video.addEventListener("seeked", handleDecodedFrame);
+    video.addEventListener("error", handleError);
+    if (video.src !== resolvedUrl) {
+      video.src = objectUrl;
+      video.load();
+    } else {
+      syncElementCurrentTime(video, sourceTimeRef.current);
+    }
+    return () => {
+      video.removeEventListener("loadedmetadata", handleMetadataLoaded);
+      video.removeEventListener("loadeddata", handleDecodedFrame);
+      video.removeEventListener("canplay", handleDecodedFrame);
+      video.removeEventListener("seeked", handleDecodedFrame);
+      video.removeEventListener("error", handleError);
+    };
+  }, [objectUrl, video]);
+
+  useEffect(() => {
+    if (!video || !objectUrl) return;
+    video.playbackRate = speed;
+    video.muted = muted;
+    video.volume = Math.max(0, Math.min(1, volume));
+    const drift = Math.abs(video.currentTime - sourceTime);
+    if (!playing || drift > 0.35) syncElementCurrentTime(video, sourceTime);
+  }, [muted, objectUrl, playing, sourceTime, speed, video, volume]);
+
+  useEffect(() => {
+    if (!video || !objectUrl || !playing) {
+      video?.pause();
+      return undefined;
+    }
+    const playResult = video.play();
+    if (playResult) {
+      void playResult.catch((error) => {
+        if (!isInterruptedMediaPlayError(error)) onErrorRef.current();
+      });
+    }
+    return () => video.pause();
+  }, [objectUrl, playing, video]);
+
+  useEffect(() => {
+    if (!video || !playing) return undefined;
+    const frameVideo = video as HTMLVideoElementWithFrameCallback;
+    if (typeof frameVideo.requestVideoFrameCallback !== "function") {
+      const handleTimeUpdate = () => onDrawNeededRef.current();
+      video.addEventListener("timeupdate", handleTimeUpdate);
+      return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+    }
+    let cancelled = false;
+    let callbackId = 0;
+    const schedule = () => {
+      callbackId = frameVideo.requestVideoFrameCallback(() => {
+        onDrawNeededRef.current();
+        if (!cancelled) schedule();
+      });
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      frameVideo.cancelVideoFrameCallback?.(callbackId);
+    };
+  }, [playing, video]);
+
+  return enabled ? video : null;
+}
+
+function useExistingLayerVideoPlayback({
+  enabled,
+  video,
+  sourceTime,
+  speed,
+  playing,
+  muted,
+  volume,
+  onError,
+  onDrawNeeded,
+}: {
+  enabled: boolean;
+  video: HTMLVideoElement | null;
+  sourceTime: number;
+  speed: number;
+  playing: boolean;
+  muted: boolean;
+  volume: number;
+  onError: () => void;
+  onDrawNeeded: () => void;
+}): void {
+  const onErrorRef = useRef(onError);
+  const onDrawNeededRef = useRef(onDrawNeeded);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+    onDrawNeededRef.current = onDrawNeeded;
+  }, [onDrawNeeded, onError]);
+
+  useEffect(() => {
+    if (!enabled || !video) return;
+    video.playbackRate = speed;
+    video.muted = muted;
+    video.volume = Math.max(0, Math.min(1, volume));
+    if (!playing || Math.abs(video.currentTime - sourceTime) > 0.35) {
+      syncElementCurrentTime(video, sourceTime);
+    }
+  }, [enabled, muted, playing, sourceTime, speed, video, volume]);
+
+  useEffect(() => {
+    if (!enabled || !video || !playing) return undefined;
+    const playResult = video.paused ? video.play() : null;
+    if (playResult) {
+      void playResult.catch((error) => {
+        if (!isInterruptedMediaPlayError(error)) onErrorRef.current();
+      });
+    }
+    return () => {
+      if (enabledRef.current) video.pause();
+    };
+  }, [enabled, playing, video]);
+
+  useEffect(() => {
+    if (!enabled || !video || !playing) return undefined;
+    const frameVideo = video as HTMLVideoElementWithFrameCallback;
+    if (typeof frameVideo.requestVideoFrameCallback !== "function") {
+      const handleTimeUpdate = () => onDrawNeededRef.current();
+      video.addEventListener("timeupdate", handleTimeUpdate);
+      return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+    }
+    let cancelled = false;
+    let callbackId = 0;
+    const schedule = () => {
+      callbackId = frameVideo.requestVideoFrameCallback(() => {
+        onDrawNeededRef.current();
+        if (!cancelled) schedule();
+      });
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      frameVideo.cancelVideoFrameCallback?.(callbackId);
+    };
+  }, [enabled, playing, video]);
+}
+
+function useVideoElementPreload({
+  ref,
+  video,
+  activeObjectUrl,
+}: {
+  ref: RefObject<HTMLVideoElement | null>;
+  video: PreviewVisualPlan | null;
+  activeObjectUrl: string | null;
+}) {
+  const objectUrl = video?.objectUrl ?? null;
+  const sourceTime = video?.sourceTime ?? 0;
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || !objectUrl || objectUrl === activeObjectUrl) return undefined;
+
+    const resolvedUrl = new URL(objectUrl, window.location.href).href;
+    const handleMetadataLoaded = () => syncElementCurrentTime(element, sourceTime);
+    element.muted = true;
+    element.volume = 0;
+    element.preload = "auto";
+    element.addEventListener("loadedmetadata", handleMetadataLoaded);
+    if (element.src !== resolvedUrl) {
+      element.src = objectUrl;
+      element.load();
+    } else {
+      syncElementCurrentTime(element, sourceTime);
+    }
+
+    return () => element.removeEventListener("loadedmetadata", handleMetadataLoaded);
+  }, [activeObjectUrl, objectUrl, ref, sourceTime]);
+}
+
+function useVideoElementSync({
+  ref,
+  activeVideo,
+  seekRevision,
+  playing,
+  muted,
+  volume,
+  activeVisualObjectUrls,
   timelineDuration,
   onTimeChange,
   onEnd,
@@ -1063,9 +2352,11 @@ function useVideoElementSync({
 }: {
   ref: RefObject<HTMLVideoElement | null>;
   activeVideo: PreviewVisualPlan | null;
+  seekRevision: number;
   playing: boolean;
   muted: boolean;
   volume: number;
+  activeVisualObjectUrls: string[];
   timelineDuration: number;
   onTimeChange: (time: number) => void;
   onEnd: () => void;
@@ -1083,6 +2374,25 @@ function useVideoElementSync({
   const onTimeChangeRef = useRef(onTimeChange);
   const onEndRef = useRef(onEnd);
   const lastSourceKeyRef = useRef<string | null>(null);
+  const pendingSeekSourceTimeRef = useRef<number | null>(null);
+  const lastSeekRevisionRef = useRef(seekRevision);
+  const playingRef = useRef(playing);
+  const activeVisualObjectUrlsRef = useRef(new Set(activeVisualObjectUrls));
+  playingRef.current = playing;
+  activeVisualObjectUrlsRef.current = new Set(activeVisualObjectUrls);
+  sourceTimeRef.current = sourceTime;
+  if (seekRevision !== lastSeekRevisionRef.current) {
+    pendingSeekSourceTimeRef.current = sourceTime;
+    lastSeekRevisionRef.current = seekRevision;
+  }
+  const requestClockSeek = useCallback((
+    video: HTMLVideoElement,
+    targetSourceTime: number,
+    guardClock = true,
+  ) => {
+    if (guardClock) pendingSeekSourceTimeRef.current = targetSourceTime;
+    syncElementCurrentTime(video, targetSourceTime);
+  }, []);
 
   useEffect(() => {
     sourceTimeRef.current = sourceTime;
@@ -1103,6 +2413,7 @@ function useVideoElementSync({
       video.removeAttribute("src");
       video.load();
       lastSourceKeyRef.current = null;
+      pendingSeekSourceTimeRef.current = null;
       return;
     }
 
@@ -1118,7 +2429,7 @@ function useVideoElementSync({
     video.muted = muted;
     video.volume = Math.max(0, Math.min(1, volume));
     if (sourceChanged) {
-      syncElementCurrentTime(video, sourceTimeRef.current);
+      requestClockSeek(video, sourceTimeRef.current, pendingSeekSourceTimeRef.current !== null);
     }
     lastSourceKeyRef.current = sourceKey;
   }, [itemId, muted, objectUrl, ref, speed, volume]);
@@ -1130,22 +2441,66 @@ function useVideoElementSync({
     }
 
     const handleError = () => onErrorRef.current("Video preview object could not be loaded.");
+    const handleMetadataLoaded = () => {
+      requestClockSeek(video, sourceTimeRef.current, pendingSeekSourceTimeRef.current !== null);
+    };
+    const handleDecodedFrameAvailable = () => {
+      onDrawNeededRef.current();
+    };
+    const handleSeeked = () => {
+      onDrawNeededRef.current();
+    };
     video.addEventListener("error", handleError);
-    return () => video.removeEventListener("error", handleError);
-  }, [objectUrl, ref]);
+    video.addEventListener("loadedmetadata", handleMetadataLoaded);
+    video.addEventListener("loadeddata", handleDecodedFrameAvailable);
+    video.addEventListener("canplay", handleDecodedFrameAvailable);
+    video.addEventListener("seeked", handleSeeked);
+    return () => {
+      video.removeEventListener("error", handleError);
+      video.removeEventListener("loadedmetadata", handleMetadataLoaded);
+      video.removeEventListener("loadeddata", handleDecodedFrameAvailable);
+      video.removeEventListener("canplay", handleDecodedFrameAvailable);
+      video.removeEventListener("seeked", handleSeeked);
+    };
+  }, [objectUrl, ref, requestClockSeek]);
 
   useEffect(() => {
     const video = ref.current;
     if (!video) {
-      return;
+      return undefined;
     }
 
     if (!playing || !objectUrl) {
       video.pause();
-      return;
+      return undefined;
     }
 
-    video.play().catch(() => onErrorRef.current("Video preview could not start."));
+    let cancelled = false;
+    const retryWhenPlayable = () => {
+      if (cancelled) return;
+      void startPlayback();
+    };
+    const startPlayback = async () => {
+      try {
+        await video.play();
+      } catch (error) {
+        if (cancelled) return;
+        if (isInterruptedMediaPlayError(error)) {
+          video.addEventListener("canplay", retryWhenPlayable, { once: true });
+          return;
+        }
+        onErrorRef.current("Video preview could not start.");
+      }
+    };
+
+    void startPlayback();
+    return () => {
+      cancelled = true;
+      video.removeEventListener("canplay", retryWhenPlayable);
+      if (!playingRef.current || !objectUrl || !activeVisualObjectUrlsRef.current.has(objectUrl)) {
+        video.pause();
+      }
+    };
   }, [objectUrl, playing, ref]);
 
   useEffect(() => {
@@ -1158,10 +2513,30 @@ function useVideoElementSync({
     const sourceChanged = lastSourceKeyRef.current !== sourceKey;
     const drift = Math.abs(video.currentTime - sourceTime);
     if (!playing || sourceChanged || drift > 0.35) {
-      syncElementCurrentTime(video, sourceTime);
+      requestClockSeek(video, sourceTime, pendingSeekSourceTimeRef.current !== null);
     }
     lastSourceKeyRef.current = sourceKey;
-  }, [itemId, objectUrl, playing, ref, sourceTime]);
+  }, [itemId, objectUrl, playing, ref, requestClockSeek, sourceTime]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !playing || !item || !objectUrl) {
+      return undefined;
+    }
+
+    const handleEnded = () => {
+      const clipEndTime = item.timelineStart + item.duration;
+      const nextTime = mediaClockHandoffTime(clipEndTime, timelineDuration);
+      onDrawNeededRef.current();
+      onTimeChangeRef.current(nextTime);
+      if (nextTime >= timelineDuration - mediaClockEndEpsilon) {
+        onEndRef.current();
+      }
+    };
+
+    video.addEventListener("ended", handleEnded);
+    return () => video.removeEventListener("ended", handleEnded);
+  }, [itemId, item?.duration, item?.timelineStart, objectUrl, playing, ref, timelineDuration]);
 
   useEffect(() => {
     if (!playing || !item || !objectUrl) {
@@ -1176,6 +2551,15 @@ function useVideoElementSync({
     }
 
     const publish = () => {
+      const pendingSourceTime = pendingSeekSourceTimeRef.current;
+      if (pendingSourceTime !== null) {
+        onDrawNeededRef.current();
+        if (Math.abs(video.currentTime - pendingSourceTime) > 0.12) {
+          return true;
+        }
+        pendingSeekSourceTimeRef.current = null;
+        return true;
+      }
       const timelineTime = mediaSourceTimeToTimelineTime(item, video.currentTime);
       const clipEndTime = item.timelineStart + item.duration;
       const clipEnded =
@@ -1230,6 +2614,7 @@ function useVideoElementSync({
 
 function PreviewAudioElement({
   activeAudio,
+  seekRevision,
   playing,
   primaryClock,
   timelineDuration,
@@ -1238,6 +2623,7 @@ function PreviewAudioElement({
   onError,
 }: {
   activeAudio: PreviewAudioPlan;
+  seekRevision: number;
   playing: boolean;
   primaryClock: boolean;
   timelineDuration: number;
@@ -1250,6 +2636,7 @@ function PreviewAudioElement({
   useAudioElementSync({
     ref,
     activeAudio,
+    seekRevision,
     playing,
     primaryClock,
     timelineDuration,
@@ -1264,6 +2651,7 @@ function PreviewAudioElement({
 function useAudioElementSync({
   ref,
   activeAudio,
+  seekRevision,
   playing,
   primaryClock,
   timelineDuration,
@@ -1273,6 +2661,7 @@ function useAudioElementSync({
 }: {
   ref: RefObject<HTMLAudioElement | null>;
   activeAudio: PreviewAudioPlan;
+  seekRevision: number;
   playing: boolean;
   primaryClock: boolean;
   timelineDuration: number;
@@ -1292,6 +2681,14 @@ function useAudioElementSync({
   const onTimeChangeRef = useRef(onTimeChange);
   const onEndRef = useRef(onEnd);
   const lastSourceKeyRef = useRef<string | null>(null);
+  const pendingSeekSourceTimeRef = useRef<number | null>(null);
+  const lastSeekRevisionRef = useRef(seekRevision);
+
+  sourceTimeRef.current = sourceTime;
+  if (seekRevision !== lastSeekRevisionRef.current) {
+    pendingSeekSourceTimeRef.current = sourceTime;
+    lastSeekRevisionRef.current = seekRevision;
+  }
 
   useEffect(() => {
     sourceTimeRef.current = sourceTime;
@@ -1381,6 +2778,14 @@ function useAudioElementSync({
       return undefined;
     }
     const tick = () => {
+      const pendingSourceTime = pendingSeekSourceTimeRef.current;
+      if (pendingSourceTime !== null) {
+        if (Math.abs(audio.currentTime - pendingSourceTime) <= 0.12) {
+          pendingSeekSourceTimeRef.current = null;
+        }
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
       const timelineTime = mediaSourceTimeToTimelineTime(item, audio.currentTime);
       const clipEndTime = item.timelineStart + item.duration;
       const clipEnded =
@@ -1509,6 +2914,12 @@ function syncElementCurrentTime(element: HTMLMediaElement, sourceTime: number): 
   }
 }
 
+function isInterruptedMediaPlayError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+}
+
 function mediaClockHandoffTime(clipEndTime: number, timelineDuration: number): number {
   if (clipEndTime >= timelineDuration - mediaClockEndEpsilon) {
     return timelineDuration;
@@ -1560,6 +2971,143 @@ function transformForTextGesture(
   };
 }
 
+function transformsForVisualGesture({
+  gesture,
+  pointer,
+  shiftKey,
+  frameBounds,
+  settings,
+  visualScalesLinked,
+}: {
+  gesture: VisualGesture;
+  pointer: { x: number; y: number };
+  shiftKey: boolean;
+  frameBounds: PreviewRect;
+  settings: VideoProjectSettings;
+  visualScalesLinked: boolean;
+}): { rendered: VideoTransform; document: VideoTransform } {
+  const correctedPointer = gesture.handlePlacement
+    ? applyHandlePointerOffset(pointer, gesture.handlePlacement)
+    : pointer;
+
+  if (gesture.kind === "move") {
+    const deltaX = previewDeltaToProjectDelta(correctedPointer.x - gesture.startPointer.x, frameBounds, settings.width);
+    const deltaY = previewDeltaToProjectDelta(correctedPointer.y - gesture.startPointer.y, frameBounds, settings.width);
+    return {
+      rendered: {
+        ...gesture.renderedTransform,
+        x: gesture.renderedTransform.x + deltaX,
+        y: gesture.renderedTransform.y + deltaY,
+      },
+      document: {
+        ...gesture.documentTransform,
+        x: gesture.documentTransform.x + deltaX,
+        y: gesture.documentTransform.y + deltaY,
+      },
+    };
+  }
+
+  if (gesture.kind === "resize") {
+    const projectPointer = previewPointToProjectPoint(
+      correctedPointer,
+      frameBounds,
+      settings.width,
+      settings.height,
+    );
+    const rendered = resizeVisualFromOppositeCorner({
+      transform: gesture.renderedTransform,
+      projectWidth: settings.width,
+      projectHeight: settings.height,
+      mediaWidth: gesture.mediaWidth,
+      mediaHeight: gesture.mediaHeight,
+      corner: gesture.corner ?? "se",
+      pointer: projectPointer,
+      linked: visualScalesLinked && !shiftKey,
+    });
+    const scaleXMultiplier = rendered.scaleX / Math.max(0.01, Math.abs(gesture.renderedTransform.scaleX));
+    const scaleYMultiplier = rendered.scaleY / Math.max(0.01, Math.abs(gesture.renderedTransform.scaleY));
+    return {
+      rendered,
+      document: {
+        ...gesture.documentTransform,
+        x: gesture.documentTransform.x + rendered.x - gesture.renderedTransform.x,
+        y: gesture.documentTransform.y + rendered.y - gesture.renderedTransform.y,
+        scaleX: Math.max(0.01, Math.abs(gesture.documentTransform.scaleX) * scaleXMultiplier),
+        scaleY: Math.max(0.01, Math.abs(gesture.documentTransform.scaleY) * scaleYMultiplier),
+      },
+    };
+  }
+
+  const geometry = computeCenterOriginMediaGeometry({
+    frameBounds,
+    frameWidth: settings.width,
+    frameHeight: settings.height,
+    mediaWidth: gesture.mediaWidth,
+    mediaHeight: gesture.mediaHeight,
+    transform: gesture.renderedTransform,
+  });
+  const renderedRotation = rotationForPointer({
+    center: geometry.center,
+    startPointer: gesture.startPointer,
+    pointer: correctedPointer,
+    startRotation: gesture.renderedTransform.rotation,
+    snap: shiftKey,
+  });
+  const rotationDelta = normalizeRotation(renderedRotation - gesture.renderedTransform.rotation);
+  return {
+    rendered: { ...gesture.renderedTransform, rotation: renderedRotation },
+    document: {
+      ...gesture.documentTransform,
+      rotation: normalizeRotation(gesture.documentTransform.rotation + rotationDelta),
+    },
+  };
+}
+
+function cropResultForGesture({
+  gesture,
+  pointer,
+  frameBounds,
+  settings,
+}: {
+  gesture: CropGesture;
+  pointer: { x: number; y: number };
+  frameBounds: PreviewRect;
+  settings: VideoProjectSettings;
+}): { crop: VideoCrop; transform: VideoTransform } {
+  const correctedPointer = gesture.handlePlacement
+    ? applyHandlePointerOffset(pointer, gesture.handlePlacement)
+    : pointer;
+  if (gesture.kind === "pan") {
+    const projectDelta = {
+      x: previewDeltaToProjectDelta(correctedPointer.x - gesture.startPointer.x, frameBounds, settings.width),
+      y: previewDeltaToProjectDelta(correctedPointer.y - gesture.startPointer.y, frameBounds, settings.width),
+    };
+    return {
+      crop: panCropSourceWindow({
+        crop: gesture.renderedCrop,
+        transform: gesture.renderedTransform,
+        projectWidth: settings.width,
+        projectHeight: settings.height,
+        mediaWidth: gesture.mediaWidth,
+        mediaHeight: gesture.mediaHeight,
+        projectDelta,
+      }),
+      transform: gesture.renderedTransform,
+    };
+  }
+
+  return resizeCropFromOppositeEdge({
+    crop: gesture.renderedCrop,
+    transform: gesture.renderedTransform,
+    projectWidth: settings.width,
+    projectHeight: settings.height,
+    mediaWidth: gesture.mediaWidth,
+    mediaHeight: gesture.mediaHeight,
+    edge: gesture.edge ?? "right",
+    pointer: previewPointToProjectPoint(correctedPointer, frameBounds, settings.width, settings.height),
+  });
+}
+
 function sameTransform(left: VideoTransform, right: VideoTransform): boolean {
   return (
     left.x === right.x &&
@@ -1568,6 +3116,13 @@ function sameTransform(left: VideoTransform, right: VideoTransform): boolean {
     left.scaleY === right.scaleY &&
     left.rotation === right.rotation
   );
+}
+
+function sameCrop(left: VideoCrop, right: VideoCrop): boolean {
+  return left.top === right.top &&
+    left.right === right.right &&
+    left.bottom === right.bottom &&
+    left.left === right.left;
 }
 
 function roundTransformValue(value: number): number {

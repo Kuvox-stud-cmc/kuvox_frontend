@@ -37,7 +37,9 @@ function assertStablePanelDimensions(): void {
   assert.match(videoUiSources.mediaLibrary, /min:\s*240/);
   assert.match(videoUiSources.mediaLibrary, /max:\s*360/);
   assert.match(videoUiSources.slice, /libraryWidth = Math\.min\(360, Math\.max\(240/);
-  assert.match(videoUiSources.inspector, /w-video-inspector-width min-w-video-inspector-width/);
+  assert.match(videoUiSources.inspector, /width: inspectorWidth/);
+  assert.match(videoUiSources.inspector, /minWidth: 240/);
+  assert.match(videoUiSources.inspector, /maxWidth: 480/);
   assert.match(videoUiSources.assistant, /min-\[760px\]:w-80 min-\[760px\]:min-w-80 min-\[760px\]:max-w-80/);
   assert.match(videoUiSources.toolRail, /w-video-tool-rail-width/);
   assert.match(videoUiSources.timeline, /min-h-video-timeline-min max-h-video-timeline-max/);
@@ -45,7 +47,8 @@ function assertStablePanelDimensions(): void {
   assert.match(videoUiSources.preview, /fitStageToArea/);
   assert.match(videoUiSources.preview, /className="flex h-full w-full items-center justify-center overflow-hidden"/);
   assert.match(videoUiSources.preview, /width: stageSize\.width/);
-  assert.match(videoUiSources.preview, /grid h-14 shrink-0/);
+  assert.match(videoUiSources.preview, /grid h-12 shrink-0/);
+  assert.match(videoUiSources.preview, /2xl:h-14/);
 }
 
 function assertEmptyAndFailureStates(): void {
@@ -69,7 +72,7 @@ function assertResponsiveManualLayout(): void {
   assert.match(videoUiSources.workspace, /Open inspector/);
   assert.match(videoUiSources.workspace, /role="tablist"/);
   assert.match(videoUiSources.mediaLibrary, /className\?: string/);
-  assert.match(videoUiSources.inspector, /className\?: string/);
+  assert.match(videoUiSources.inspector, /visibilityClassName\?: string/);
   assert.match(videoUiSources.assistant, /absolute inset-0/);
   assert.match(videoUiSources.assistant, /min-\[760px\]:relative/);
   assert.match(videoUiSources.toolRail, /orientation\?: "vertical" \| "horizontal"/);

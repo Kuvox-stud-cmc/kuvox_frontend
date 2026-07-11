@@ -42,17 +42,15 @@ import {
 } from "~/store/slices/editor-slice";
 
 import { EditorIcon } from "./editor-ui";
-import type { AssistantMessageMock } from "./mock-editor-data";
 
 interface AiAssistantPanelProps {
-  messages: AssistantMessageMock[];
   projectId: string;
   cacheScope: EditorCacheScope;
   media?: MediaDto[];
   canPlanCommands?: boolean;
 }
 
-export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], canPlanCommands = true }: AiAssistantPanelProps) {
+export function AiAssistantPanel({ projectId, cacheScope, media = [], canPlanCommands = true }: AiAssistantPanelProps) {
   const dispatch = useAppDispatch();
   const [semanticQuery, setSemanticQuery] = useState("");
   const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
@@ -70,7 +68,7 @@ export function AiAssistantPanel({ messages, projectId, cacheScope, media = [], 
     recentCommandHistory,
   } = useAppSelector(selectAssistantState);
   const editor = useAppSelector(selectEditorState);
-  const visibleMessages = [...messages, ...extraMessages];
+  const visibleMessages = extraMessages;
   const showActivity = workspaceExpanded || extraMessages.length > 0 || aiCommandStatus === "failed" || aiCommandStatus === "applied";
   const visibleAutocompleteSuggestions = aiAutocompleteOpen ? aiSuggestions.slice(0, 6) : [];
   const keyboardSuggestionCount = Math.min(aiSuggestions.length, 6);

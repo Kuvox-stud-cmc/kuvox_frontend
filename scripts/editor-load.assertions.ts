@@ -13,6 +13,9 @@ function main(): void {
   assertCorruptDraftFallsBack();
   assertConflictDetection();
   assertSavedLocalWithoutServerChange();
+  assertUnavailableServerUsesPreviouslyOpenedCache();
+  assertUnavailableServerWithoutCacheFails();
+  assertConfirmedNotFoundCreatesEmptyDocument();
 }
 
 function assertScopeMapping(): void {
@@ -33,25 +36,29 @@ function assertScopeMapping(): void {
 
 function assertValidDraftWins(): void {
   const draft = createMockVideoProjectDocument("project-1", "Draft");
-  const resolved = resolveCachedEditorDocument({
+  const server = createMockVideoProjectDocument("project-1", "Server");
+  const resolved = ready(resolveCachedEditorDocument({
     project: project({ id: "project-1", name: "Server" }),
     draft: { ok: true, value: draft },
     pendingSync: { ok: true, value: [] },
-  });
+    serverTimeline: found(server, 2),
+  }));
 
-  assert.equal(resolved.source, "draft");
-  assert.equal(resolved.document.name, "Draft");
+  assert.equal(resolved.source, "server");
+  assert.equal(resolved.document.name, "Server");
   assert.equal(resolved.syncStatus, "clean");
 }
 
 function assertCorruptDraftFallsBack(): void {
-  const resolved = resolveCachedEditorDocument({
+  const server = createMockVideoProjectDocument("project-1", "Server");
+  const resolved = ready(resolveCachedEditorDocument({
     project: project({ id: "project-1", name: "Server" }),
     draft: { ok: false, reason: "corrupt", error: "bad document" },
     pendingSync: { ok: true, value: [] },
-  });
+    serverTimeline: found(server, 2),
+  }));
 
-  assert.equal(resolved.source, "empty");
+  assert.equal(resolved.source, "server");
   assert.equal(resolved.document.name, "Server");
   assert.equal(resolved.syncStatus, "clean");
   assert.deepEqual(resolved.warnings, [
@@ -62,7 +69,7 @@ function assertCorruptDraftFallsBack(): void {
 
 function assertConflictDetection(): void {
   const draft = createMockVideoProjectDocument("project-1", "Draft");
-  const resolved = resolveCachedEditorDocument({
+  const resolved = ready(resolveCachedEditorDocument({
     project: project({
       id: "project-1",
       updatedAt: "2026-02-02T10:00:00.000Z",
@@ -91,7 +98,8 @@ function assertConflictDetection(): void {
         },
       ],
     },
-  });
+    serverTimeline: found(createMockVideoProjectDocument("project-1", "Server"), 2),
+  }));
 
   assert.equal(resolved.syncStatus, "server-changed");
   assert.equal(resolved.conflict?.reason, "local-unsynced-server-changed");
@@ -99,7 +107,7 @@ function assertConflictDetection(): void {
 
 function assertSavedLocalWithoutServerChange(): void {
   const draft = createMockVideoProjectDocument("project-1", "Draft");
-  const resolved = resolveCachedEditorDocument({
+  const resolved = ready(resolveCachedEditorDocument({
     project: project({
       id: "project-1",
       updatedAt: "2026-02-01T10:00:00.000Z",
@@ -128,10 +136,73 @@ function assertSavedLocalWithoutServerChange(): void {
         },
       ],
     },
-  });
+    serverTimeline: found(createMockVideoProjectDocument("project-1", "Server"), 1),
+  }));
 
   assert.equal(resolved.syncStatus, "saved-local");
   assert.equal(resolved.conflict, null);
+}
+
+function assertUnavailableServerUsesPreviouslyOpenedCache(): void {
+  const draft = createMockVideoProjectDocument("project-1", "Cached");
+  const resolved = ready(resolveCachedEditorDocument({
+    project: project(),
+    draft: { ok: true, value: draft },
+    cachedProject: { ok: true, value: project() },
+    pendingSync: { ok: true, value: [] },
+    serverTimeline: { status: "unavailable", message: "offline" },
+  }));
+
+  assert.equal(resolved.source, "cached");
+  assert.equal(resolved.document.name, "Cached");
+}
+
+function assertUnavailableServerWithoutCacheFails(): void {
+  const resolved = resolveCachedEditorDocument({
+    project: project(),
+    draft: { ok: false, reason: "miss" },
+    pendingSync: { ok: true, value: [] },
+    serverTimeline: { status: "unavailable", message: "offline" },
+  });
+
+  assert.deepEqual(resolved, { status: "failure", message: "offline", warnings: [] });
+}
+
+function assertConfirmedNotFoundCreatesEmptyDocument(): void {
+  const resolved = ready(resolveCachedEditorDocument({
+    project: project({ name: "Empty project" }),
+    draft: { ok: false, reason: "miss" },
+    pendingSync: { ok: true, value: [] },
+    serverTimeline: { status: "not-found" },
+  }));
+
+  assert.equal(resolved.source, "empty");
+  assert.equal(resolved.document.name, "Empty project");
+  assert.equal(resolved.document.tracks.flatMap((track) => track.items).length, 0);
+}
+
+function ready(result: ReturnType<typeof resolveCachedEditorDocument>) {
+  assert.equal(result.status, "ready");
+  if (result.status !== "ready") throw new Error("Expected editor load to resolve.");
+  return result.value;
+}
+
+function found(document: ReturnType<typeof createMockVideoProjectDocument>, revisionNumber: number) {
+  return {
+    status: "found" as const,
+    timeline: {
+      projectId: document.projectId,
+      timelineId: "timeline-1",
+      revisionId: `revision-${revisionNumber}`,
+      document,
+      revisionNumber,
+      documentSchemaVersion: document.schemaVersion,
+      source: "manual",
+      label: null,
+      updatedAt: "2026-02-02T10:00:00.000Z",
+      updatedByUserId: "user-1",
+    },
+  };
 }
 
 function project(overrides: Partial<ProjectDto> = {}): ProjectDto {

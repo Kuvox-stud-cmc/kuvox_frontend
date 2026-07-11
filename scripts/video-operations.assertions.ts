@@ -11,6 +11,7 @@ import {
   type DeleteItemOperation,
   type MoveItemOperation,
   type ReorderItemOperation,
+  type ReorderTrackOperation,
   type SetProjectSettingsOperation,
   type SplitItemOperation,
   type TrimItemOperation,
@@ -58,6 +59,7 @@ function assertHistoryEntriesForAllOperationTypes(): void {
     deleteOperation(),
     deleteAudioOperation(),
     reorderOperation(),
+    reorderTrackOperation(),
     updateTrackOperation(),
     updateTextOperation(),
     updateAudioOperation(),
@@ -114,6 +116,7 @@ function assertOperationSuccesses(): void {
     deleteOperation(),
     deleteAudioOperation(),
     reorderOperation(),
+    reorderTrackOperation(),
     updateTrackOperation(),
     updateTextOperation(),
     updateAudioOperation(),
@@ -224,6 +227,34 @@ function assertInvalidOperationsAreNonDestructive(): void {
   });
   assertFailedWithoutMutation(invalidCrop, createDocument(), "crop outside unit range should fail");
 
+  const collapsedCrop = applyVideoOperation(createDocument(), {
+    ...updateTransformCropOperation(),
+    id: "collapsed-crop",
+    crop: { top: 0, right: 0.5, bottom: 0, left: 0.5 },
+  });
+  assertFailedWithoutMutation(collapsedCrop, createDocument(), "collapsed crop should fail");
+
+  const textCrop = applyVideoOperation(createDocument(), {
+    ...updateTransformCropOperation(),
+    id: "text-crop",
+    itemId: "tl-caption",
+    affectedEntityIds: ["tl-caption"],
+  });
+  assertFailedWithoutMutation(textCrop, createDocument(), "text crop should fail");
+
+  const imageCropDocument = createDocumentWithAddedImage();
+  const imageCrop = applyVideoOperation(imageCropDocument, {
+    ...updateTransformCropOperation(),
+    id: "image-crop",
+    itemId: "tl-added-image",
+    affectedEntityIds: ["tl-added-image"],
+    crop: { top: 0.1, right: 0.2, bottom: 0.1, left: 0.2 },
+  });
+  assert.equal(imageCrop.ok, true, imageCrop.errors?.join("; "));
+  const croppedImage = imageCrop.document.tracks.flatMap((track) => track.items).find((item) => item.id === "tl-added-image");
+  assert.ok(croppedImage?.type === "image");
+  assert.deepEqual(croppedImage.crop, { top: 0.1, right: 0.2, bottom: 0.1, left: 0.2 });
+
   const lockedTrack = createDocument();
   lockedTrack.tracks = lockedTrack.tracks.map((track) => track.id === "v1" ? { ...track, locked: true } : track);
   const lockedMove = applyVideoOperation(lockedTrack, moveOperation());
@@ -252,6 +283,7 @@ function assertInverseOperationsRestoreSimpleEdits(): void {
     trimOperation(),
     trimAudioOperation(),
     reorderOperation(),
+    reorderTrackOperation(),
     updateTrackOperation(),
     updateTextOperation(),
     updateAudioOperation(),
@@ -536,6 +568,7 @@ function addImageOperation(): AddMediaToTimelineOperation {
     timelineStart: 6,
     duration: 4,
     transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    crop: { top: 0, right: 0, bottom: 0, left: 0 },
     opacity: 0.9,
     layerOrder: 11,
   };
@@ -682,6 +715,10 @@ function deleteAudioOperation(): DeleteItemOperation {
 
 function reorderOperation(): ReorderItemOperation {
   return { ...base("reorder-city", "Reorder city", ["tl-city"]), type: "reorderItem", itemId: "tl-city", targetIndex: 0 };
+}
+
+function reorderTrackOperation(): ReorderTrackOperation {
+  return { ...base("reorder-track", "Reorder track", ["t1"]), type: "reorderTrack", trackId: "t1", targetIndex: 0 };
 }
 
 function updateTrackOperation(): UpdateTrackOperation {

@@ -79,6 +79,7 @@ export function VideoExportModal({
   const [renderRequest, setRenderRequest] = useState<{ timelineId: string; revisionNumber: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const wasOpen = useRef(false);
+  const actionInFlight = useRef(false);
 
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -162,55 +163,60 @@ export function VideoExportModal({
   };
 
   const handleStart = async (reuseSyncedRevision = false) => {
-    if (busy) return;
-    setStatus("validating");
-    if (!reuseSyncedRevision) {
-      setJob(null);
-      setRenderRequest(null);
-    }
-    setMessage(null);
-
-    const nextValidation = validateVideoExport(document, media, settings, projectMedia);
-    setValidation(nextValidation);
-    if (!nextValidation.ok) {
-      setStatus("idle");
-      setMessage("Resolve the export blockers before creating a render job.");
-      return;
-    }
-
-    let sync: { timelineId: string; revisionNumber: number };
-    if (reuseSyncedRevision && renderRequest) {
-      sync = renderRequest;
-    } else {
-      setStatus("syncing");
-      const synced = await flushForExport();
-      if (!synced.ok) {
-        setStatus("failed");
-        setMessage(synced.message);
-        return;
-      }
-      sync = { timelineId: synced.timelineId, revisionNumber: synced.revisionNumber };
-      setRenderRequest(sync);
-    }
-
+    if (busy || actionInFlight.current) return;
+    actionInFlight.current = true;
     try {
-      const renderJob = await requestVideoRenderJob({
-        timelineId: sync.timelineId,
-        revisionNumber: sync.revisionNumber,
-        settings,
-      });
-      setJob(renderJob);
-      setStatus(renderJob.status);
-      setMessage(renderJob.message);
-    } catch (error) {
-      if (isRenderBackendUnavailable(error)) {
-        setStatus("backend-unavailable");
-        setMessage("Render job creation is not available from the backend yet.");
+      setStatus("validating");
+      if (!reuseSyncedRevision) {
+        setJob(null);
+        setRenderRequest(null);
+      }
+      setMessage(null);
+
+      const nextValidation = validateVideoExport(document, media, settings, projectMedia);
+      setValidation(nextValidation);
+      if (!nextValidation.ok) {
+        setStatus("idle");
+        setMessage("Resolve the export blockers before creating a render job.");
         return;
       }
 
-      setStatus("failed");
-      setMessage(error instanceof Error ? error.message : "Render job creation failed.");
+      let sync: { timelineId: string; revisionNumber: number };
+      if (reuseSyncedRevision && renderRequest) {
+        sync = renderRequest;
+      } else {
+        setStatus("syncing");
+        const synced = await flushForExport();
+        if (synced.status !== "success") {
+          setStatus("failed");
+          setMessage(synced.message);
+          return;
+        }
+        sync = { timelineId: synced.timelineId, revisionNumber: synced.revisionNumber };
+        setRenderRequest(sync);
+      }
+
+      try {
+        const renderJob = await requestVideoRenderJob({
+          timelineId: sync.timelineId,
+          revisionNumber: sync.revisionNumber,
+          settings,
+        });
+        setJob(renderJob);
+        setStatus(renderJob.status);
+        setMessage(renderJob.message);
+      } catch (error) {
+        if (isRenderBackendUnavailable(error)) {
+          setStatus("backend-unavailable");
+          setMessage("Render job creation is not available from the backend yet.");
+          return;
+        }
+
+        setStatus("failed");
+        setMessage(error instanceof Error ? error.message : "Render job creation failed.");
+      }
+    } finally {
+      actionInFlight.current = false;
     }
   };
 

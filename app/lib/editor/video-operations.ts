@@ -4,13 +4,16 @@ import type {
   JsonValue,
   TextTimelineItem,
   VideoAudioFades,
+  VideoAdvancedItemState,
   VideoClipTimelineItem,
   VideoCrop,
   VideoMediaReference,
   VideoProjectDocument,
   VideoProjectSettings,
+  VideoEffect,
   VideoTextStyle,
   VideoTimelineItem,
+  VideoTransition,
   VideoTrack,
   VideoTrackKind,
   VideoTransform,
@@ -43,11 +46,17 @@ export type VideoOperation =
   | SplitItemOperation
   | DeleteItemOperation
   | ReorderItemOperation
+  | ReorderTrackOperation
   | UpdateTrackOperation
   | UpdateTextOperation
   | UpdateAudioOperation
   | UpdateSpeedOperation
   | UpdateTransformCropOperation
+  | UpdateAdvancedItemOperation
+  | UpsertEffectOperation
+  | RemoveEffectOperation
+  | UpsertTransitionOperation
+  | RemoveTransitionOperation
   | SetProjectSettingsOperation;
 
 export interface AddMediaToTimelineOperation extends VideoOperationMetadata {
@@ -112,6 +121,12 @@ export interface UpdateTrackOperation extends VideoOperationMetadata {
   muted?: boolean;
 }
 
+export interface ReorderTrackOperation extends VideoOperationMetadata {
+  type: "reorderTrack";
+  trackId: string;
+  targetIndex: number;
+}
+
 export interface UpdateTextOperation extends VideoOperationMetadata {
   type: "updateText";
   itemId: string;
@@ -154,6 +169,32 @@ export interface UpdateTransformCropOperation extends VideoOperationMetadata {
 export interface SetProjectSettingsOperation extends VideoOperationMetadata {
   type: "setProjectSettings";
   settings: Partial<VideoProjectSettings>;
+}
+
+export interface UpdateAdvancedItemOperation extends VideoOperationMetadata {
+  type: "updateAdvancedItem";
+  itemId: string;
+  advanced: VideoAdvancedItemState | null;
+}
+
+export interface UpsertEffectOperation extends VideoOperationMetadata {
+  type: "upsertEffect";
+  effect: VideoEffect;
+}
+
+export interface RemoveEffectOperation extends VideoOperationMetadata {
+  type: "removeEffect";
+  effectId: string;
+}
+
+export interface UpsertTransitionOperation extends VideoOperationMetadata {
+  type: "upsertTransition";
+  transition: VideoTransition;
+}
+
+export interface RemoveTransitionOperation extends VideoOperationMetadata {
+  type: "removeTransition";
+  transitionId: string;
 }
 
 export interface VideoOperationBatch extends VideoOperationMetadata {
@@ -233,11 +274,17 @@ const operationTypes = [
   "splitItem",
   "deleteItem",
   "reorderItem",
+  "reorderTrack",
   "updateTrack",
   "updateText",
   "updateAudio",
   "updateSpeed",
   "updateTransformCrop",
+  "updateAdvancedItem",
+  "upsertEffect",
+  "removeEffect",
+  "upsertTransition",
+  "removeTransition",
   "setProjectSettings",
 ] as const;
 
@@ -246,6 +293,7 @@ const updateOperationTypes = new Set<VideoOperation["type"]>([
   "updateAudio",
   "updateSpeed",
   "updateTransformCrop",
+  "updateAdvancedItem",
 ]);
 
 /*
@@ -482,6 +530,9 @@ function validateOperationShape(value: unknown): string[] {
     validateRequiredString(value.itemId, "itemId", errors);
     validateOptionalString(value.targetTrackId, "targetTrackId", errors);
     validateNonNegativeInteger(value.targetIndex, "targetIndex", errors);
+  } else if (value.type === "reorderTrack") {
+    validateRequiredString(value.trackId, "trackId", errors);
+    validateNonNegativeInteger(value.targetIndex, "targetIndex", errors);
   } else if (value.type === "updateTrack") {
     validateRequiredString(value.trackId, "trackId", errors);
     validateOptionalString(value.trackLabel, "trackLabel", errors);
@@ -520,6 +571,17 @@ function validateOperationShape(value: unknown): string[] {
     validateOptionalObject(value.crop, "crop", errors);
     validateOptionalUnitNumber(value.opacity, "opacity", errors);
     validateOptionalInteger(value.layerOrder, "layerOrder", errors);
+  } else if (value.type === "updateAdvancedItem") {
+    validateRequiredString(value.itemId, "itemId", errors);
+    if (value.advanced !== null) validateObject(value.advanced, "advanced", errors);
+  } else if (value.type === "upsertEffect") {
+    validateObject(value.effect, "effect", errors);
+  } else if (value.type === "removeEffect") {
+    validateRequiredString(value.effectId, "effectId", errors);
+  } else if (value.type === "upsertTransition") {
+    validateObject(value.transition, "transition", errors);
+  } else if (value.type === "removeTransition") {
+    validateRequiredString(value.transitionId, "transitionId", errors);
   } else if (value.type === "setProjectSettings") {
     validateObject(value.settings, "settings", errors);
   }
@@ -576,6 +638,38 @@ function validateOperationSemantics(
     return;
   }
 
+  if (operation.type === "upsertEffect") {
+    validatePotentialDocument(document, {
+      ...document,
+      effects: upsertById(document.effects, operation.effect),
+    }, errors);
+    return;
+  }
+
+  if (operation.type === "removeEffect") {
+    if (!document.effects.some((effect) => effect.id === operation.effectId)) {
+      errors.push(`Effect ${operation.effectId} does not exist.`);
+      skippedEntities.push(operation.effectId);
+    }
+    return;
+  }
+
+  if (operation.type === "upsertTransition") {
+    validatePotentialDocument(document, {
+      ...document,
+      transitions: upsertById(document.transitions, operation.transition),
+    }, errors);
+    return;
+  }
+
+  if (operation.type === "removeTransition") {
+    if (!document.transitions.some((transition) => transition.id === operation.transitionId)) {
+      errors.push(`Transition ${operation.transitionId} does not exist.`);
+      skippedEntities.push(operation.transitionId);
+    }
+    return;
+  }
+
   if (operation.type === "updateTrack") {
     const track = findTrack(document, operation.trackId);
     if (!track) {
@@ -595,6 +689,19 @@ function validateOperationSemantics(
       },
       errors,
     );
+    return;
+  }
+
+  if (operation.type === "reorderTrack") {
+    const track = findTrack(document, operation.trackId);
+    if (!track) {
+      errors.push(`Track ${operation.trackId} does not exist.`);
+      skippedEntities.push(operation.trackId);
+      return;
+    }
+    if (operation.targetIndex >= document.tracks.length) {
+      errors.push("targetIndex must be within the track list.");
+    }
     return;
   }
 
@@ -690,7 +797,21 @@ function validateOperationSemantics(
       errors.push("updateTransformCrop can only target visual timeline items.");
       return;
     }
+    if (operation.crop !== undefined && location.item.type === "text") {
+      errors.push("updateTransformCrop crop can only target media-backed visual items.");
+      return;
+    }
     const updated = { ...location.item, ...pickDefinedTransformCropUpdate(operation, location.item) } as VideoTimelineItem;
+    validatePotentialItem(document, location, updated, errors);
+    return;
+  }
+
+  if (operation.type === "updateAdvancedItem") {
+    const updated = {
+      ...location.item,
+      ...(operation.advanced === null ? {} : { advanced: operation.advanced }),
+    } as VideoTimelineItem;
+    if (operation.advanced === null) delete updated.advanced;
     validatePotentialItem(document, location, updated, errors);
   }
 }
@@ -720,6 +841,10 @@ function applyRawVideoOperation(document: VideoProjectDocument, operation: Video
     return applyReorderItem(document, operation);
   }
 
+  if (operation.type === "reorderTrack") {
+    return applyReorderTrack(document, operation);
+  }
+
   if (operation.type === "updateTrack") {
     return applyUpdateTrack(document, operation);
   }
@@ -745,6 +870,66 @@ function applyRawVideoOperation(document: VideoProjectDocument, operation: Video
   if (operation.type === "updateTransformCrop") {
     const loc = findItem(document, operation.itemId);
     return applyUpdateItem(document, operation, pickDefinedTransformCropUpdate(operation, loc?.item));
+  }
+
+  if (operation.type === "updateAdvancedItem") {
+    const loc = findItem(document, operation.itemId);
+    const fields = operation.advanced === null ? {} : { advanced: operation.advanced };
+    const applied = applyUpdateItem(document, operation, fields);
+    if (operation.advanced === null && loc) {
+      const tracks = applied.document.tracks.map((track) => ({
+        ...track,
+        items: track.items.map((item) => {
+          if (item.id !== operation.itemId) return item;
+          const { advanced: _advanced, ...withoutAdvanced } = item;
+          return withoutAdvanced as VideoTimelineItem;
+        }),
+      }));
+      return { ...applied, document: { ...applied.document, tracks } };
+    }
+    return applied;
+  }
+
+  if (operation.type === "upsertEffect") {
+    const previous = document.effects.find((effect) => effect.id === operation.effect.id);
+    return {
+      document: { ...document, effects: upsertById(document.effects, cloneJson(operation.effect)) },
+      changedEntities: [{ id: operation.effect.id, kind: "effect", change: previous ? "updated" : "added" }],
+      inverseOperations: [previous
+        ? createInverse(operation, { type: "upsertEffect", effect: previous })
+        : createInverse(operation, { type: "removeEffect", effectId: operation.effect.id })],
+    };
+  }
+
+  if (operation.type === "removeEffect") {
+    const previous = document.effects.find((effect) => effect.id === operation.effectId);
+    if (!previous) throw new Error("removeEffect was applied without validation.");
+    return {
+      document: { ...document, effects: document.effects.filter((effect) => effect.id !== operation.effectId) },
+      changedEntities: [{ id: operation.effectId, kind: "effect", change: "deleted" }],
+      inverseOperations: [createInverse(operation, { type: "upsertEffect", effect: previous })],
+    };
+  }
+
+  if (operation.type === "upsertTransition") {
+    const previous = document.transitions.find((transition) => transition.id === operation.transition.id);
+    return {
+      document: { ...document, transitions: upsertById(document.transitions, cloneJson(operation.transition)) },
+      changedEntities: [{ id: operation.transition.id, kind: "transition", change: previous ? "updated" : "added" }],
+      inverseOperations: [previous
+        ? createInverse(operation, { type: "upsertTransition", transition: previous })
+        : createInverse(operation, { type: "removeTransition", transitionId: operation.transition.id })],
+    };
+  }
+
+  if (operation.type === "removeTransition") {
+    const previous = document.transitions.find((transition) => transition.id === operation.transitionId);
+    if (!previous) throw new Error("removeTransition was applied without validation.");
+    return {
+      document: { ...document, transitions: document.transitions.filter((transition) => transition.id !== operation.transitionId) },
+      changedEntities: [{ id: operation.transitionId, kind: "transition", change: "deleted" }],
+      inverseOperations: [createInverse(operation, { type: "upsertTransition", transition: previous })],
+    };
   }
 
   return applySetProjectSettings(document, operation);
@@ -951,6 +1136,27 @@ function applyUpdateTrack(document: VideoProjectDocument, operation: UpdateTrack
   };
 }
 
+function applyReorderTrack(document: VideoProjectDocument, operation: ReorderTrackOperation): OperationApplication {
+  const sourceIndex = document.tracks.findIndex((track) => track.id === operation.trackId);
+  if (sourceIndex < 0) throw new Error("reorderTrack was applied without validation.");
+
+  const tracks = [...document.tracks];
+  const [track] = tracks.splice(sourceIndex, 1);
+  tracks.splice(Math.min(operation.targetIndex, tracks.length), 0, track);
+
+  return {
+    document: { ...document, tracks },
+    changedEntities: [{ id: operation.trackId, kind: "track", change: "moved" }],
+    inverseOperations: [
+      createInverse(operation, {
+        type: "reorderTrack",
+        trackId: operation.trackId,
+        targetIndex: sourceIndex,
+      }),
+    ],
+  };
+}
+
 function applyUpdateItem(
   document: VideoProjectDocument,
   operation: VideoOperation & { itemId: string },
@@ -1042,10 +1248,18 @@ function createUpdateInverse(operation: VideoOperation & { itemId: string }, pre
       type: "updateTransformCrop",
       itemId: operation.itemId,
       ...(operation.transform !== undefined ? { transform: previousItem.transform } : {}),
-      ...(operation.crop !== undefined && previousItem.type === "video" ? { crop: previousItem.crop } : {}),
+      ...(operation.crop !== undefined && previousItem.type !== "text" ? { crop: previousItem.crop } : {}),
       ...(operation.opacity !== undefined && previousItem.type !== "text" ? { opacity: previousItem.opacity } : {}),
       ...(operation.layerOrder !== undefined && "layerOrder" in previousItem ? { layerOrder: previousItem.layerOrder } : {}),
       ...(operation.properties !== undefined ? { properties: previousItem.properties } : {}),
+    });
+  }
+
+  if (operation.type === "updateAdvancedItem") {
+    return createInverse(operation, {
+      type: "updateAdvancedItem",
+      itemId: operation.itemId,
+      advanced: previousItem.advanced ?? null,
     });
   }
 
@@ -1510,6 +1724,12 @@ function mergeAffectedEntityIds(previous: VideoOperation, current: VideoOperatio
   return Array.from(new Set([...previous.affectedEntityIds, ...current.affectedEntityIds]));
 }
 
+function upsertById<T extends { id: string }>(items: T[], next: T): T[] {
+  const index = items.findIndex((item) => item.id === next.id);
+  if (index === -1) return [...items, next];
+  return items.map((item, itemIndex) => itemIndex === index ? next : item);
+}
+
 function createBatchId(timestamp: string): string {
   return `video-operation-batch-${timestamp.replace(/[^a-zA-Z0-9]/g, "")}-${Math.random()
     .toString(36)
@@ -1699,6 +1919,30 @@ export function updateTransformCropOperation(
     type: "updateTransformCrop",
     itemId,
     ...fields,
+    ...(fields.crop ? { crop: roundOperationCrop(fields.crop) } : {}),
+  };
+}
+
+function roundOperationCrop(crop: VideoCrop): VideoCrop {
+  const round = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
+  return {
+    top: round(crop.top),
+    right: round(crop.right),
+    bottom: round(crop.bottom),
+    left: round(crop.left),
+  };
+}
+
+export function updateAdvancedItemOperation(
+  itemId: string,
+  advanced: VideoAdvancedItemState | null,
+  label: string,
+): UpdateAdvancedItemOperation {
+  return {
+    ...operationMetadata(label, [itemId]),
+    type: "updateAdvancedItem",
+    itemId,
+    advanced,
   };
 }
 
@@ -1710,5 +1954,24 @@ export function setProjectSettingsOperation(
     ...operationMetadata(label, ["settings"]),
     type: "setProjectSettings",
     settings,
+  };
+}
+
+export function upsertEffectOperation(effect: VideoEffect, label = "Apply effect"): UpsertEffectOperation {
+  return {
+    ...operationMetadata(label, [effect.id, ...effect.targetItemIds]),
+    type: "upsertEffect",
+    effect,
+  };
+}
+
+export function upsertTransitionOperation(
+  transition: VideoTransition,
+  label = "Apply transition",
+): UpsertTransitionOperation {
+  return {
+    ...operationMetadata(label, [transition.id, ...transition.targetItemIds]),
+    type: "upsertTransition",
+    transition,
   };
 }

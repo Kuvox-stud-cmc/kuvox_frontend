@@ -139,6 +139,10 @@ function assertMetricSanitization(): void {
 }
 
 function assertTelemetryPayloadShape(): void {
+  const source = readFileSync("app/lib/editor/video-performance.client.ts", "utf8");
+  assert.doesNotMatch(source, /setTimeout|setInterval/);
+  assert.match(source, /flushVideoEditorPerformanceMetrics/);
+
   const metric = sanitizeVideoEditorPerformanceMetric({
     name: "first-usable-editor",
     durationMs: 44,

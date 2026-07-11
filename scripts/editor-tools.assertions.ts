@@ -30,11 +30,11 @@ function assertRegistryShape(): void {
   );
   assert.deepEqual(
     editorToolDefinitions.filter((tool) => tool.availability === "enabled").map((tool) => tool.id),
-    ["select", "trim", "split", "text", "ai"],
+    ["select", "trim", "split", "text", "transform", "speed", "color", "audio", "ai"],
   );
   assert.deepEqual(
-    editorToolDefinitions.filter((tool) => tool.availability === "disabled").map((tool) => tool.id),
-    ["transform", "speed", "color", "audio"],
+    editorToolDefinitions.filter((tool) => tool.availability !== "enabled").map((tool) => tool.id),
+    [],
   );
   assert.equal(isEditorToolId("transform"), true);
   assert.equal(isEditorToolId("transition"), false);

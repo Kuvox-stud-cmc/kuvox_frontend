@@ -6,10 +6,14 @@ import {
   withEditorCorrelationHeaders,
 } from "./editor-observability.client";
 import { mediaReadiness } from "./editor-media";
+import { flushVideoEditorPerformanceMetrics } from "./video-performance.client";
 import { roundTime } from "./editor-timeline";
+import { evaluateVisualState } from "./video-evaluation";
+import { videoStackOrderMap } from "./video-stack";
 import {
   validateVideoProjectDocument,
   type VideoCrop,
+  type VideoAnimatableValue,
   type VideoProjectDocument,
   type VideoMediaReference,
   type VideoTextStyle,
@@ -115,6 +119,22 @@ export interface VideoRenderCrop {
   left: number;
 }
 
+export interface VideoRenderKeyframe {
+  time: number;
+  value: number;
+  easing?: [number, number, number, number];
+}
+
+export interface VideoRenderAnimationTrack {
+  keyframes: VideoRenderKeyframe[];
+}
+
+export interface VideoRenderAnimation {
+  transform?: Partial<Record<"x" | "y" | "scaleX" | "scaleY" | "rotation", VideoRenderAnimationTrack>>;
+  crop?: Partial<Record<"top" | "right" | "bottom" | "left", VideoRenderAnimationTrack>>;
+  opacity?: VideoRenderAnimationTrack;
+}
+
 export interface VideoRenderVisualItem {
   itemId: string;
   trackId: string;
@@ -127,9 +147,11 @@ export interface VideoRenderVisualItem {
   sourceOut?: number;
   speed?: number;
   layerOrder: number;
+  stackOrder: number;
   transform: VideoRenderTransform;
-  crop?: VideoRenderCrop;
+  crop: VideoRenderCrop;
   opacity: number;
+  animation?: VideoRenderAnimation;
 }
 
 export interface VideoRenderAudioItem {
@@ -160,10 +182,12 @@ export interface VideoRenderTextOverlay {
   transform: VideoRenderTransform;
   opacity: number;
   layerOrder: number;
+  stackOrder: number;
+  animation?: Omit<VideoRenderAnimation, "crop">;
 }
 
 export interface VideoRenderManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   projectId: string;
   settings: VideoExportSettings;
   durationSeconds: number;
@@ -365,6 +389,7 @@ function buildVideoRenderManifestFromValidDocument(
   const audioItems: VideoRenderAudioItem[] = [];
   const textOverlays: VideoRenderTextOverlay[] = [];
   let hasVisibleVisualMediaBackedItem = false;
+  const stackOrderByItemId = videoStackOrderMap(document);
 
   for (const transition of document.transitions) {
     errors.push({
@@ -408,6 +433,18 @@ function buildVideoRenderManifestFromValidDocument(
     for (const item of track.items) {
       if (item.duration <= 0) continue;
 
+      const advancedError = unsupportedAdvancedState(item);
+      if (advancedError) {
+        errors.push({
+          severity: "error",
+          code: "unsupported-advanced-edit",
+          itemId: item.id,
+          trackId: track.id,
+          message: advancedError,
+        });
+        continue;
+      }
+
       if (item.type === "text") {
         textOverlays.push({
           itemId: item.id,
@@ -419,7 +456,10 @@ function buildVideoRenderManifestFromValidDocument(
           transform: renderTransform(item.transform),
           opacity: 1,
           layerOrder: item.layerOrder,
+          stackOrder: stackOrderByItemId.get(item.id) ?? 0,
+          ...animationForItem(item),
         });
+        validateAnimatedTextFrames(item, settings.frameRate, track.id, errors);
         continue;
       }
 
@@ -445,6 +485,18 @@ function buildVideoRenderManifestFromValidDocument(
           trackId: track.id,
           mediaId: item.mediaId,
           message: `${documentMedia?.name ?? item.mediaId} is missing a canonical render source.`,
+        });
+        continue;
+      }
+
+      if (isVisualMediaBackedItem(item) && (!documentMedia.width || !documentMedia.height)) {
+        errors.push({
+          severity: "error",
+          code: "missing-source-dimensions",
+          itemId: item.id,
+          trackId: track.id,
+          mediaId: item.mediaId,
+          message: `${documentMedia.name} is missing source dimensions required for export.`,
         });
         continue;
       }
@@ -497,13 +549,17 @@ function buildVideoRenderManifestFromValidDocument(
               sourceIn: roundTime(item.sourceIn),
               sourceOut: roundTime(item.sourceOut),
               speed: roundTime(item.speed),
-              crop: renderCrop(item.crop),
             }
           : {}),
+        crop: renderCrop(item.crop),
         layerOrder: "layerOrder" in item ? item.layerOrder : trackIndex,
+        stackOrder: stackOrderByItemId.get(item.id) ?? 0,
         transform: renderTransform(item.transform),
         opacity: roundTime(item.opacity),
+        ...animationForItem(item),
       });
+
+      validateAnimatedFrames(item, documentMedia, settings.frameRate, track.id, errors);
     }
   });
 
@@ -519,9 +575,9 @@ function buildVideoRenderManifestFromValidDocument(
     return { ok: false, errors, warnings };
   }
 
-  const sortedVisualItems = [...visualItems].sort(compareRenderItems);
+  const sortedVisualItems = [...visualItems].sort(compareStackItems);
   const sortedAudioItems = [...audioItems].sort(compareRenderItems);
-  const sortedTextOverlays = [...textOverlays].sort(compareRenderItems);
+  const sortedTextOverlays = [...textOverlays].sort(compareStackItems);
   const durationSeconds = roundTime(Math.max(
     0,
     ...sortedVisualItems.map(itemEnd),
@@ -534,7 +590,7 @@ function buildVideoRenderManifestFromValidDocument(
     errors: [],
     warnings,
     manifest: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       projectId: document.projectId,
       settings: { ...settings },
       durationSeconds,
@@ -564,6 +620,7 @@ export async function requestVideoRenderJob(input: RequestVideoRenderJobInput): 
         settings: input.settings,
       }),
     });
+    await flushVideoEditorPerformanceMetrics();
   } catch (error) {
     logVideoEditorEvent("editor.render.request.backend-unavailable", {
       timelineId: input.timelineId,
@@ -888,11 +945,130 @@ function renderCrop(crop: VideoCrop): VideoRenderCrop {
   };
 }
 
+function animationForItem(item: Exclude<VideoTimelineItem, { type: "audio" }>): { animation?: VideoRenderAnimation } {
+  const transform = normalizeAnimationProperties(item.advanced?.transform, ["x", "y", "scaleX", "scaleY", "rotation"]);
+  const crop = item.type === "text"
+    ? undefined
+    : normalizeAnimationProperties(item.advanced?.crop, ["top", "right", "bottom", "left"]);
+  const opacity = normalizeAnimationTrack(item.advanced?.opacity);
+  const animation = omitUndefined({ transform, crop, opacity });
+  return Object.keys(animation).length > 0 ? { animation } : {};
+}
+
+function normalizeAnimationProperties<K extends string>(
+  properties: Partial<Record<K, VideoAnimatableValue<number>>> | undefined,
+  keys: readonly K[],
+): Partial<Record<K, VideoRenderAnimationTrack>> | undefined {
+  if (!properties) return undefined;
+  const entries = keys.flatMap((key) => {
+    const track = normalizeAnimationTrack(properties[key]);
+    return track ? [[key, track] as const] : [];
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) as Partial<Record<K, VideoRenderAnimationTrack>> : undefined;
+}
+
+function normalizeAnimationTrack(value: VideoAnimatableValue<number> | undefined): VideoRenderAnimationTrack | undefined {
+  if (!value?.keyframes?.length) return undefined;
+  return {
+    keyframes: [...value.keyframes]
+      .sort((left, right) => left.time - right.time || left.id.localeCompare(right.id))
+      .map((keyframe) => omitUndefined({
+        time: roundTime(keyframe.time),
+        value: roundTime(keyframe.value),
+        easing: keyframe.easing ? [...keyframe.easing] as [number, number, number, number] : undefined,
+      })),
+  };
+}
+
+function unsupportedAdvancedState(item: VideoTimelineItem): string | null {
+  const advanced = item.advanced;
+  if (!advanced || Object.keys(advanced).length === 0) return null;
+  if (advanced.trackingTargets?.length) return `Tracking metadata on ${item.id} is not supported by export.`;
+  if (advanced.autoReframe) return `Auto-reframe metadata on ${item.id} is not supported by export.`;
+  if (advanced.color) return `Color processing on ${item.id} is not supported by export.`;
+  if (advanced.freezeFrames?.length) return `Freeze frames on ${item.id} are not supported by export.`;
+  if (advanced.timeRemap) return `Time remapping on ${item.id} is not supported by export.`;
+  if (advanced.transform?.anchorX || advanced.transform?.anchorY) return `Anchor animation on ${item.id} is not supported by export.`;
+  if (item.type === "text" && advanced.crop) return `Crop animation on text item ${item.id} is not supported by export.`;
+
+  const supportedTracks = [
+    ...Object.values(advanced.transform ?? {}),
+    ...(item.type === "text" ? [] : Object.values(advanced.crop ?? {})),
+    advanced.opacity,
+  ].filter((value): value is VideoAnimatableValue<number> => Boolean(value));
+  if (supportedTracks.length === 0 || supportedTracks.some((track) => !track.keyframes?.length)) {
+    return `Advanced state on ${item.id} must contain supported transform, crop, or opacity keyframes.`;
+  }
+  return null;
+}
+
+function validateAnimatedFrames(
+  item: Exclude<VideoTimelineItem, { type: "audio" | "text" }>,
+  media: VideoMediaReference,
+  frameRate: number,
+  trackId: string,
+  errors: VideoExportValidationIssue[],
+): void {
+  if (!item.advanced || !media.width || !media.height) return;
+  const frameCount = Math.max(1, Math.ceil(item.duration * frameRate));
+  for (let frameIndex = 0; frameIndex <= frameCount; frameIndex += 1) {
+    const timelineTime = item.timelineStart + Math.min(item.duration, frameIndex / frameRate);
+    const state = evaluateVisualState(item, timelineTime);
+    if (!state?.crop) continue;
+    const { scaleX, scaleY } = state.transform;
+    const { top, right, bottom, left } = state.crop;
+    const invalidScale = scaleX <= 0 || scaleY <= 0;
+    const invalidOpacity = state.opacity < 0 || state.opacity > 1;
+    const invalidCrop = [top, right, bottom, left].some((value) => value < 0 || value > 1)
+      || (1 - left - right) * media.width < 1
+      || (1 - top - bottom) * media.height < 1;
+    if (!invalidScale && !invalidOpacity && !invalidCrop) continue;
+    errors.push({
+      severity: "error",
+      code: "invalid-animated-state",
+      itemId: item.id,
+      trackId,
+      mediaId: item.mediaId,
+      message: `Animated state on ${item.id} is invalid at output frame ${frameIndex}.`,
+    });
+    return;
+  }
+}
+
+function validateAnimatedTextFrames(
+  item: Extract<VideoTimelineItem, { type: "text" }>,
+  frameRate: number,
+  trackId: string,
+  errors: VideoExportValidationIssue[],
+): void {
+  if (!item.advanced) return;
+  const frameCount = Math.max(1, Math.ceil(item.duration * frameRate));
+  for (let frameIndex = 0; frameIndex <= frameCount; frameIndex += 1) {
+    const state = evaluateVisualState(item, item.timelineStart + Math.min(item.duration, frameIndex / frameRate));
+    if (state && state.transform.scaleX > 0 && state.transform.scaleY > 0 && state.opacity >= 0 && state.opacity <= 1) continue;
+    errors.push({
+      severity: "error",
+      code: "invalid-animated-state",
+      itemId: item.id,
+      trackId,
+      message: `Animated state on ${item.id} is invalid at output frame ${frameIndex}.`,
+    });
+    return;
+  }
+}
+
 function compareRenderItems(
   a: { timelineStart: number; layerOrder: number; itemId: string },
   b: { timelineStart: number; layerOrder: number; itemId: string },
 ): number {
   return a.timelineStart - b.timelineStart || a.layerOrder - b.layerOrder || a.itemId.localeCompare(b.itemId);
+}
+
+function compareStackItems(
+  a: { stackOrder: number; itemId: string },
+  b: { stackOrder: number; itemId: string },
+): number {
+  return a.stackOrder - b.stackOrder || a.itemId.localeCompare(b.itemId);
 }
 
 function itemEnd(item: { timelineStart: number; duration: number }): number {

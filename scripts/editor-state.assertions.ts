@@ -36,6 +36,7 @@ import {
   selectSelectedTimelineItem,
   selectVideoInspectorState,
   selectVideoHistoryState,
+  selectVisualScalesLinked,
   selectSyncStatus,
   selectTimelineDuration,
   selectTimelinePanelState,
@@ -49,6 +50,7 @@ import {
   videoOperationApplied,
   videoRedoRequested,
   videoUndoRequested,
+  visualScalesLinkedChanged,
 } from "../app/store/slices/editor-slice";
 import {
   createEmptyVideoProjectDocument,
@@ -103,8 +105,14 @@ function main(): void {
   assertAiCommandStateAndUndo();
 }
 
+function mockProjectOpened(payload: string | { projectId: string; projectName?: string }) {
+  const projectId = typeof payload === "string" ? payload : payload.projectId;
+  const projectName = typeof payload === "string" ? undefined : payload.projectName;
+  return documentLoaded(createMockVideoProjectDocument(projectId, projectName));
+}
+
 function assertExportModalStateIsNonDestructive(): void {
-  const opened = editorReducer(undefined, projectOpened("v008"));
+  const opened = editorReducer(undefined, mockProjectOpened("v008"));
   const before = {
     revision: opened.document?.history.revision,
     undoCount: opened.undoStack.length,
@@ -133,6 +141,15 @@ function assertExportModalStateIsNonDestructive(): void {
 function assertActiveToolState(): void {
   const initial = editorReducer(undefined, { type: "init" });
   assert.equal(selectActiveToolId({ editor: initial }), "select");
+  assert.equal(selectVisualScalesLinked({ editor: initial }), true);
+
+  const unlinkedScales = editorReducer(initial, visualScalesLinkedChanged(false));
+  assert.equal(selectVisualScalesLinked({ editor: unlinkedScales }), false);
+  const loadedWithUnlinkedScales = editorReducer(
+    unlinkedScales,
+    documentLoaded(createMockVideoProjectDocument("linked-scales", "Linked Scales")),
+  );
+  assert.equal(selectVisualScalesLinked({ editor: loadedWithUnlinkedScales }), false);
 
   const trim = editorReducer(initial, activeToolChanged("trim"));
   assert.equal(trim.ui.activeToolId, "trim");
@@ -157,18 +174,18 @@ function assertActiveToolState(): void {
   assert.equal(manual.ui.editorMode, "manual");
   assert.equal(manual.ui.activeToolId, "select");
 
-  const openedWithTrim = editorReducer(trim, projectOpened("v010"));
+  const openedWithTrim = editorReducer(trim, mockProjectOpened("v010"));
   assert.equal(openedWithTrim.ui.activeToolId, "trim");
 
   const loadedWithTrim = editorReducer(trim, documentLoaded(createMockVideoProjectDocument("v010", "V010")));
   assert.equal(loadedWithTrim.ui.activeToolId, "trim");
 
-  const opened = editorReducer(manual, projectOpened("v010"));
+  const opened = editorReducer(manual, mockProjectOpened("v010"));
   assert.equal(opened.ui.activeToolId, "select");
 }
 
 function assertTimelineSelectionAndSessionState(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const multiSelected = editorReducer(
     opened,
     timelineItemsSelected({ itemIds: ["tl-beach", "tl-city"], activeItemId: "tl-city" }),
@@ -192,7 +209,7 @@ function assertTimelineSelectionAndSessionState(): void {
 }
 
 function assertTrackControls(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const hidden = editorReducer(opened, videoOperationApplied(updateTrackOperation({ hidden: true })));
   assert.equal(hidden.document?.tracks.find((track) => track.id === "v1")?.hidden, true);
   assert.equal(hidden.syncStatus, "dirty");
@@ -349,7 +366,7 @@ function assertTextToolCreationFailuresAreNonDestructive(): void {
 }
 
 function assertSelectedTextDuplication(): void {
-  const opened = editorReducer(undefined, projectOpened("v002-text"));
+  const opened = editorReducer(undefined, mockProjectOpened("v002-text"));
   const selected = editorReducer(opened, timelineItemsSelected({ itemIds: ["tl-caption"], activeItemId: "tl-caption" }));
   const duplicated = editorReducer(
     selected,
@@ -419,10 +436,15 @@ function assertProjectOpenInstallsDocument(): void {
   assert.equal(state.document?.name, "V004");
   assert.equal(state.loadedRevision, state.document?.history.revision);
   assert.equal(state.lastSavedRevision, state.document?.history.revision);
+  assert.equal(state.document?.tracks.every((track) => track.items.length === 0), true);
+  assert.deepEqual(state.selection.selectedItemIds, []);
+  assert.equal(state.playback.currentTime, 0);
+  assert.equal(state.ui.selectedMediaId, null);
+  assert.equal(state.ui.commandInput, "");
 }
 
 function assertDocumentLoadedValidation(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const validDocument = createMockVideoProjectDocument("loaded", "Loaded");
   const loaded = editorReducer(opened, documentLoaded(validDocument));
   assert.equal(loaded.projectId, "loaded");
@@ -439,7 +461,8 @@ function assertDocumentLoadedValidation(): void {
 }
 
 function assertOperationApplication(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const loaded = editorReducer(undefined, mockProjectOpened("v004"));
+  const opened = editorReducer(loaded, timelineItemsSelected({ itemIds: ["tl-beach"], activeItemId: "tl-beach" }));
   const revision = opened.document?.history.revision;
   assert.equal(typeof revision, "number");
 
@@ -459,7 +482,7 @@ function assertOperationApplication(): void {
 }
 
 function assertFailedOperationIsNonDestructive(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const failed = editorReducer(opened, videoOperationApplied({ ...moveBeachOperation(-4), id: "bad-move" }));
   assert.equal(failed.document, opened.document);
   assert.equal(failed.syncStatus, "clean");
@@ -468,7 +491,7 @@ function assertFailedOperationIsNonDestructive(): void {
 }
 
 function assertUndoRedoHistoryStacks(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const originalStart = findItem(opened.document, "tl-beach")?.timelineStart;
   const moved = editorReducer(opened, videoOperationApplied(moveBeachOperation(12)));
   const undone = editorReducer(moved, videoUndoRequested());
@@ -532,7 +555,7 @@ function assertUndoRedoRestoresMutationTypes(): void {
   const textRedone = editorReducer(textUndone, videoRedoRequested());
   assert.equal(textRedone.document?.tracks.find((track) => track.id === "t1")?.items.length, 1);
 
-  const opened = editorReducer(undefined, projectOpened("v002-text"));
+  const opened = editorReducer(undefined, mockProjectOpened("v002-text"));
   const selected = editorReducer(opened, timelineItemsSelected({ itemIds: ["tl-caption"], activeItemId: "tl-caption" }));
   const duplicated = editorReducer(selected, selectedTextItemsDuplicated({ now: "2026-03-01T10:00:00.000Z" }));
   const duplicatedUndone = editorReducer(duplicated, videoUndoRequested());
@@ -542,7 +565,7 @@ function assertUndoRedoRestoresMutationTypes(): void {
 }
 
 function assertAiCommandStateAndUndo(): void {
-  const opened = editorReducer(undefined, projectOpened("video-ai-state"));
+  const opened = editorReducer(undefined, mockProjectOpened("video-ai-state"));
   const started = editorReducer(
     opened,
     aiCommandStarted({ commandId: "command-state", prompt: "move clip 1 to 12s" }),
@@ -620,7 +643,7 @@ function assertAiCommandStateAndUndo(): void {
 }
 
 function assertAiSuggestionState(): void {
-  const opened = editorReducer(undefined, projectOpened("video-ai-suggestions"));
+  const opened = editorReducer(undefined, mockProjectOpened("video-ai-suggestions"));
   const loaded = editorReducer(
     opened,
     aiSuggestionsLoaded([
@@ -659,7 +682,7 @@ function assertAiSuggestionState(): void {
 }
 
 function assertFailedOperationDoesNotAffectHistory(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const failed = editorReducer(opened, videoOperationApplied({ ...moveBeachOperation(-4), id: "bad-history-move" }));
   assert.equal(failed.undoStack.length, 0);
   assert.equal(failed.redoStack.length, 0);
@@ -668,7 +691,7 @@ function assertFailedOperationDoesNotAffectHistory(): void {
 }
 
 function assertNewEditAfterUndoClearsRedo(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const moved = editorReducer(opened, videoOperationApplied(moveBeachOperation(12)));
   const undone = editorReducer(moved, videoUndoRequested());
   assert.equal(undone.redoStack.length, 1);
@@ -681,7 +704,7 @@ function assertNewEditAfterUndoClearsRedo(): void {
 }
 
 function assertHistorySanitizesSelectionAndPlayback(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const selected = editorReducer(opened, timelineItemsSelected({ itemIds: ["tl-city"], activeItemId: "tl-city" }));
   const deleted = editorReducer(selected, videoOperationApplied(deleteCityOperation()));
   assert.deepEqual(deleted.selection.selectedItemIds, []);
@@ -694,7 +717,7 @@ function assertHistorySanitizesSelectionAndPlayback(): void {
 }
 
 function assertRoundTripRestores(label: string, operation: VideoOperation | VideoOperationBatch): void {
-  const opened = editorReducer(undefined, projectOpened(`history-${label}`));
+  const opened = editorReducer(undefined, mockProjectOpened(`history-${label}`));
   const before = opened.document;
   const applied = editorReducer(opened, videoOperationApplied(operation));
   assert.equal(applied.undoStack.length, 1, `${label} should push undo`);
@@ -705,14 +728,14 @@ function assertRoundTripRestores(label: string, operation: VideoOperation | Vide
 }
 
 function assertPlaybackClampsToTimelineDuration(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const duration = selectTimelineDuration({ editor: opened });
   const clamped = editorReducer(opened, currentTimeChanged(duration + 1000));
   assert.equal(clamped.playback.currentTime, duration);
 }
 
 function assertPlaybackControlsUpdateOperationSafeState(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const playing = editorReducer(opened, playbackToggled());
   assert.equal(playing.playback.playing, true);
 
@@ -722,7 +745,7 @@ function assertPlaybackControlsUpdateOperationSafeState(): void {
 
   const jumped = editorReducer(muted, playbackStepChanged(5));
   assert.equal(jumped.playback.playing, false);
-  assert.equal(jumped.playback.currentTime, selectTimelineDuration({ editor: opened }));
+  assert.equal(jumped.playback.currentTime, 5);
 
   const frameForward = editorReducer(editorReducer(opened, currentTimeChanged(1)), playbackFrameStepped(1));
   assert.equal(frameForward.playback.currentTime, 1 + 1 / Number(opened.document?.settings.frameRate));
@@ -736,7 +759,7 @@ function assertPlaybackControlsUpdateOperationSafeState(): void {
 }
 
 function assertSelectorsDeriveDocumentState(): void {
-  const opened = editorReducer(undefined, projectOpened("v004"));
+  const opened = editorReducer(undefined, mockProjectOpened("v004"));
   const root = { editor: opened };
   assert.equal(selectSyncStatus(root), "clean");
   assert.equal(selectIsDirty(root), false);
@@ -746,7 +769,8 @@ function assertSelectorsDeriveDocumentState(): void {
 }
 
 function assertInspectorStateAndOperationPaths(): void {
-  const opened = editorReducer(undefined, projectOpened("v001-inspector"));
+  const loaded = editorReducer(undefined, mockProjectOpened("v001-inspector"));
+  const opened = editorReducer(loaded, timelineItemsSelected({ itemIds: ["tl-beach"], activeItemId: "tl-beach" }));
   const activeInspector = selectVideoInspectorState({ editor: opened });
   assert.equal(activeInspector.kind, "item");
   if (activeInspector.kind !== "item") throw new Error("expected item inspector");
