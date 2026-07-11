@@ -57,18 +57,18 @@ export default function Signup({ actionData }: Route.ComponentProps) {
 
   return (
     <section>
-      <h1 className="text-headline-lg text-on-surface">Create your account</h1>
-      <p className="mt-2 text-body-sm text-on-surface-variant">Start editing with Kuvox.</p>
+      <h1 className="text-headline-lg font-semibold tracking-tight text-on-surface">Create your account</h1>
+      <p className="mt-1.5 text-body-sm text-on-surface-variant/80">Start editing with Kuvox.</p>
 
       {actionData?.error && (
-        <p className="mt-4 rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
+        <p className="mt-4 rounded-xl border border-error/20 bg-error-container/10 px-4 py-3 text-body-sm text-error animate-fade-in-section">
           {actionData.error}
         </p>
       )}
 
       <Form method="post" className="mt-6 space-y-4">
         <div>
-          <label htmlFor="displayName" className="block text-label-md text-on-surface-variant">
+          <label htmlFor="displayName" className="block text-label-md font-medium text-on-surface-variant/85 mb-1.5">
             Display name
           </label>
           <input
@@ -77,12 +77,12 @@ export default function Signup({ actionData }: Route.ComponentProps) {
             type="text"
             autoComplete="name"
             required
-            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+            className="w-full h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 text-body-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:bg-white/[0.06] focus:ring-1 focus:ring-primary/20 transition-all duration-200 outline-none"
           />
         </div>
 
         <div>
-          <label htmlFor="email" className="block text-label-md text-on-surface-variant">
+          <label htmlFor="email" className="block text-label-md font-medium text-on-surface-variant/85 mb-1.5">
             Email
           </label>
           <input
@@ -91,15 +91,15 @@ export default function Signup({ actionData }: Route.ComponentProps) {
             type="email"
             autoComplete="email"
             required
-            className="mt-1 w-full rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+            className="w-full h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 text-body-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:bg-white/[0.06] focus:ring-1 focus:ring-primary/20 transition-all duration-200 outline-none"
           />
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-label-md text-on-surface-variant">
+          <label htmlFor="password" className="block text-label-md font-medium text-on-surface-variant/85 mb-1.5">
             Password
           </label>
-          <div className="relative mt-1">
+          <div className="relative">
             <input
               id="password"
               name="password"
@@ -107,12 +107,12 @@ export default function Signup({ actionData }: Route.ComponentProps) {
               autoComplete="new-password"
               required
               minLength={8}
-              className="w-full rounded-lg border border-outline-variant bg-surface-container py-2 pl-3 pr-11 text-body-sm text-on-surface focus:border-primary focus:outline-none"
+              className="w-full h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] pl-3.5 pr-11 text-body-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:bg-white/[0.06] focus:ring-1 focus:ring-primary/20 transition-all duration-200 outline-none"
             />
             <button
               type="button"
               onClick={() => setShowPassword((value) => !value)}
-              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant/70 transition-colors hover:bg-white/10 hover:text-on-surface"
               aria-label={showPassword ? "Hide password" : "Show password"}
               aria-pressed={showPassword}
             >
@@ -126,15 +126,15 @@ export default function Signup({ actionData }: Route.ComponentProps) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-lg bg-primary px-4 py-2 text-label-md font-medium text-on-primary transition-colors hover:bg-primary-fixed disabled:opacity-60"
+          className="w-full h-11 mt-6 rounded-xl bg-primary text-label-md font-semibold text-on-primary shadow-[0_4px_20px_rgba(192,193,255,0.2)] hover:bg-primary-fixed-dim hover:shadow-[0_4px_24px_rgba(192,193,255,0.35)] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none"
         >
           {isSubmitting ? "Creating account…" : "Create account"}
         </button>
       </Form>
 
-      <p className="mt-4 text-body-sm text-on-surface-variant">
+      <p className="mt-6 text-label-md text-on-surface-variant/75 text-center">
         Already have an account?{" "}
-        <Link to="/login" className="transition-colors hover:text-primary">
+        <Link to="/login" className="transition-colors hover:text-primary hover:underline underline-offset-4 font-medium">
           Sign in
         </Link>
       </p>

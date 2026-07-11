@@ -21,7 +21,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   try {
     const studios = await listMyStudios(accessToken, reqLog);
     const firstStudio = studios[0];
-    throw redirect(firstStudio ? `/teams/${firstStudio.id}/members` : "/dashboard");
+    throw redirect(firstStudio ? `/teams/${firstStudio.id}/access-management` : "/dashboard");
   } catch (error) {
     if (error instanceof Response) throw error;
     reqLog.warn({ err: error }, "failed to resolve dashboard team redirect");

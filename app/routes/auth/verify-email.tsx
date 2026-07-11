@@ -49,21 +49,23 @@ export default function VerifyEmail({ loaderData }: Route.ComponentProps) {
 
   return (
     <section className="text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-error/10">
+      <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-error/10">
         <span className="material-symbols-outlined text-[32px] text-error">
           error
         </span>
       </div>
-      <h1 className="text-headline-lg text-on-surface">Verification failed</h1>
-      <p className="mt-2 text-body-sm text-on-surface-variant">
+      <h1 className="text-headline-lg font-semibold tracking-tight text-on-surface">Verification failed</h1>
+      <p className="mt-2 text-body-sm text-on-surface-variant/80">
         {error ?? "The link is invalid or has expired."}
       </p>
-      <Link
-        to="/login"
-        className="mt-6 inline-block text-body-sm text-primary hover:underline"
-      >
-        Back to sign in
-      </Link>
+      <div className="mt-6">
+        <Link
+          to="/login"
+          className="text-label-md text-primary font-semibold transition-colors hover:text-primary-fixed-dim hover:underline underline-offset-4"
+        >
+          Back to sign in
+        </Link>
+      </div>
     </section>
   );
 }

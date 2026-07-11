@@ -51,7 +51,7 @@ export async function requireStudioAdminAccess(
 ): Promise<StudioAccess> {
   const access = await requireStudioAccess(accessToken, studioId, log);
   if (!access.canManageAccess) {
-    throw redirect(`/teams/${studioId}/members`);
+    throw redirect(`/teams/${studioId}/access-management`);
   }
   return access;
 }

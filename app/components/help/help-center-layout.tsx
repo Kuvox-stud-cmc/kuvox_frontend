@@ -29,7 +29,7 @@ export default function HelpCenterLayout() {
     <div className="w-full max-w-7xl mx-auto">
       {/* Breadcrumb */}
       <nav className="mb-8 flex items-center gap-2 text-body-sm text-on-surface-variant animate-fade-in-up">
-        <Link to="/help" className="hover:text-primary transition-colors">Help Center</Link>
+        <Link to="/help" className="hover:text-[#F7A8D3] transition-colors">Help Center</Link>
         <span className="material-symbols-outlined text-[14px]">chevron_right</span>
         <span className="text-on-surface font-medium">{activeLink.label}</span>
       </nav>
@@ -37,7 +37,7 @@ export default function HelpCenterLayout() {
       <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
         {/* ── Sidebar ──────────────────────────────────────────────────── */}
         <aside className="lg:w-64 shrink-0 animate-fade-in-up">
-          <nav className="lg:sticky lg:top-24 space-y-1">
+          <nav className="lg:sticky lg:top-24 space-y-1 rounded-xl border border-[#C9A962]/15 bg-[#100e0c]/45 p-2">
             {SIDEBAR_LINKS.map((link) => (
               <NavLink
                 key={link.to}
@@ -46,8 +46,8 @@ export default function HelpCenterLayout() {
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-body-sm transition-colors duration-200 ${
                     isActive
-                      ? "bg-primary-container/20 text-primary font-medium"
-                      : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
+                      ? "bg-[#5C3E2A]/25 text-[#F7A8D3] font-medium border border-[#F7A8D3]/20"
+                      : "text-on-surface-variant hover:text-on-surface hover:bg-[#5C3E2A]/16"
                   }`
                 }
               >

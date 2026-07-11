@@ -117,25 +117,27 @@ export default function Pricing() {
             className={[
               "rounded-xl p-5 sm:p-6 lg:p-8 flex flex-col gap-6 sm:gap-8 relative overflow-hidden",
               plan.highlighted
-                ? "bg-surface-container border border-primary lg:-translate-y-4 shadow-[0_0_40px_rgba(192,193,255,0.1)]"
-                : "bg-surface-container border border-outline-variant group",
+                ? "bg-[#101813]/95 border border-[#8ADBE7]/60 lg:-translate-y-4 shadow-[0_0_48px_rgba(99,217,168,0.18),0_18px_80px_rgba(232,108,181,0.09)]"
+                : plan.name === "Studio"
+                  ? "bg-[#100e0c]/95 border border-[#C9A962]/40 shadow-[0_0_34px_rgba(201,169,98,0.08)] group"
+                  : "bg-[#111816]/90 border border-white/10 group",
               plan.name === "Studio" && "md:col-span-2 lg:col-span-1", 
             ].join(" ")}
           >
             {/* Hover gradient for non-highlighted cards */}
             {!plan.highlighted && (
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent to-surface-container-highest opacity-0 group-hover:opacity-10 transition-opacity pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#237E8F] to-[#E86CB5] opacity-0 group-hover:opacity-10 transition-opacity pointer-events-none" />
             )}
 
             {/* Top accent bar for highlighted card */}
             {plan.highlighted && (
-              <div className="absolute top-0 inset-x-0 h-1 bg-primary" />
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[#63d9a8] via-[#8ADBE7] to-[#E86CB5]" />
             )}
 
             {/* Plan header */}
             <div className="flex flex-col gap-1.5 sm:gap-2 relative">
               {plan.highlighted && "badge" in plan && (
-                <span className="absolute right-0 top-0 bg-primary/20 text-primary px-2 lg:px-2.5 py-0.5 rounded-full text-[10px] lg:text-xs font-semibold border border-primary/30">
+                <span className="absolute right-0 top-0 bg-[#E86CB5]/12 text-[#F7A8D3] px-2 lg:px-2.5 py-0.5 rounded-full text-[10px] lg:text-xs font-semibold border border-[#F7A8D3]/30 shadow-[0_0_18px_rgba(232,108,181,0.14)]">
                   {plan.badge}
                 </span>
               )}
@@ -166,8 +168,8 @@ export default function Pricing() {
               className={[
                 "w-full py-2.5 sm:py-3 rounded-sm text-center font-medium text-label-md transition-colors duration-200",
                 plan.ctaStyle === "filled"
-                  ? "bg-primary text-on-primary hover:bg-primary-fixed"
-                  : "border border-outline-variant text-on-surface hover:border-primary hover:text-primary",
+                  ? "bg-[#F5F2ED] text-[#111111] border border-[#F7A8D3]/25 shadow-[0_8px_28px_rgba(0,0,0,0.22),0_0_24px_rgba(232,108,181,0.10)] hover:bg-white"
+                  : "border border-white/15 text-on-surface hover:border-[#F7A8D3]/45 hover:text-[#F7A8D3]",
               ].join(" ")}
             >
               {plan.cta}
@@ -178,7 +180,10 @@ export default function Pricing() {
               {plan.features.map((feature) => (
                 <div key={feature} className="flex items-center gap-2.5 sm:gap-3">
                   <span
-                    className="material-symbols-outlined text-primary text-[18px] sm:text-[20px] shrink-0"
+                    className={[
+                      "material-symbols-outlined text-[18px] sm:text-[20px] shrink-0",
+                      plan.highlighted ? "text-[#F7A8D3]" : "text-primary",
+                    ].join(" ")}
                     style={{ fontVariationSettings: "'FILL' 1" }}
                   >
                     check
@@ -208,7 +213,7 @@ export default function Pricing() {
                 <th className="p-3 sm:p-4 text-label-md font-medium text-on-surface-variant uppercase tracking-wider">
                   Free
                 </th>
-                <th className="p-3 sm:p-4 text-label-md font-medium text-primary uppercase tracking-wider bg-surface-container-highest/50">
+                <th className="p-3 sm:p-4 text-label-md font-medium text-[#F7A8D3] uppercase tracking-wider bg-[#E86CB5]/10">
                   Creator
                 </th>
                 <th className="p-3 sm:p-4 text-label-md font-medium text-on-surface-variant uppercase tracking-wider">
@@ -228,7 +233,7 @@ export default function Pricing() {
                   <td className="p-3 sm:p-4 text-on-surface-variant">
                     {row.free}
                   </td>
-                  <td className="p-3 sm:p-4 bg-surface-container-highest/50 font-medium">
+                  <td className="p-3 sm:p-4 bg-[#E86CB5]/8 font-medium text-[#F5F2ED]">
                     {row.creator}
                   </td>
                   <td className="p-3 sm:p-4 text-on-surface-variant">
@@ -254,7 +259,7 @@ export default function Pricing() {
             >
               <summary className="flex justify-between items-center text-body-sm sm:text-body-lg text-on-surface font-medium list-none [&::-webkit-details-marker]:hidden">
                 {faq.question}
-                <span className="material-symbols-outlined text-outline text-[20px] sm:text-[24px] group-open:rotate-180 transition-transform duration-200 shrink-0 ml-4">
+                <span className="material-symbols-outlined text-outline group-open:text-[#F7A8D3] text-[20px] sm:text-[24px] group-open:rotate-180 transition-all duration-200 shrink-0 ml-4">
                   expand_more
                 </span>
               </summary>

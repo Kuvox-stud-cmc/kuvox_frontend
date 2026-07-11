@@ -1,9 +1,9 @@
 import { actionErrorMessage } from "~/lib/action-error.server";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, useNavigation, useSearchParams } from "react-router";
 
 import {
-  CardOverflowMenu,
+  AssetCard,
   FilterButton,
   FormActions,
   MetricCard,
@@ -14,12 +14,8 @@ import {
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { EmptyState, ErrorBanner, Modal, primaryButtonClass } from "~/components/dashboard/section";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
-import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
-import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
-import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 
@@ -33,7 +29,6 @@ import { useLiveMedia } from "~/lib/media-realtime";
 import {
   isMediaInProgress,
   resolveMediaPipeline,
-  type MediaPipeline,
 } from "~/lib/media-pipeline";
 import type { Route } from "./+types/videos";
 
@@ -167,345 +162,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-function formatDuration(value: number | string | null): string {
-  const sec = Number(value);
-  if (!sec) return "-";
-  const min = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${min.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-}
-
-function VideoPreviewFrame({
-  label,
-  onPreview,
-  className,
-  children,
-}: {
-  label: string;
-  onPreview: () => void;
-  className: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onPreview}
-      className={`group/preview relative block overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-container-low ${className}`}
-      aria-label={label}
-    >
-      {children}
-      <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover/preview:bg-black/20 group-focus-visible/preview:bg-black/20" />
-      <span className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover/preview:opacity-100 group-focus-visible/preview:opacity-100">
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-surface-container-lowest/75 text-on-surface shadow-xl backdrop-blur-md">
-          <span className="material-symbols-outlined text-[22px]">play_arrow</span>
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function VideoCard({
-  video,
-  index,
-  listView,
-  pipeline,
-  onPreview,
-}: {
-  video: MediaDto;
-  index: number;
-  listView: boolean;
-  pipeline?: MediaPipeline | null;
-  onPreview: (video: MediaDto) => void;
-}) {
-  const pipelineState = resolveMediaPipeline(video, pipeline);
-  const status = pipelineState.stage === "failed" ? "failed" : video.status.toLowerCase();
-  const res = video.width && video.height ? `${video.width}x${video.height}` : "-";
-  const fpsStr = "-";
-  const isRecent = new Date().getTime() - new Date(video.createdAt).getTime() < 24 * 60 * 60 * 1000;
-
-  // List view
-  if (listView) {
-    return (
-      <div
-        className={`group flex items-center gap-4 rounded-xl border bg-surface-container-low p-3 transition-colors ${status === "failed"
-            ? "border-error/30 hover:border-error/50"
-            : "border-outline-variant hover:border-primary/40"
-          }`}
-      >
-        <VideoPreviewFrame
-          onPreview={() => onPreview(video)}
-          className="h-20 w-32 shrink-0 rounded-lg border border-outline-variant"
-          label={`Preview ${video.filename}`}
-        >
-          {status === "failed" ? (
-            <div className="flex h-full w-full items-center justify-center bg-error/5">
-              <span className="material-symbols-outlined text-[24px] text-error">
-                error
-              </span>
-            </div>
-          ) : status === "uploading" || status === "uploaded" ? (
-            <div className="flex h-full w-full flex-col items-center justify-center bg-surface-container p-2">
-              <div className="mb-1 h-1 w-full overflow-hidden rounded-full bg-surface-container-high">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `100%` }}
-                />
-              </div>
-              <span className="text-label-sm text-primary">
-                100%
-              </span>
-            </div>
-          ) : (
-            <MediaThumbnail media={video} index={index} icon="play_circle" />
-          )}
-        </VideoPreviewFrame>
-        <div className="min-w-0 flex-1">
-          <h3
-            className={`truncate text-body-sm font-bold flex items-center gap-2 ${status === "failed" ? "text-error" : "text-on-surface"}`}
-            title={video.filename}
-          >
-            <span className="truncate">{video.filename}</span>
-            {isRecent && (
-              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                Recent
-              </span>
-            )}
-          </h3>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-label-sm text-on-surface-variant">
-            <span>{new Date(video.createdAt).toLocaleDateString()}</span>
-            {video.durationSeconds != null && (
-              <>
-                <span className="h-1 w-1 rounded-full bg-outline-variant" />
-                <span>{formatDuration(video.durationSeconds)}</span>
-              </>
-            )}
-            {res !== "-" && (
-              <>
-                <span className="h-1 w-1 rounded-full bg-outline-variant" />
-                <span>{res}</span>
-              </>
-            )}
-          </div>
-        </div>
-        <MediaPipelineStatus media={video} pipeline={pipeline} compact />
-        <IconToggleButton
-          id={video.id}
-          active={video.isFavorite}
-          intent="toggle-favorite"
-          activeIcon="favorite"
-          inactiveIcon="favorite_border"
-          activeClassName="text-error"
-          label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
-        />
-        <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
-        <CardOverflowMenu id={video.id} itemLabel={video.filename} />
-      </div>
-    );
-  }
-
-  // Grid view: Failed card
-  if (status === "failed") {
-    return (
-      <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-error/40">
-        <VideoPreviewFrame
-          onPreview={() => onPreview(video)}
-          className="flex aspect-video w-full items-center justify-center bg-error/5"
-          label={`Preview ${video.filename}`}
-        >
-          <div className="flex flex-col items-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full border-2 border-error">
-              <span className="material-symbols-outlined text-[20px] font-bold text-error">
-                priority_high
-              </span>
-            </div>
-          </div>
-          <div className="absolute left-3 top-3">
-            <MediaPipelineStatus media={video} pipeline={pipeline} compact />
-          </div>
-        </VideoPreviewFrame>
-        <div className="p-4">
-          <h3 className="truncate text-body-sm font-bold text-error flex items-center gap-2">
-            <span className="truncate">{video.filename}</span>
-            {isRecent && (
-              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                Recent
-              </span>
-            )}
-          </h3>
-          <p className="mt-1 text-label-md text-error/70">
-            {pipelineState.detail}
-          </p>
-          <div className="mt-3 flex items-center justify-end">
-            <div className="flex items-center gap-1">
-              <IconToggleButton
-                id={video.id}
-                active={video.isFavorite}
-                intent="toggle-favorite"
-                activeIcon="favorite"
-                inactiveIcon="favorite_border"
-                activeClassName="text-error"
-                label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
-              />
-              <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
-              <CardOverflowMenu id={video.id} itemLabel={video.filename} />
-            </div>
-          </div>
-        </div>
-      </article>
-    );
-  }
-
-  // Grid view: Uploading card
-  if (status === "uploading" || status === "uploaded") {
-    return (
-      <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
-        <VideoPreviewFrame
-          onPreview={() => onPreview(video)}
-          className="flex aspect-video w-full items-center justify-center bg-surface-container"
-          label={`Preview ${video.filename}`}
-        >
-          <div className="w-full px-6">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-label-sm font-bold text-primary">
-                {pipelineState.label}
-              </span>
-              <span className="text-label-sm text-primary">
-                {pipelineState.step}/{pipelineState.stepCount}
-              </span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `100%` }}
-              />
-            </div>
-          </div>
-          <div className="absolute left-3 top-3">
-            <MediaPipelineStatus media={video} pipeline={pipeline} compact />
-          </div>
-        </VideoPreviewFrame>
-        <div className="p-4">
-          <div className="mb-2 flex items-start justify-between">
-            <h3 className="truncate text-body-sm font-bold text-on-surface flex items-center gap-2 min-w-0 flex-1">
-              <span className="truncate">{video.filename}</span>
-              {isRecent && (
-                <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                  Recent
-                </span>
-              )}
-            </h3>
-            <div className="flex items-center gap-1">
-              <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
-              <CardOverflowMenu id={video.id} itemLabel={video.filename} />
-            </div>
-          </div>
-          <p className="mb-3 text-label-md text-on-surface-variant">
-            {pipelineState.detail}
-          </p>
-          <div className="flex items-end justify-between gap-3">
-            <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-              <span>{res}</span>
-              <span className="h-1 w-1 rounded-full bg-outline-variant" />
-              <span>{fpsStr}</span>
-            </div>
-            <IconToggleButton
-              id={video.id}
-              active={video.isFavorite}
-              intent="toggle-favorite"
-              activeIcon="favorite"
-              inactiveIcon="favorite_border"
-              activeClassName="text-error"
-              label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
-            />
-          </div>
-        </div>
-      </article>
-    );
-  }
-
-  // Grid view: Ready / Processing card
-  return (
-    <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
-      <VideoPreviewFrame
-        onPreview={() => onPreview(video)}
-        className="aspect-video w-full"
-        label={`Preview ${video.filename}`}
-      >
-        <MediaThumbnail media={video} index={index} icon="play_circle" />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
-
-        {/* Status badge */}
-        <div className="absolute left-3 top-3">
-          <MediaPipelineStatus media={video} pipeline={pipeline} compact />
-        </div>
-
-        {/* Processing overlay */}
-        {status === "processing" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface/40">
-            <span className="text-label-md font-bold text-on-surface">
-              {pipelineState.label}
-            </span>
-            <span className="mt-1 max-w-56 text-center text-label-sm text-on-surface-variant">
-              {pipelineState.detail}
-            </span>
-          </div>
-        )}
-
-        {/* Duration badge */}
-        {video.durationSeconds != null && (
-          <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-md bg-surface-container-lowest/60 px-1.5 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
-            <span className="material-symbols-outlined text-[12px]">
-              play_arrow
-            </span>
-            {formatDuration(video.durationSeconds)}
-          </span>
-        )}
-      </VideoPreviewFrame>
-
-      <div className="p-4">
-        <div className="mb-2 flex items-start justify-between">
-          <h3 className="truncate text-body-sm font-bold text-on-surface flex items-center gap-2 min-w-0 flex-1">
-            <span className="truncate">{video.filename}</span>
-            {isRecent && (
-              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                Recent
-              </span>
-            )}
-          </h3>
-          <div className="flex items-center gap-1">
-            <ShareDialog resourceType="media" resourceId={video.id} resourceName={video.filename} />
-            <CardOverflowMenu id={video.id} itemLabel={video.filename} />
-          </div>
-        </div>
-        <p className="mb-3 text-label-md text-on-surface-variant">
-          {new Date(video.createdAt).toLocaleDateString()}
-        </p>
-        <div className="flex items-end justify-between gap-3">
-          <div className="flex items-center gap-3 text-label-sm text-on-surface-variant">
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">
-                videocam
-              </span>
-              {res}
-            </span>
-            <span className="h-1 w-1 rounded-full bg-outline-variant" />
-            <span>{fpsStr}</span>
-          </div>
-          <IconToggleButton
-            id={video.id}
-            active={video.isFavorite}
-            intent="toggle-favorite"
-            activeIcon="favorite"
-            inactiveIcon="favorite_border"
-            activeClassName="text-error"
-            label={`${video.isFavorite ? "Remove from" : "Add to"} favorites`}
-          />
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function CreateNewCard({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -541,6 +197,7 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
   );
   const live = useLiveMedia(initialVideos, { kind: MediaKind.Video });
   const pageView = searchParams.get("view");
+  const assetDetailsId = searchParams.get("asset");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<"latest" | "name">("latest");
   const [importOpen, setImportOpen] = useState(false);
@@ -721,26 +378,29 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         ) : view === "list" ? (
           <div className="space-y-3">
             {(showAllRecent ? videos : videos.slice(0, 4)).map((video, i) => (
-              <VideoCard
+              <AssetCard
                 key={video.id}
-                video={video}
+                media={video}
                 index={i}
+                workspaceKind="personal"
                 listView
                 pipeline={live.updatesById[video.id]?.pipeline}
                 onPreview={(nextVideo) => setPreviewVideoId(nextVideo.id)}
+                defaultDetailsOpen={assetDetailsId === video.id}
               />
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {(showAllRecent ? videos : videos.slice(0, 4)).map((video, i) => (
-              <VideoCard
+              <AssetCard
                 key={video.id}
-                video={video}
+                media={video}
                 index={i}
-                listView={false}
+                workspaceKind="personal"
                 pipeline={live.updatesById[video.id]?.pipeline}
                 onPreview={(nextVideo) => setPreviewVideoId(nextVideo.id)}
+                defaultDetailsOpen={assetDetailsId === video.id}
               />
             ))}
             <CreateNewCard onClick={() => setImportOpen(true)} />
@@ -794,13 +454,15 @@ export default function Videos({ loaderData, actionData }: Route.ComponentProps)
         ) : (
           <div className={view === "list" ? "space-y-3" : "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}>
             {favoriteVideos.map((video, i) => (
-              <VideoCard
+              <AssetCard
                 key={`fav-${video.id}`}
-                video={video}
+                media={video}
                 index={i}
+                workspaceKind="personal"
                 listView={view === "list"}
                 pipeline={live.updatesById[video.id]?.pipeline}
                 onPreview={(nextVideo) => setPreviewVideoId(nextVideo.id)}
+                defaultDetailsOpen={assetDetailsId === video.id}
               />
             ))}
           </div>

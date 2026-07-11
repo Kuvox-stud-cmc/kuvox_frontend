@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, useNavigation, useSearchParams } from "react-router";
 
 import {
-  CardOverflowMenu,
+  AssetCard,
   FormActions,
   MetricCard,
   PageHeader,
@@ -18,16 +18,11 @@ import {
   primaryButtonClass,
 } from "~/components/dashboard/section";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
-import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
-import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
-import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
 import { ApiError, listMedia, setMediaFavorite, softDelete, albumsApi } from "~/lib/api.server";
 import { useLiveMedia } from "~/lib/media-realtime";
-import type { MediaPipeline } from "~/lib/media-pipeline";
 import { TextField, TextArea } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { requireUser } from "~/lib/auth.server";
@@ -150,25 +145,6 @@ export async function action({ request }: Route.ActionArgs) {
 
 
 
-function formatSize(value: MediaDto["sizeBytes"]): string {
-  const bytes = Number(value);
-  if (!Number.isFinite(bytes) || bytes <= 0) return "Pending";
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Recently added";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
-}
-
-function photoLabel(photo: MediaDto): string {
-  const dimensions = photo.width && photo.height ? `${photo.width} x ${photo.height}` : null;
-  return [dimensions, formatSize(photo.sizeBytes)].filter(Boolean).join(" / ");
-}
-
 function countAddedThisMonth(items: MediaDto[]): number {
   const now = new Date();
   const month = now.getMonth();
@@ -179,124 +155,12 @@ function countAddedThisMonth(items: MediaDto[]): number {
   }).length;
 }
 
-function PhotoCard({
-  photo,
-  index,
-  listView,
-  pipeline,
-  onPreview,
-}: {
-  photo: MediaDto;
-  index: number;
-  listView: boolean;
-  pipeline?: MediaPipeline | null;
-  onPreview: (photo: MediaDto) => void;
-}) {
-  const isRecent = new Date().getTime() - new Date(photo.createdAt).getTime() < 24 * 60 * 60 * 1000;
-
-  if (listView) {
-    return (
-      <div className="group flex items-center gap-4 rounded-xl border border-outline-variant bg-surface-container-low p-3 transition-colors hover:border-primary/40">
-        <button
-          type="button"
-          onClick={() => onPreview(photo)}
-          className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-outline-variant"
-          aria-label={`Preview ${photo.filename}`}
-        >
-          <MediaThumbnail media={photo} index={index} icon="image" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-body-md font-bold text-on-surface flex items-center gap-2" title={photo.filename}>
-            <span className="truncate">{photo.filename}</span>
-            {isRecent && (
-              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                Recent
-              </span>
-            )}
-          </h3>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-label-sm text-on-surface-variant">
-            <span>{photoLabel(photo)}</span>
-            <span className="h-1 w-1 rounded-full bg-outline-variant" />
-            <span>{formatDate(photo.createdAt)}</span>
-          </div>
-          <div className="mt-2">
-            <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
-          </div>
-        </div>
-        <IconToggleButton
-          id={photo.id}
-          active={photo.isFavorite}
-          intent="toggle-favorite"
-          activeIcon="favorite"
-          inactiveIcon="favorite_border"
-          activeClassName="text-error"
-          label={`${photo.isFavorite ? "Remove from" : "Add to"} favorites`}
-        />
-        <ShareDialog resourceType="media" resourceId={photo.id} resourceName={photo.filename} />
-        <CardOverflowMenu id={photo.id} itemLabel={photo.filename} placement="top" />
-      </div>
-    );
-  }
-
-  return (
-    <article className="group overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => onPreview(photo)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onPreview(photo);
-          }
-        }}
-        className="relative aspect-[4/3] cursor-pointer overflow-hidden"
-        aria-label={`Preview ${photo.filename}`}
-      >
-        <MediaThumbnail media={photo} index={index} icon="image" />
-        <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
-        <div className="absolute left-3 top-3 max-w-[calc(100%-5rem)]">
-          <MediaPipelineStatus media={photo} pipeline={pipeline} compact />
-        </div>
-      </div>
-      <div className="p-4">
-        <div className="mb-2 flex items-start justify-between">
-          <h3 className="truncate text-body-sm font-bold text-on-surface flex items-center gap-2 min-w-0 flex-1" title={photo.filename}>
-            <span className="truncate">{photo.filename}</span>
-            {isRecent && (
-              <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                Recent
-              </span>
-            )}
-          </h3>
-          <div className="flex items-center gap-1">
-            <IconToggleButton
-              id={photo.id}
-              active={photo.isFavorite}
-              intent="toggle-favorite"
-              activeIcon="favorite"
-              inactiveIcon="favorite_border"
-              activeClassName="text-error"
-              label={`${photo.isFavorite ? "Remove from" : "Add to"} favorites`}
-            />
-            <ShareDialog resourceType="media" resourceId={photo.id} resourceName={photo.filename} />
-            <CardOverflowMenu id={photo.id} itemLabel={photo.filename} placement="top" />
-          </div>
-        </div>
-        <div className="flex items-center justify-between text-label-md text-on-surface-variant">
-          <span>{photoLabel(photo)}</span>
-          <span>{formatDate(photo.createdAt)}</span>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 export default function Photos({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
   const [searchParams] = useSearchParams();
   const pageView = searchParams.get("view");
+  const assetDetailsId = searchParams.get("asset");
   const [importOpen, setImportOpen] = useState(false);
   const [albumModalOpen, setAlbumModalOpen] = useState(false);
   const [sort, setSort] = useState<"latest" | "name" | "size">("latest");
@@ -418,13 +282,15 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
             }
           >
             {(showAllRecent ? photos : photos.slice(0, 4)).map((photo, index) => (
-              <PhotoCard
+              <AssetCard
                 key={photo.id}
-                photo={photo}
+                media={photo}
                 index={index}
+                workspaceKind="personal"
                 listView={layoutMode === "list"}
                 pipeline={live.updatesById[photo.id]?.pipeline}
                 onPreview={(nextPhoto) => setPreviewPhotoId(nextPhoto.id)}
+                defaultDetailsOpen={assetDetailsId === photo.id}
               />
             ))}
           </div>
@@ -486,13 +352,15 @@ export default function Photos({ loaderData, actionData }: Route.ComponentProps)
             }
           >
             {favoritePhotos.map((photo, index) => (
-              <PhotoCard
+              <AssetCard
                 key={photo.id}
-                photo={photo}
+                media={photo}
                 index={index}
+                workspaceKind="personal"
                 listView={layoutMode === "list"}
                 pipeline={live.updatesById[photo.id]?.pipeline}
                 onPreview={(nextPhoto) => setPreviewPhotoId(nextPhoto.id)}
+                defaultDetailsOpen={assetDetailsId === photo.id}
               />
             ))}
           </div>

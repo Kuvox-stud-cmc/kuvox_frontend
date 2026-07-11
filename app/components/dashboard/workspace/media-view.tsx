@@ -3,20 +3,15 @@ import { useNavigation, useRevalidator } from "react-router";
 
 import {
   CardGridSkeleton,
-  Chip,
-  ConfirmSubmitButton,
   EmptyState,
   ErrorBanner,
   primaryButtonClass,
   SectionHeader,
 } from "~/components/dashboard/section";
+import { AssetCard } from "~/components/dashboard/shared/AssetCard";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
-import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
-import { AccessDialog, ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
-import { MediaKind, mediaKindLabel, type MediaDto } from "~/lib/api";
+import { MediaKind, type MediaDto } from "~/lib/api";
 import { useLiveMedia } from "~/lib/media-realtime";
-import { resolveMediaPipeline } from "~/lib/media-pipeline";
 
 import type { WorkspaceActionData } from "./projects-view";
 
@@ -27,24 +22,11 @@ const KIND_FILTERS = [
   { label: "Audio", value: MediaKind.Audio },
 ];
 
-const KIND_ICON: Record<number, string> = {
-  [MediaKind.Video]: "movie",
-  [MediaKind.Image]: "image",
-  [MediaKind.Audio]: "music_note",
-};
-
 const AUDIO_CATEGORY_OPTIONS = [
   { value: "music", label: "Music", description: "Songs and background tracks" },
   { value: "sfx", label: "Sound Effects", description: "SFX, foley, and stingers" },
   { value: "voiceovers", label: "Voiceovers", description: "Narration and spoken recordings" },
 ];
-
-function formatSize(value: number | string): string {
-  const bytes = Number(value);
-  if (bytes <= 0) return "—";
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 /** Media library grid + kind filter + upload dialog + soft-delete, shared by routes. */
 export function MediaView({
@@ -150,68 +132,17 @@ export function MediaView({
         />
       ) : (
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {visible.map((item) => {
-            const pipeline = live.updatesById[item.id]?.pipeline;
-            const pipelineState = resolveMediaPipeline(item, pipeline);
-            const showDetail = !pipelineState.terminal || pipelineState.stage === "failed";
-
-            return (
-              <div
-                key={item.id}
-                className="group flex flex-col justify-between overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40"
-              >
-                <div className="aspect-video overflow-hidden bg-surface-container">
-                  <MediaThumbnail media={item} />
-                </div>
-                <div className="flex flex-1 flex-col p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="material-symbols-outlined text-primary">
-                      {KIND_ICON[item.kind] ?? "perm_media"}
-                    </span>
-                    <Chip>{mediaKindLabel(item.kind)}</Chip>
-                  </div>
-                  <h3 className="mt-3 truncate text-body-lg text-on-surface" title={item.filename}>
-                    {item.filename}
-                  </h3>
-                  <div className="mt-4">
-                    <MediaPipelineStatus
-                      media={item}
-                      pipeline={pipeline}
-                      showDetail={showDetail}
-                    />
-                  </div>
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="text-label-md text-on-surface-variant">
-                      {formatSize(item.sizeBytes)}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {workspaceKind === "studio" ? (
-                        <AccessDialog resourceType="media" resourceId={item.id} resourceName={item.filename} canManageAccess={canManageAccess} />
-                      ) : (
-                        <ShareDialog resourceType="media" resourceId={item.id} resourceName={item.filename} />
-                      )}
-                      {canWrite ? (
-                      <ConfirmSubmitButton
-                        fields={{ intent: "delete", id: item.id }}
-                        title="Move media to trash?"
-                        message={
-                          <>
-                            Move <span className="font-medium text-on-surface">{item.filename}</span> to trash?
-                          </>
-                        }
-                        confirmLabel="Move to trash"
-                        ariaLabel={`Move ${item.filename} to Trash`}
-                        buttonClassName="rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-all hover:bg-surface-container-high hover:text-error group-hover:opacity-100 disabled:opacity-50"
-                      >
-                        <span className="material-symbols-outlined text-[20px]">delete</span>
-                      </ConfirmSubmitButton>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {visible.map((item, index) => (
+            <AssetCard
+              key={item.id}
+              media={item}
+              index={index}
+              workspaceKind={workspaceKind}
+              pipeline={live.updatesById[item.id]?.pipeline}
+              canMoveToRecycleBin={canWrite}
+              canManageAccess={canManageAccess}
+            />
+          ))}
         </div>
       )}
 

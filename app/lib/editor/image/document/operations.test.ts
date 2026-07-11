@@ -164,7 +164,7 @@ describe("image document operations", () => {
       canonicalStorageKey: "canonical-key",
       storageKey: "raw-key",
       thumbnailStorageKey: "thumb-key",
-    } as MediaDto;
+    } as unknown as MediaDto;
 
     const layer = createImageLayerFromMedia(media, document.canvas);
     expect(layer.source).toMatchObject({

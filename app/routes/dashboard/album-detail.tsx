@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Link, redirect, useNavigation } from "react-router";
 
 import {
+  AssetCard,
   PageHeader,
   SectionHeader,
   StatusBadge,
@@ -17,9 +18,8 @@ import { AlbumAddItemsModal } from "~/components/dashboard/albums/album-add-item
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { MediaPreviewOverlay, resolveMediaObjectSource } from "~/components/dashboard/shared/MediaPreviewOverlay";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { AlbumKind, MediaKind, PERSONAL, type AlbumDto, type MediaDto } from "~/lib/api";
-import { albumsApi, ApiError, listAllMedia, listSharedAlbums } from "~/lib/api.server";
+import { albumsApi, ApiError, listAllMedia, listSharedAlbums, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { handleResourceAction } from "~/lib/resource-actions.server";
@@ -157,6 +157,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
 
       await albumsApi.addMedia(accessToken, albumId, mediaIds, reqLog);
+      return { ok: true, intent };
+    }
+
+    if (intent === "delete") {
+      const id = String(formData.get("id") ?? "");
+      if (id) {
+        await softDelete(accessToken, "media", id, reqLog);
+      }
       return { ok: true, intent };
     }
 
@@ -349,53 +357,34 @@ function AlbumMediaCard({
   onPreview: () => void;
 }) {
   return (
-    <article className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
-      <button
-        type="button"
-        onClick={onPreview}
-        className="relative block aspect-video w-full overflow-hidden text-left"
-        aria-label={`Preview ${media.filename}`}
-      >
-        <MediaThumbnail media={media} index={index} icon={mediaKindIcon(media.kind)} />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-        <span className="absolute left-3 top-3 rounded-md bg-surface-container-lowest/70 px-2 py-0.5 text-label-sm font-medium text-on-surface backdrop-blur-md">
-          {mediaKindLabel(media.kind)}
-        </span>
-      </button>
-      <div className="flex items-start gap-3 p-4">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-body-sm font-bold text-on-surface" title={media.filename}>
-            {media.filename}
-          </h3>
-          <p className="mt-1 text-label-sm text-on-surface-variant">
-            {formatDate(media.createdAt)}
-          </p>
-        </div>
-        {canManage ? (
-          <>
-            <ShareDialog resourceType="media" resourceId={media.id} resourceName={media.filename} />
-            <ConfirmSubmitButton
-              fields={{ intent: "remove-media", albumId: album.id, mediaId: media.id }}
-              title="Remove media from album?"
-              message={
-                <>
-                  Remove <span className="font-medium text-on-surface">{media.filename}</span> from{" "}
-                  <span className="font-medium text-on-surface">{album.name}</span>?
-                </>
-              }
-              confirmLabel="Remove media"
-              ariaLabel={`Remove ${media.filename} from ${album.name}`}
-              buttonClassName="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
-            >
-              <span className="material-symbols-outlined text-[18px]">close</span>
-            </ConfirmSubmitButton>
-          </>
-        ) : null}
-      </div>
-    </article>
+    <AssetCard
+      media={media}
+      index={index}
+      workspaceKind="personal"
+      canMoveToRecycleBin={canManage}
+      onPreview={onPreview}
+      secondaryAction={
+        canManage ? (
+          <ConfirmSubmitButton
+            fields={{ intent: "remove-media", albumId: album.id, mediaId: media.id }}
+            title="Remove media from album?"
+            message={
+              <>
+                Remove <span className="font-medium text-on-surface">{media.filename}</span> from{" "}
+                <span className="font-medium text-on-surface">{album.name}</span>?
+              </>
+            }
+            confirmLabel="Remove media"
+            ariaLabel={`Remove ${media.filename} from ${album.name}`}
+            buttonClassName="flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </ConfirmSubmitButton>
+        ) : null
+      }
+    />
   );
 }
-
 function CompactAudioPreview({
   media,
   onClose,
@@ -675,20 +664,3 @@ function albumKindTone(kind: number) {
   return "neutral" as const;
 }
 
-function mediaKindIcon(kind: number) {
-  if (kind === MediaKind.Image) return "image";
-  if (kind === MediaKind.Audio) return "graphic_eq";
-  return "movie";
-}
-
-function mediaKindLabel(kind: number) {
-  if (kind === MediaKind.Image) return "Photo";
-  if (kind === MediaKind.Audio) return "Audio";
-  return "Video";
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Recently added";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(date);
-}

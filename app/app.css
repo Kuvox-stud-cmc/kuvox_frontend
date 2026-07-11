@@ -6,61 +6,61 @@
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
   /* ── Material Design 3 · Dark palette ──────────────────────────────────── */
-  --color-surface: #131315;
-  --color-surface-dim: #131315;
-  --color-surface-bright: #39393b;
-  --color-surface-container-lowest: #0e0e10;
-  --color-surface-container-low: #1c1b1d;
-  --color-surface-container: #201f22;
-  --color-surface-container-high: #2a2a2c;
-  --color-surface-container-highest: #353437;
-  --color-surface-variant: #353437;
-  --color-surface-tint: #c0c1ff;
+  --color-surface: #120f0c;
+  --color-surface-dim: #0c0c0e;
+  --color-surface-bright: #237e8f;
+  --color-surface-container-lowest: #0c0c0e;
+  --color-surface-container-low: #100e0c;
+  --color-surface-container: #111816;
+  --color-surface-container-high: #062532;
+  --color-surface-container-highest: #241a12;
+  --color-surface-variant: #07394d;
+  --color-surface-tint: #8adbe7;
 
-  --color-on-surface: #e5e1e4;
-  --color-on-surface-variant: #c7c4d7;
+  --color-on-surface: #ffffff;
+  --color-on-surface-variant: #efe3d2;
 
-  --color-inverse-surface: #e5e1e4;
-  --color-inverse-on-surface: #313032;
+  --color-inverse-surface: #efe3d2;
+  --color-inverse-on-surface: #5c3e2a;
 
-  --color-background: #131315;
-  --color-on-background: #e5e1e4;
+  --color-background: #120f0c;
+  --color-on-background: #ffffff;
 
-  --color-primary: #c0c1ff;
-  --color-primary-container: #8083ff;
-  --color-primary-fixed: #e1e0ff;
-  --color-primary-fixed-dim: #c0c1ff;
-  --color-on-primary: #1000a9;
-  --color-on-primary-container: #0d0096;
-  --color-on-primary-fixed: #07006c;
-  --color-on-primary-fixed-variant: #2f2ebe;
-  --color-inverse-primary: #494bd6;
+  --color-primary: #8adbe7;
+  --color-primary-container: #052a3a;
+  --color-primary-fixed: #8adbe7;
+  --color-primary-fixed-dim: #47b6c7;
+  --color-on-primary: #1b6f7a;
+  --color-on-primary-container: #ffffff;
+  --color-on-primary-fixed: #1b6f7a;
+  --color-on-primary-fixed-variant: #5c3e2a;
+  --color-inverse-primary: #237e8f;
 
-  --color-secondary: #4edea3;
-  --color-secondary-container: #00a572;
-  --color-secondary-fixed: #6ffbbe;
-  --color-secondary-fixed-dim: #4edea3;
-  --color-on-secondary: #003824;
-  --color-on-secondary-container: #00311f;
-  --color-on-secondary-fixed: #002113;
-  --color-on-secondary-fixed-variant: #005236;
+  --color-secondary: #c9a962;
+  --color-secondary-container: #5c3e2a;
+  --color-secondary-fixed: #f5f2ed;
+  --color-secondary-fixed-dim: #a68b5b;
+  --color-on-secondary: #5c3e2a;
+  --color-on-secondary-container: #ffffff;
+  --color-on-secondary-fixed: #5c3e2a;
+  --color-on-secondary-fixed-variant: #8b6847;
 
-  --color-tertiary: #ffb783;
-  --color-tertiary-container: #d97721;
-  --color-tertiary-fixed: #ffdcc5;
-  --color-tertiary-fixed-dim: #ffb783;
-  --color-on-tertiary: #4f2500;
-  --color-on-tertiary-container: #452000;
-  --color-on-tertiary-fixed: #301400;
-  --color-on-tertiary-fixed-variant: #703700;
+  --color-tertiary: #5d8a52;
+  --color-tertiary-container: #6f8c4d;
+  --color-tertiary-fixed: #7b8d48;
+  --color-tertiary-fixed-dim: #5d8a52;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #ffffff;
+  --color-on-tertiary-fixed: #ffffff;
+  --color-on-tertiary-fixed-variant: #ffffff;
 
   --color-error: #ffb4ab;
   --color-error-container: #93000a;
   --color-on-error: #690005;
   --color-on-error-container: #ffdad6;
 
-  --color-outline: #908fa0;
-  --color-outline-variant: #464554;
+  --color-outline: #8b8b8b;
+  --color-outline-variant: #237e8f;
 
   /* ── Font sizes (text-* utilities) ─────────────────────────────────────── */
   --font-size-display: 48px;
@@ -171,9 +171,9 @@ body {
 
 /* Glassmorphism card */
 .glass {
-  background: rgba(32, 31, 34, 0.7);
+  background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(144, 143, 160, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Bento card hover */
@@ -182,8 +182,8 @@ body {
 }
 .bento-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(192, 193, 255, 0.3);
-  background: rgba(32, 31, 34, 0.9);
+  border-color: rgba(99, 217, 168, 0.28);
+  background: rgba(16, 24, 19, 0.92);
 }
 
 /* Material Symbols baseline */
@@ -215,7 +215,125 @@ body {
   background: radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--color-primary) 15%, transparent) 0%, transparent 60%);
 }
 
-/* Custom Scrollbar for Figma-like aesthetics */
+@keyframes premium-gold-twinkle {
+  0%, 100% {
+    opacity: 0.58;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.96;
+    transform: translate3d(0, -16px, 0) scale(1.055);
+  }
+}
+
+@keyframes premium-gold-shimmer {
+  0%, 100% {
+    opacity: 0.28;
+    transform: translate3d(-8%, 0, 0) rotate(-10deg);
+  }
+  50% {
+    opacity: 0.58;
+    transform: translate3d(8%, -2%, 0) rotate(-10deg);
+  }
+}
+
+.premium-page-shell {
+  isolation: isolate;
+}
+
+.premium-gold-sparkle {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 8% 16%, rgba(244, 210, 122, 0.52) 0 1.2px, transparent 2.4px),
+    radial-gradient(circle at 17% 44%, rgba(227, 180, 84, 0.40) 0 1.2px, transparent 2.4px),
+    radial-gradient(circle at 28% 76%, rgba(200, 154, 66, 0.34) 0 1.1px, transparent 2.3px),
+    radial-gradient(circle at 42% 24%, rgba(244, 210, 122, 0.38) 0 1.1px, transparent 2.3px),
+    radial-gradient(circle at 58% 62%, rgba(227, 180, 84, 0.34) 0 1px, transparent 2.2px),
+    radial-gradient(circle at 73% 36%, rgba(244, 210, 122, 0.44) 0 1.2px, transparent 2.4px),
+    radial-gradient(circle at 88% 18%, rgba(227, 180, 84, 0.48) 0 1.2px, transparent 2.4px),
+    radial-gradient(circle at 91% 72%, rgba(244, 210, 122, 0.42) 0 1.2px, transparent 2.4px),
+    radial-gradient(circle at 48% 88%, rgba(244, 210, 122, 0.32) 0 1px, transparent 2px),
+    radial-gradient(circle at 79% 84%, rgba(227, 180, 84, 0.30) 0 1px, transparent 2px),
+    radial-gradient(46% 26% at 50% 0%, rgba(227, 180, 84, 0.24), transparent 72%),
+    radial-gradient(34% 20% at 78% 18%, rgba(247, 168, 211, 0.10), transparent 70%);
+  filter: drop-shadow(0 0 13px rgba(244, 210, 122, 0.52));
+  mix-blend-mode: screen;
+  opacity: 0.74;
+  animation: premium-gold-twinkle 6s ease-in-out infinite;
+}
+
+.premium-gold-sparkle::before,
+.premium-gold-sparkle::after {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+}
+
+.premium-gold-sparkle::before {
+  background-image:
+    radial-gradient(circle, rgba(244, 210, 122, 0.46) 0 1px, transparent 1.7px),
+    radial-gradient(circle, rgba(227, 180, 84, 0.34) 0 1px, transparent 1.7px);
+  background-position: 0 0, 34px 46px;
+  background-size: 92px 108px, 138px 126px;
+  opacity: 0.52;
+}
+
+.premium-gold-sparkle::after {
+  background:
+    linear-gradient(105deg, transparent 22%, rgba(244, 210, 122, 0.20) 38%, transparent 54%),
+    linear-gradient(105deg, transparent 52%, rgba(200, 154, 66, 0.14) 64%, transparent 76%);
+  filter: blur(16px);
+  mix-blend-mode: screen;
+  opacity: 0.40;
+  animation: premium-gold-shimmer 7s ease-in-out infinite;
+}
+
+.premium-gold-sparkle-fixed {
+  position: fixed;
+}
+
+.premium-page-shell :where([class*="rounded"])[class*="border"] {
+  background-image:
+    linear-gradient(135deg, rgba(244, 210, 122, 0.12), transparent 28%, transparent 70%, rgba(200, 154, 66, 0.075));
+  box-shadow:
+    inset 0 1px 0 rgba(244, 210, 122, 0.18),
+    0 0 0 1px rgba(200, 154, 66, 0.055);
+}
+
+.premium-page-shell :where([class*="rounded"])[class*="border"]:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(244, 210, 122, 0.30),
+    0 0 0 1px rgba(227, 180, 84, 0.14),
+    0 0 40px rgba(227, 180, 84, 0.20),
+    0 0 22px rgba(247, 168, 211, 0.075);
+}
+
+.premium-page-shell :where(button, a)[class*="bg-[#F5F2ED]"] {
+  background-image:
+    linear-gradient(100deg, rgba(255, 255, 255, 0.62), rgba(244, 210, 122, 0.42) 42%, rgba(255, 255, 255, 0.82));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 0 34px rgba(227, 180, 84, 0.32),
+    0 0 14px rgba(244, 210, 122, 0.20),
+    0 12px 34px rgba(0, 0, 0, 0.26);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .premium-gold-sparkle {
+    animation: none;
+    opacity: 0.58;
+  }
+
+  .premium-gold-sparkle::after {
+    animation: none;
+  }
+}
+
+/* Custom Scrollbar for Community Sidebar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

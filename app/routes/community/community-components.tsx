@@ -20,7 +20,7 @@ export function CommunityHero({
 }) {
   return (
     <section className="w-full text-center">
-      <span className="text-primary text-label-md font-semibold uppercase tracking-widest">
+      <span className="text-[#F7A8D3] text-label-md font-semibold uppercase tracking-widest">
         {eyebrow}
       </span>
       <h1 className="mt-3 text-3xl sm:text-4xl lg:text-display font-semibold text-on-surface tracking-tight">
@@ -58,7 +58,7 @@ export function SectionHeader({
       {action && (
         <Link
           to={action.to}
-          className="inline-flex items-center gap-2 text-body-sm text-primary hover:underline"
+          className="inline-flex items-center gap-2 text-body-sm text-[#F7A8D3] hover:underline"
         >
           {action.label}
           <span className="material-symbols-outlined text-[18px]">
@@ -72,7 +72,7 @@ export function SectionHeader({
 
 export function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="px-2.5 py-1 rounded-full bg-surface-container text-label-sm font-semibold text-on-surface-variant">
+    <span className="px-2.5 py-1 rounded-full bg-[#5C3E2A]/20 border border-[#C9A962]/15 text-label-sm font-semibold text-on-surface-variant">
       {children}
     </span>
   );
@@ -82,7 +82,7 @@ export function ThreadCard({ thread }: { thread: ForumThread }) {
   return (
     <Link
       to={`/community/forums/${thread.id}`}
-      className="block bg-surface-container-lowest border border-outline-variant rounded-xl p-5 sm:p-6 hover:border-primary/50 hover:bg-surface-container-low transition-colors"
+      className="block bg-[#100e0c]/92 border border-[#C9A962]/18 rounded-xl p-5 sm:p-6 hover:border-[#F7A8D3]/35 hover:bg-[#111816]/95 transition-colors"
     >
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
@@ -91,7 +91,7 @@ export function ThreadCard({ thread }: { thread: ForumThread }) {
               {thread.category}
             </span>
             {thread.solved && (
-              <span className="inline-flex items-center gap-1 text-label-sm font-semibold text-on-surface bg-primary/15 px-2 py-1 rounded-full">
+              <span className="inline-flex items-center gap-1 text-label-sm font-semibold text-[#F7A8D3] bg-[#E86CB5]/10 border border-[#F7A8D3]/20 px-2 py-1 rounded-full">
                 <span className="material-symbols-outlined text-[15px]">
                   check_circle
                 </span>
@@ -125,7 +125,7 @@ export function ShowcaseCard({ project }: { project: ShowcaseProject }) {
   return (
     <Link
       to={`/community/showcase/${project.id}`}
-      className="group block bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden hover:border-primary/50 transition-colors"
+      className="group block bg-[#100e0c]/92 border border-[#C9A962]/18 rounded-xl overflow-hidden hover:border-[#F7A8D3]/35 transition-colors"
     >
       <div className="aspect-video bg-surface-container relative overflow-hidden">
         <img
@@ -135,7 +135,7 @@ export function ShowcaseCard({ project }: { project: ShowcaseProject }) {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-surface/80 to-transparent" />
         {project.featured && (
-          <span className="absolute top-3 left-3 bg-primary text-on-primary text-label-sm font-semibold px-2.5 py-1 rounded-full">
+          <span className="absolute top-3 left-3 bg-[#E86CB5]/16 text-[#F7A8D3] border border-[#F7A8D3]/25 text-label-sm font-semibold px-2.5 py-1 rounded-full">
             Featured
           </span>
         )}
@@ -163,12 +163,12 @@ export function ShowcaseCard({ project }: { project: ShowcaseProject }) {
 
 export function LearningCard({ resource }: { resource: LearningResource }) {
   return (
-    <article className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 sm:p-6">
+    <article className="bg-[#100e0c]/92 border border-[#C9A962]/18 rounded-xl p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <span className="material-symbols-outlined text-primary text-3xl">
           {resource.icon}
         </span>
-        <span className="text-label-sm font-semibold text-on-surface-variant bg-surface-container px-2 py-1 rounded-full">
+        <span className="text-label-sm font-semibold text-on-surface-variant bg-[#5C3E2A]/20 border border-[#C9A962]/15 px-2 py-1 rounded-full">
           {resource.level}
         </span>
       </div>
@@ -191,8 +191,8 @@ export function NewsCard({ post }: { post: NewsPost }) {
     <article
       className={`border border-outline-variant rounded-xl p-5 sm:p-6 ${
         post.featured
-          ? "bg-primary-container/20"
-          : "bg-surface-container-lowest"
+          ? "bg-[#5C3E2A]/20 shadow-[0_0_34px_rgba(232,108,181,0.06)]"
+          : "bg-[#100e0c]/92"
       }`}
     >
       <div className="flex flex-wrap items-center gap-2 text-label-md">
@@ -233,7 +233,7 @@ export function NotFoundPanel({
   action: string;
 }) {
   return (
-    <section className="w-full max-w-2xl mx-auto text-center bg-surface-container-lowest border border-outline-variant rounded-xl p-8 sm:p-10">
+    <section className="w-full max-w-2xl mx-auto text-center bg-[#100e0c]/92 border border-[#C9A962]/18 rounded-xl p-8 sm:p-10">
       <span className="material-symbols-outlined text-primary text-4xl">
         search_off
       </span>

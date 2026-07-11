@@ -3,6 +3,7 @@ import { Link, useNavigation } from "react-router";
 
 import {
   FilterTabs,
+  AssetCard as MediaAssetCard,
   FilterButton,
   GradientThumbnail,
   MetricCard,
@@ -190,6 +191,7 @@ interface SharedItem extends OwnerInfo {
   projectKind?: number;
   sourceAlbumName?: string;
   linkTo?: string;
+  media?: MediaDto;
 }
 
 function projectMediaCount(project: ProjectDto): number {
@@ -243,6 +245,7 @@ function toSharedItems(
       mediaCount: 1,
       createdAt: item.createdAt,
       mediaKind: item.kind,
+      media: item,
     });
   }
 
@@ -263,6 +266,7 @@ function toSharedItems(
         mediaCount: 1,
         createdAt: item.createdAt,
         mediaKind: item.kind,
+        media: item,
         sourceAlbumName: group.albumName,
       });
     }
@@ -295,7 +299,11 @@ function toSharedItems(
 
 
 
-function AssetCard({ item, index }: { item: SharedItem; index: number }) {
+function SharedItemCard({ item, index }: { item: SharedItem; index: number }) {
+  if (item.media) {
+    return <MediaAssetCard media={item.media} index={index} workspaceKind="personal" canMoveToRecycleBin={false} showFavoriteToggle={false} />;
+  }
+
   const sharedBy = ownerLabel(item);
   const inner = (
     <div className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-all hover:border-primary/40">
@@ -309,23 +317,6 @@ function AssetCard({ item, index }: { item: SharedItem; index: number }) {
           <span className="rounded-md bg-surface-container-lowest/70 px-2 py-0.5 text-label-sm font-bold text-on-surface backdrop-blur-md">
             {item.typeLabel}
           </span>
-        </div>
-        {/* Action buttons on hover */}
-        <div className="absolute right-3 top-3 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            type="button"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-container-lowest/70 text-on-surface-variant backdrop-blur-md transition-colors hover:text-primary"
-            aria-label="Download"
-          >
-            <span className="material-symbols-outlined text-[18px]">download</span>
-          </button>
-          <button
-            type="button"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-container-lowest/70 text-on-surface-variant backdrop-blur-md transition-colors hover:text-primary"
-            aria-label="More options"
-          >
-            <span className="material-symbols-outlined text-[18px]">more_horiz</span>
-          </button>
         </div>
         {/* Bottom info on hover */}
         <div className="absolute bottom-3 left-3 right-3 translate-y-2 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100">
@@ -380,6 +371,10 @@ function AssetCard({ item, index }: { item: SharedItem; index: number }) {
 }
 
 function AssetListItem({ item }: { item: SharedItem }) {
+  if (item.media) {
+    return <MediaAssetCard media={item.media} workspaceKind="personal" listView canMoveToRecycleBin={false} showFavoriteToggle={false} />;
+  }
+
   const sharedBy = ownerLabel(item);
   const inner = (
     <div className="group flex items-center justify-between rounded-xl border border-transparent p-3 transition-colors hover:border-outline-variant hover:bg-surface-container-high">
@@ -400,17 +395,6 @@ function AssetListItem({ item }: { item: SharedItem }) {
             {formatSize(item.sizeBytes)}
           </div>
         )}
-        <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <button type="button" className="p-1.5 text-on-surface-variant hover:text-primary" aria-label="Favorite">
-            <span className="material-symbols-outlined text-[18px]">star</span>
-          </button>
-          <button type="button" className="p-1.5 text-on-surface-variant hover:text-primary" aria-label="Download">
-            <span className="material-symbols-outlined text-[18px]">download</span>
-          </button>
-          <button type="button" className="p-1.5 text-on-surface-variant hover:text-primary" aria-label="Share">
-            <span className="material-symbols-outlined text-[18px]">share</span>
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -641,7 +625,7 @@ export default function Shared({ loaderData }: Route.ComponentProps) {
               {layoutMode === "grid" ? (
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
                   {featuredItems.map((item, index) => (
-                    <AssetCard key={item.id} item={item} index={index} />
+                    <SharedItemCard key={item.id} item={item} index={index} />
                   ))}
                 </div>
               ) : (

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { EmptyState } from "~/components/dashboard/section";
+import { AssetCardContextMenu } from "~/components/dashboard/shared/AssetCardContextMenu";
+import { MediaKind, type MediaDto } from "~/lib/api";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger } from "~/lib/logger.server";
 
@@ -629,10 +631,102 @@ export default function Search() {
               {results.map((item, i) => {
                 const cat = CATEGORY_CONFIG[item.category];
                 return (
-                  <Link
+                  <div
                     key={item.id}
+                    className="group relative overflow-hidden rounded-xl sm:rounded-2xl border border-outline-variant bg-surface-container-low transition-all hover:border-primary/30"
+                  >
+                    <Link
+                      to={item.link}
+                      className="block cursor-pointer"
+                    >
+                      {/* Gradient thumbnail */}
+                      <div className="relative h-24 sm:h-32">
+                        <div
+                          className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[i % THUMBNAIL_GRADIENTS.length]}`}
+                        >
+                          <span className="material-symbols-outlined text-[28px] sm:text-[36px] text-on-surface-variant/20 transition-transform group-hover:scale-110">
+                            {item.icon}
+                          </span>
+                        </div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
+
+                        {/* Category badge */}
+                        <div className="absolute left-2 top-2 sm:left-3 sm:top-3">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-label-sm font-bold backdrop-blur-md ${cat.bg} ${cat.color}`}
+                          >
+                            {cat.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Info */}
+                      <div className="p-3 sm:p-4">
+                        <h3 className="truncate text-[13px] sm:text-body-sm font-bold text-on-surface">
+                          {item.title}
+                        </h3>
+                        <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-label-md text-on-surface-variant">
+                          {item.subtitle}
+                        </p>
+                        {item.meta && (
+                          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-label-sm text-on-surface-variant">
+                            {item.meta.split(" · ").map((part, pi) => (
+                              <span key={pi} className="flex items-center gap-1.5 sm:gap-2">
+                                {pi > 0 && (
+                                  <span className="h-1 w-1 rounded-full bg-outline-variant" />
+                                )}
+                                {part}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                    <div className="absolute right-2 top-2 sm:right-3 sm:top-3 z-10">
+                      <AssetCardContextMenu
+                        media={{
+                          id: item.id,
+                          filename: item.title,
+                          kind: item.category === "audio" ? MediaKind.Audio : item.category === "video" ? MediaKind.Video : MediaKind.Image,
+                          sizeBytes: "0",
+                          createdAt: new Date().toISOString(),
+                          updatedAt: new Date().toISOString(),
+                        } as unknown as MediaDto}
+                        workspaceKind="personal"
+                        resourceType={item.category === "project" ? "projects" : "media"}
+                        copyUrl={item.link}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── Browse All (when no query and "All" category) ────────────────── */}
+      {!showResults && (
+        <section>
+          <div className="mb-4">
+            <h2 className="flex items-center gap-2 text-[16px] sm:text-headline-md font-bold text-on-surface">
+              <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
+                grid_view
+              </span>
+              Browse All
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            {MOCK_ITEMS.map((item, i) => {
+              const cat = CATEGORY_CONFIG[item.category];
+              return (
+                <div
+                  key={item.id}
+                  className="group relative overflow-hidden rounded-xl sm:rounded-2xl border border-outline-variant bg-surface-container-low transition-all hover:border-primary/30"
+                >
+                  <Link
                     to={item.link}
-                    className="group overflow-hidden rounded-xl sm:rounded-2xl border border-outline-variant bg-surface-container-low transition-all hover:border-primary/30 hover:-translate-y-0.5"
+                    className="block cursor-pointer"
                   >
                     {/* Gradient thumbnail */}
                     <div className="relative h-24 sm:h-32">
@@ -677,76 +771,22 @@ export default function Search() {
                       )}
                     </div>
                   </Link>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ── Browse All (when no query and "All" category) ────────────────── */}
-      {!showResults && (
-        <section>
-          <div className="mb-4">
-            <h2 className="flex items-center gap-2 text-[16px] sm:text-headline-md font-bold text-on-surface">
-              <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
-                grid_view
-              </span>
-              Browse All
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-            {MOCK_ITEMS.map((item, i) => {
-              const cat = CATEGORY_CONFIG[item.category];
-              return (
-                <Link
-                  key={item.id}
-                  to={item.link}
-                  className="group overflow-hidden rounded-xl sm:rounded-2xl border border-outline-variant bg-surface-container-low transition-all hover:border-primary/30 hover:-translate-y-0.5"
-                >
-                  {/* Gradient thumbnail */}
-                  <div className="relative h-24 sm:h-32">
-                    <div
-                      className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${THUMBNAIL_GRADIENTS[i % THUMBNAIL_GRADIENTS.length]}`}
-                    >
-                      <span className="material-symbols-outlined text-[28px] sm:text-[36px] text-on-surface-variant/20 transition-transform group-hover:scale-110">
-                        {item.icon}
-                      </span>
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
-
-                    {/* Category badge */}
-                    <div className="absolute left-2 top-2 sm:left-3 sm:top-3">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-label-sm font-bold backdrop-blur-md ${cat.bg} ${cat.color}`}
-                      >
-                        {cat.label}
-                      </span>
-                    </div>
+                  <div className="absolute right-2 top-2 sm:right-3 sm:top-3 z-10">
+                    <AssetCardContextMenu
+                      media={{
+                        id: item.id,
+                        filename: item.title,
+                        kind: item.category === "audio" ? MediaKind.Audio : item.category === "video" ? MediaKind.Video : MediaKind.Image,
+                        sizeBytes: "0",
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                      } as unknown as MediaDto}
+                      workspaceKind="personal"
+                      resourceType={item.category === "project" ? "projects" : "media"}
+                      copyUrl={item.link}
+                    />
                   </div>
-
-                  {/* Info */}
-                  <div className="p-3 sm:p-4">
-                    <h3 className="truncate text-[13px] sm:text-body-sm font-bold text-on-surface">
-                      {item.title}
-                    </h3>
-                    <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-label-md text-on-surface-variant">
-                      {item.subtitle}
-                    </p>
-                    {item.meta && (
-                      <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-label-sm text-on-surface-variant">
-                        {item.meta.split(" · ").map((part, pi) => (
-                          <span key={pi} className="flex items-center gap-1.5 sm:gap-2">
-                            {pi > 0 && (
-                              <span className="h-1 w-1 rounded-full bg-outline-variant" />
-                            )}
-                            {part}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </Link>
+                </div>
               );
             })}
           </div>

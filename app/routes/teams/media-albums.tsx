@@ -3,19 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
 
 import {
-  CardOverflowMenu,
   FilterTabs,
   FormActions,
   GradientThumbnail,
   MetricCard,
   PageHeader,
   StatusBadge,
+  AssetCardContextMenu,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { EmptyState, ErrorBanner, Modal, primaryButtonClass } from "~/components/dashboard/section";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
-import { AccessDialog } from "~/components/dashboard/shared/resource-dialogs";
-import { AlbumKind, canManageStudioAccess, canWriteStudioContent, type AlbumDto, type Workspace } from "~/lib/api";
+import { AlbumKind, canManageStudioAccess, canWriteStudioContent, MediaKind, type AlbumDto, type MediaDto, type Workspace } from "~/lib/api";
 import { albumsApi, ApiError, listMyStudios } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
@@ -215,22 +214,42 @@ export default function TeamAlbums({ loaderData, actionData, params }: Route.Com
 }
 
 function AlbumCard({ album, count, index, studioId, canWrite, canManageAccess }: { album: AlbumDto; count: number; index: number; studioId: string; canWrite: boolean; canManageAccess: boolean }) {
+  const media = {
+    id: album.id,
+    filename: album.name,
+    kind: MediaKind.Image,
+    sizeBytes: "0",
+    createdAt: new Date().toISOString(),
+  } as unknown as MediaDto;
+
   return (
     <article className="group overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
-      <Link to={`/teams/${studioId}/media/albums/${album.id}`} className="block w-full text-left">
-        <div className="relative aspect-video overflow-hidden border-b border-outline-variant">
+      <div className="relative aspect-video overflow-hidden border-b border-outline-variant">
+        <Link to={`/teams/${studioId}/media/albums/${album.id}`} className="block w-full h-full text-left">
           <GradientThumbnail index={index} icon={album.materialSymbol || albumKindIcon(album.kind)} iconClassName="text-[34px] text-on-surface-variant/35" />
           <div className="absolute left-3 top-3"><StatusBadge label={albumKindLabel(album.kind)} tone={albumKindTone(album.kind)} /></div>
-        </div>
-      </Link>
+        </Link>
+        {canWrite ? (
+          <div className="absolute right-3 top-3 z-10">
+            <AssetCardContextMenu
+              media={media}
+              workspaceKind="studio"
+              resourceType="albums"
+              copyUrl={`/teams/${studioId}/media/albums/${album.id}`}
+              canManageAccess={canManageAccess}
+              deleteIntent="delete-album"
+              deleteConfirmTitle="Delete Album"
+              deleteConfirmMessage="Delete this Studio album permanently? Media files will remain in the Studio library."
+            />
+          </div>
+        ) : null}
+      </div>
       <div className="flex items-start gap-3 p-4">
         <Link to={`/teams/${studioId}/media/albums/${album.id}`} className="min-w-0 flex-1 text-left">
           <h3 className="truncate text-body-md font-bold text-on-surface" title={album.name}>{album.name}</h3>
           <p className="mt-1 line-clamp-2 min-h-9 text-label-md text-on-surface-variant">{album.description || `${count} media item${count === 1 ? "" : "s"}`}</p>
           <p className="mt-3 text-label-sm font-semibold uppercase tracking-[0.08em] text-on-surface-variant">{count} item{count === 1 ? "" : "s"}</p>
         </Link>
-        <AccessDialog resourceType="album" resourceId={album.id} resourceName={album.name} canManageAccess={canManageAccess} />
-        {canWrite ? <CardOverflowMenu id={album.id} itemLabel={album.name} intent="delete-album" confirmTitle="Delete album" confirmMessage="Delete this Studio album permanently? Media files will remain in the Studio library." confirmLabel="Delete album" /> : null}
       </div>
     </article>
   );

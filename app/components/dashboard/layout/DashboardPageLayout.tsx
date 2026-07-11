@@ -18,6 +18,8 @@ export { QuickActionCard } from "~/components/dashboard/shared/QuickActionCard";
 export { FormActions } from "~/components/dashboard/shared/FormActions";
 export { FilterTabs } from "~/components/dashboard/shared/FilterTabs";
 export { CardOverflowMenu } from "~/components/dashboard/shared/CardOverflowMenu";
+export { AssetCardContextMenu } from "~/components/dashboard/shared/AssetCardContextMenu";
+export { AssetCard } from "~/components/dashboard/shared/AssetCard";
 export { PageHeader } from "~/components/dashboard/shared/PageHeader";
 export { SectionHeader } from "~/components/dashboard/shared/SectionHeader";
 export { ProgressRing } from "~/components/dashboard/shared/ProgressRing";
