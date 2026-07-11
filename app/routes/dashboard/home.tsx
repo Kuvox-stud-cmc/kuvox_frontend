@@ -1,17 +1,20 @@
 import { actionErrorMessage } from "~/lib/action-error.server";
+import { useState } from "react";
 import { Link } from "react-router";
 
 import {
-  CardOverflowMenu,
+  AssetCard,
   GradientThumbnail,
   MetricCard,
   QuickActionCard,
   StatusBadge,
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
-import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
+import { AssetCardContextMenu } from "~/components/dashboard/shared/AssetCardContextMenu";
 import { ErrorBanner } from "~/components/dashboard/section";
+import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import {
+  MediaKind,
   PERSONAL,
   ProjectKind,
   TaskIssueKind,
@@ -20,6 +23,7 @@ import {
   projectKindLabel,
   taskKindLabel,
   taskStatusLabel,
+  type MediaDto,
   type ProjectDto,
   type TaskIssueDto,
 } from "~/lib/api";
@@ -75,6 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     welcomeMessage: randomPositiveMessage(user.displayName),
     counts: { projects: 0, media: 0, shared: 0, trash: 0 },
     recent: [] as ProjectDto[],
+    recentMedia: [] as MediaDto[],
     currentWork: [] as TaskIssueDto[],
     error: "Your session expired. Please sign in again." as string | null,
   };
@@ -92,6 +97,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ]);
 
   const recent = projects.status === "fulfilled" ? projects.value.items.slice(0, 6) : [];
+  const recentMedia = media.status === "fulfilled" ? media.value.items.slice(0, 4) : [];
   const coreFailed = [projects, media].some(
     (result) => result.status === "rejected",
   );
@@ -124,6 +130,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       trash: count(projectTrash) + count(mediaTrash),
     },
     recent,
+    recentMedia,
     currentWork:
       currentWork.status === "fulfilled"
         ? currentWork.value.filter((item) => isTaskOpen(item.status)).slice(0, 5)
@@ -151,8 +158,9 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
+      const resourceType = String(formData.get("resourceType") ?? "projects");
       if (id) {
-        await softDelete(accessToken, "projects", id, reqLog);
+        await softDelete(accessToken, resourceType === "media" ? "media" : "projects", id, reqLog);
       }
       return { ok: true, intent };
     }
@@ -243,9 +251,18 @@ function formatDueDate(dueDate: string | null) {
   return `Due ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date)}`;
 }
 
-// Main component
+function projectToMedia(project: ProjectDto): MediaDto {
+  return {
+    id: project.id,
+    filename: project.name,
+    kind: project.kind === ProjectKind.Image ? MediaKind.Image : MediaKind.Video,
+    sizeBytes: "0",
+    createdAt: project.createdAt || project.updatedAt,
+  } as unknown as MediaDto;
+}
 
 function ProjectCard({ project, index }: { project: ProjectDto; index: number }) {
+  const media = projectToMedia(project);
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <Link to={projectHref(project)} className="block">
@@ -260,23 +277,28 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
           </div>
         </div>
       </Link>
+      <div className="absolute right-3 top-3 z-10">
+        <AssetCardContextMenu
+          media={media}
+          workspaceKind="personal"
+          resourceType="projects"
+          copyUrl={projectHref(project)}
+        />
+      </div>
       <div className="absolute bottom-3 right-3">
-        <div className="flex items-center gap-1">
-          <ShareDialog resourceType="project" resourceId={project.id} resourceName={project.name} />
-          <IconToggleButton
-            id={project.id}
-            active={project.isStarred}
-            intent="toggle-star"
-            activeIcon="star"
-            inactiveIcon="star_border"
-            activeClassName="text-yellow-500"
-            label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
-          />
-        </div>
+        <IconToggleButton
+          id={project.id}
+          active={project.isStarred}
+          intent="toggle-star"
+          activeIcon="star"
+          inactiveIcon="star_border"
+          activeClassName="text-yellow-500"
+          label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
+        />
       </div>
 
       <div className="p-4">
-        <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="mb-4">
           <Link to={projectHref(project)} className="min-w-0">
               <h3 className="truncate text-body-sm font-bold text-on-surface">
                 {project.name}
@@ -285,7 +307,6 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
                 {formatUpdatedAt(project.updatedAt)}
               </p>
           </Link>
-          <CardOverflowMenu id={project.id} itemLabel={project.name} />
         </div>
         <div className="flex items-center gap-2 pr-10 text-label-sm text-on-surface-variant">
           <span className="material-symbols-outlined text-[14px]">
@@ -299,7 +320,9 @@ function ProjectCard({ project, index }: { project: ProjectDto; index: number })
 }
 
 export default function DashboardHome({ loaderData, actionData }: Route.ComponentProps) {
-  const { welcomeMessage, counts, recent, currentWork, error } = loaderData;
+  const { welcomeMessage, counts, recent, recentMedia, currentWork, error } = loaderData;
+  const [previewMediaId, setPreviewMediaId] = useState<string | null>(null);
+  const previewMedia = previewMediaId ? recentMedia.find((item) => item.id === previewMediaId) ?? null : null;
 
   return (
     <div className="space-y-8">
@@ -362,7 +385,6 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
             value={counts.trash}
           />
         </div>
-
       </div>
 
       {/* Continue Editing */}
@@ -390,96 +412,35 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         )}
       </section>
 
-      {/* Three Column Middle */}
-      <div className="grid grid-cols-12 gap-8">
-        {currentWork.length > 0 && (
-          <div className="col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 lg:col-span-8">
-            <div className="mb-6 flex items-center justify-between">
-              <h3 className="font-bold text-on-surface">
-                Current Work{" "}
-                <span className="ml-2 rounded-full bg-primary/20 px-1.5 py-0.5 text-label-sm text-primary">
-                  {currentWork.length}
-                </span>
-              </h3>
-              <Link
-                to="/dashboard/reviews"
-                className="text-label-sm font-bold uppercase tracking-wider text-primary hover:underline"
-              >
-                View All
-              </Link>
-            </div>
-            <div className="space-y-4">
-              {currentWork.map((item) => (
-                <div key={item.id} className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-on-surface-variant">
-                    <span className="material-symbols-outlined text-[20px]">
-                      {item.kind === TaskIssueKind.Review ? "rate_review" : "task_alt"}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="truncate text-label-md font-bold text-on-surface">
-                      {item.title}
-                    </h4>
-                    <p className="truncate text-label-sm text-on-surface-variant">
-                      {taskKindLabel(item.kind)} - {item.projectName ?? "Studio task"} - {formatDueDate(item.dueDate)}
-                    </p>
-                  </div>
-                  <StatusBadge
-                    label={taskStatusLabel(item.status)}
-                    {...taskStatusBadge(item.status)}
-                    className="bg-transparent px-0 py-0"
-                    dotPosition="end"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Quick Actions */}
-        <div className={`col-span-12 rounded-2xl border border-outline-variant bg-surface-container-low p-6 ${currentWork.length > 0 ? "lg:col-span-4" : "lg:col-span-12"}`}>
-          <h3 className="mb-6 font-bold text-on-surface">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-4">
-            {(
-              [
-                {
-                  icon: "add",
-                  label: "New Project",
-                  to: "/dashboard/projects",
-                  color: "text-primary bg-primary/20",
-                },
-                {
-                  icon: "upload",
-                  label: "Import Media",
-                  to: "/dashboard/photos",
-                  color: "text-primary bg-primary/20",
-                },
-                {
-                  icon: "collections",
-                  label: "Create Album",
-                  to: "/dashboard/albums",
-                  color: "text-primary bg-primary/20",
-                },
-                {
-                  icon: "auto_awesome",
-                  label: "AI Assistant",
-                  to: "/dashboard/ai-tools",
-                  color: "text-tertiary bg-tertiary/20",
-                },
-              ] as const
-            ).map((action) => (
-              <QuickActionCard
-                key={action.label}
-                icon={action.icon}
-                title={action.label}
-                to={action.to}
-                variant="compact"
-                className={action.color.includes("tertiary") ? "[&_div:first-child]:bg-tertiary/20 [&_div:first-child]:text-tertiary" : ""}
+      <section>
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-headline-md font-bold text-on-surface">Recent Assets</h2>
+          <Link
+            to="/dashboard/photos"
+            className="flex items-center gap-1 text-label-md font-medium text-primary transition-colors hover:text-primary-fixed"
+          >
+            View All
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </Link>
+        </div>
+        {recentMedia.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-outline-variant bg-surface-container-low px-4 py-8 text-center text-body-sm text-on-surface-variant">
+            No assets yet - import media to get started.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-4">
+            {recentMedia.map((item, index) => (
+              <AssetCard
+                key={item.id}
+                media={item}
+                index={index}
+                workspaceKind="personal"
+                onPreview={item.kind === MediaKind.Audio ? undefined : (asset) => setPreviewMediaId(asset.id)}
               />
             ))}
           </div>
-        </div>
-      </div>
+        )}
+      </section>
 
       {/* Bottom Section */}
       <div className="grid grid-cols-12 gap-8">
@@ -571,6 +532,10 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
           </Link>
         </div>
       </div>
+      <MediaPreviewOverlay
+        media={previewMedia?.kind === MediaKind.Audio ? null : previewMedia}
+        onClose={() => setPreviewMediaId(null)}
+      />
     </div>
   );
 }

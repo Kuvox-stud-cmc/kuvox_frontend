@@ -9,13 +9,12 @@ import {
 import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
 import {
-    CardOverflowMenu,
+    AssetCardContextMenu,
     FilterTabs,
     GradientThumbnail,
     MetricCard,
     QuickActionCard,
 } from "~/components/dashboard/layout/DashboardPageLayout";
-import { AccessDialog, ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 
 import {
     ProjectKind,
@@ -195,6 +194,16 @@ function projectHref(project: ProjectDto, basePath: string) {
     return projectEditorHref(project);
 }
 
+function projectToMedia(project: ProjectDto): MediaDto {
+    return {
+        id: project.id,
+        filename: project.name,
+        kind: project.kind === ProjectKind.Image ? MediaKind.Image : MediaKind.Video,
+        sizeBytes: "0",
+        createdAt: project.createdAt || project.updatedAt,
+    } as unknown as MediaDto;
+}
+
 function ProjectCard({
     project,
     index,
@@ -216,6 +225,7 @@ function ProjectCard({
         image: "image",
     }[typeLabel] || "movie";
     const href = projectHref(project, basePath);
+    const media = projectToMedia(project);
 
     return (
         <div className="bento-card group relative overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50">
@@ -243,33 +253,17 @@ function ProjectCard({
                     </div>
                 </div>
             </Link>
-            <div className="absolute right-3 top-3">
-                <div className="flex items-center gap-1">
-                {workspaceKind === "studio" ? (
-                    <AccessDialog
-                        resourceType="project"
-                        resourceId={project.id}
-                        resourceName={project.name}
+            {canWrite ? (
+                <div className="absolute right-3 top-3 z-10">
+                    <AssetCardContextMenu
+                        media={media}
+                        workspaceKind={workspaceKind}
+                        resourceType="projects"
+                        copyUrl={href}
                         canManageAccess={canManageAccess}
-                        buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
                     />
-                ) : (
-                    <ShareDialog
-                        resourceType="project"
-                        resourceId={project.id}
-                        resourceName={project.name}
-                        buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
-                    />
-                )}
-                {canWrite ? (
-                    <CardOverflowMenu
-                        id={project.id}
-                        itemLabel={project.name}
-                        buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
-                    />
-                ) : null}
                 </div>
-            </div>
+            ) : null}
             <div className="absolute bottom-3 right-3">
                 <IconToggleButton
                     id={project.id}
@@ -306,6 +300,7 @@ function ProjectListRow({
         image: "image",
     }[typeLabel] || "movie";
     const href = projectHref(project, basePath);
+    const media = projectToMedia(project);
 
     return (
         <div className="group flex items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40">
@@ -339,12 +334,15 @@ function ProjectListRow({
                 activeClassName="text-yellow-500"
                 label={`${project.isStarred ? "Unstar" : "Star"} ${project.name}`}
             />
-            {workspaceKind === "studio" ? (
-                <AccessDialog resourceType="project" resourceId={project.id} resourceName={project.name} canManageAccess={canManageAccess} />
-            ) : (
-                <ShareDialog resourceType="project" resourceId={project.id} resourceName={project.name} />
-            )}
-            {canWrite ? <CardOverflowMenu id={project.id} itemLabel={project.name} /> : null}
+            {canWrite ? (
+                <AssetCardContextMenu
+                    media={media}
+                    workspaceKind={workspaceKind}
+                    resourceType="projects"
+                    copyUrl={href}
+                    canManageAccess={canManageAccess}
+                />
+            ) : null}
         </div>
     );
 }

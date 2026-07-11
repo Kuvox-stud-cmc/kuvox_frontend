@@ -21,11 +21,10 @@ import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-
 import { MediaPipelineStatus } from "~/components/dashboard/workspace/media-pipeline-status";
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
-import { ShareDialog } from "~/components/dashboard/shared/resource-dialogs";
 import { resolveMediaObjectSource } from "~/components/dashboard/shared/MediaPreviewOverlay";
 
 import {
-  CardOverflowMenu,
+  AssetCardContextMenu,
   FormActions,
   MetricCard,
   PageHeader,
@@ -587,8 +586,7 @@ function AudioTable({
                     activeClassName="text-error"
                     label={`${track.isFavorite ? "Remove from" : "Add to"} favorites`}
                   />
-                  <ShareDialog resourceType="media" resourceId={track.id} resourceName={track.filename} />
-                  <CardOverflowMenu id={track.id} itemLabel={track.filename} />
+                  <AssetCardContextMenu media={track} workspaceKind="personal" placement="top" />
                 </div>
               </td>
             </tr>
@@ -1077,8 +1075,7 @@ export default function Audio() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <ShareDialog resourceType="media" resourceId={activeTrack.id} resourceName={activeTrack.filename} />
-                    <CardOverflowMenu id={activeTrack.id} itemLabel={activeTrack.filename} />
+                    <AssetCardContextMenu media={activeTrack} workspaceKind="personal" />
                   </div>
                 </div>
 

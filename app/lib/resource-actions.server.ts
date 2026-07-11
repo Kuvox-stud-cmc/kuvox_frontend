@@ -1,8 +1,20 @@
-import { Permission, ProjectRole, type ItemAccessMemberDto } from "./api";
 import {
+  MediaKind,
+  PERSONAL,
+  Permission,
+  ProjectKind,
+  ProjectRole,
+  type ItemAccessMemberDto,
+  type Workspace,
+} from "./api";
+import {
+  attachProjectMedia,
+  createProject,
+  getMedia,
   listAlbumAccess,
   listMediaAccess,
   listProjectAccess,
+  saveImageComposition,
   shareAlbum,
   shareMedia,
   shareProject,
@@ -10,6 +22,13 @@ import {
   updateMediaAccess,
   updateProjectAccess,
 } from "./api.server";
+import { createDefaultImageCompositionDocument } from "./editor/image/document/default-document";
+import {
+  applyImageOperation,
+  createImageLayerFromMedia,
+  createImageOperation,
+} from "./editor/image/document/operations";
+import { projectEditorHref } from "./project-routes";
 import type { RequestLogger } from "./logger.server";
 
 export type ResourceType = "project" | "media" | "album";
@@ -21,6 +40,8 @@ export interface ResourceActionData {
   id?: string;
   sharedCount?: number;
   access?: ItemAccessMemberDto[];
+  projectId?: string;
+  projectHref?: string;
   error?: string;
 }
 
@@ -28,6 +49,7 @@ const RESOURCE_INTENTS = new Set([
   "share-resource",
   "load-resource-access",
   "update-resource-access",
+  "create-project-from-media",
 ]);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -43,6 +65,64 @@ export async function handleResourceAction(
   const id = String(formData.get("id") ?? "").trim();
   if (!resourceType || !id) {
     return { error: "Choose a valid resource." };
+  }
+
+  if (intent === "create-project-from-media") {
+    if (resourceType !== "media") return { error: "Choose a valid media item." };
+
+    const projectKind = Number(formData.get("projectKind"));
+    if (projectKind !== ProjectKind.Video && projectKind !== ProjectKind.Image) {
+      return { error: "Choose a valid project type." };
+    }
+
+    const media = await getMedia(accessToken, id, log);
+    if (projectKind === ProjectKind.Image && media.kind !== MediaKind.Image) {
+      return { error: "Only images can start an image project." };
+    }
+
+    const workspace = workspaceFromFormData(formData);
+    const project = await createProject(
+      accessToken,
+      workspace,
+      {
+        kind: projectKind,
+        name: projectNameForMedia(media.filename, projectKind),
+        description: `Created from ${media.filename}.`,
+      },
+      log,
+    );
+
+    await attachProjectMedia(accessToken, project.id, [media.id], log);
+
+    if (projectKind === ProjectKind.Image) {
+      const baseDocument = createDefaultImageCompositionDocument();
+      const operation = createImageOperation({
+        type: "add-layer",
+        layer: createImageLayerFromMedia(media, baseDocument.canvas),
+        label: `Add ${media.filename}`,
+        source: "system",
+      });
+      const document = applyImageOperation(baseDocument, operation);
+      await saveImageComposition(
+        accessToken,
+        project.id,
+        {
+          documentJson: document,
+          operationsJson: [operation],
+          baseRevisionNumber: 0,
+        },
+        log,
+      );
+    }
+
+    return {
+      ok: true,
+      intent,
+      resourceType,
+      id,
+      projectId: project.id,
+      projectHref: projectEditorHref(project),
+    };
   }
 
   if (intent === "share-resource") {
@@ -94,6 +174,17 @@ export async function handleResourceAction(
       log,
     ),
   };
+}
+
+function workspaceFromFormData(formData: FormData): Workspace {
+  const studioId = String(formData.get("studioId") ?? "").trim();
+  return studioId ? { kind: "studio", studioId } : PERSONAL;
+}
+
+function projectNameForMedia(filename: string, projectKind: number): string {
+  const baseName = filename.replace(/\.[^/.]+$/, "").trim() || "Untitled";
+  const suffix = projectKind === ProjectKind.Image ? "Image Project" : "Video Project";
+  return `${baseName} ${suffix}`;
 }
 
 function parseResourceType(value: FormDataEntryValue | null): ResourceType | null {

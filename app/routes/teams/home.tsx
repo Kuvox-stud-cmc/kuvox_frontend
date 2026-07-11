@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useState } from "react";
 
 import {
-  CardOverflowMenu,
+  AssetCard,
   GradientThumbnail,
   MetricCard,
   QuickActionCard,
@@ -11,9 +11,8 @@ import {
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { ErrorBanner } from "~/components/dashboard/section";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
-import { AccessDialog } from "~/components/dashboard/shared/resource-dialogs";
+import { AssetCardContextMenu } from "~/components/dashboard/shared/AssetCardContextMenu";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
-import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import {
   MediaKind,
   ProjectKind,
@@ -22,7 +21,6 @@ import {
   canManageStudioAccess,
   canWriteStudioContent,
   projectKindLabel,
-  mediaKindLabel,
   taskStatusLabel,
   type MediaDto,
   type ProjectDto,
@@ -148,7 +146,8 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (intent === "delete") {
       const id = String(formData.get("id") ?? "");
-      if (id) await softDelete(accessToken, "projects", id, reqLog);
+      const resourceType = String(formData.get("resourceType") ?? "projects");
+      if (id) await softDelete(accessToken, resourceType === "media" ? "media" : "projects", id, reqLog);
       return { ok: true, intent };
     }
 
@@ -184,6 +183,16 @@ function taskTone(status: number) {
   return "primary" as const;
 }
 
+function projectToMedia(project: ProjectDto): MediaDto {
+  return {
+    id: project.id,
+    filename: project.name,
+    kind: project.kind === ProjectKind.Image ? MediaKind.Image : MediaKind.Video,
+    sizeBytes: "0",
+    createdAt: project.createdAt || project.updatedAt,
+  } as unknown as MediaDto;
+}
+
 function ProjectCard({
   project,
   index,
@@ -197,6 +206,7 @@ function ProjectCard({
   canWrite: boolean;
   canManageAccess: boolean;
 }) {
+  const media = projectToMedia(project);
   return (
     <article className="group relative overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/40">
       <Link to={projectHref(project, studioId)} className="block">
@@ -208,6 +218,17 @@ function ProjectCard({
           </div>
         </div>
       </Link>
+      {canWrite ? (
+        <div className="absolute right-3 top-3 z-10">
+          <AssetCardContextMenu
+            media={media}
+            workspaceKind="studio"
+            resourceType="projects"
+            copyUrl={projectHref(project, studioId)}
+            canManageAccess={canManageAccess}
+          />
+        </div>
+      ) : null}
       <div className="absolute bottom-3 right-3">
         <IconToggleButton
           id={project.id}
@@ -220,91 +241,17 @@ function ProjectCard({
         />
       </div>
       <div className="p-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="mb-3">
           <Link to={projectHref(project, studioId)} className="min-w-0">
             <h3 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h3>
             <p className="mt-1 text-label-md text-on-surface-variant">{formatUpdatedAt(project.updatedAt)}</p>
           </Link>
-          <div className="flex items-center gap-1">
-            <AccessDialog resourceType="project" resourceId={project.id} resourceName={project.name} canManageAccess={canManageAccess} />
-            {canWrite ? <CardOverflowMenu id={project.id} itemLabel={project.name} /> : null}
-          </div>
         </div>
         <p className="flex items-center gap-2 text-label-sm text-on-surface-variant">
           <span className="material-symbols-outlined text-[14px]">{project.kind === ProjectKind.Image ? "image" : "movie"}</span>
           {projectKindLabel(project.kind)}
         </p>
       </div>
-    </article>
-  );
-}
-
-function mediaHref(item: MediaDto, studioId: string) {
-  if (item.kind === MediaKind.Audio) {
-    return `/teams/${studioId}/media/audio?play=${encodeURIComponent(item.id)}#quick-preview`;
-  }
-  if (item.kind === MediaKind.Image) return `/teams/${studioId}/media/photos`;
-  return `/teams/${studioId}/media/videos`;
-}
-
-function mediaIcon(kind: number) {
-  if (kind === MediaKind.Image) return "image";
-  if (kind === MediaKind.Audio) return "music_note";
-  return "play_circle";
-}
-
-function MediaCard({
-  item,
-  index,
-  studioId,
-  onPreview,
-  canManageAccess,
-}: {
-  item: MediaDto;
-  index: number;
-  studioId: string;
-  onPreview: (item: MediaDto) => void;
-  canManageAccess: boolean;
-}) {
-  const isAudio = item.kind === MediaKind.Audio;
-  const previewLabel = isAudio ? `Open ${item.filename}` : `Preview ${item.filename}`;
-  const previewSurface = (
-    <div className="relative aspect-video w-full">
-      <MediaThumbnail media={item} index={index} icon={mediaIcon(item.kind)} />
-      <div className="absolute left-3 top-3">
-        <StatusBadge label={mediaKindLabel(item.kind)} tone="primary" />
-      </div>
-    </div>
-  );
-
-  return (
-    <article className="relative overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low">
-      <div className="absolute right-3 top-3 z-10">
-        <AccessDialog
-          resourceType="media"
-          resourceId={item.id}
-          resourceName={item.filename}
-          canManageAccess={canManageAccess}
-          buttonClassName="bg-surface-container-lowest/70 backdrop-blur-md hover:bg-surface-container-lowest/90"
-        />
-      </div>
-      {isAudio ? (
-        <Link to={mediaHref(item, studioId)} className="block text-left" aria-label={previewLabel}>
-          {previewSurface}
-          <div className="p-4">
-            <h3 className="truncate text-body-sm font-bold text-on-surface" title={item.filename}>{item.filename}</h3>
-            <p className="mt-1 text-label-md text-on-surface-variant">{formatUpdatedAt(item.createdAt)}</p>
-          </div>
-        </Link>
-      ) : (
-        <button type="button" onClick={() => onPreview(item)} className="block w-full text-left" aria-label={previewLabel}>
-          {previewSurface}
-          <div className="p-4">
-            <h3 className="truncate text-body-sm font-bold text-on-surface" title={item.filename}>{item.filename}</h3>
-            <p className="mt-1 text-label-md text-on-surface-variant">{formatUpdatedAt(item.createdAt)}</p>
-          </div>
-        </button>
-      )}
     </article>
   );
 }
@@ -420,13 +367,14 @@ export default function TeamHome({ loaderData, actionData }: Route.ComponentProp
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-4">
             {recentMedia.map((item, index) => (
-              <MediaCard
+              <AssetCard
                 key={item.id}
-                item={item}
+                media={item}
                 index={index}
-                studioId={studioId}
+                workspaceKind="studio"
+                canMoveToRecycleBin={canWrite}
                 canManageAccess={canManageAccess}
-                onPreview={(media) => setPreviewMediaId(media.id)}
+                onPreview={item.kind === MediaKind.Audio ? undefined : (media) => setPreviewMediaId(media.id)}
               />
             ))}
           </div>

@@ -38,24 +38,24 @@ export default function VerifyPending({ actionData }: Route.ComponentProps) {
 
   return (
     <section className="text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+      <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
         <span className="material-symbols-outlined text-[32px] text-primary">
           mail
         </span>
       </div>
-      <h1 className="text-headline-lg text-on-surface">Check your email</h1>
-      <p className="mt-2 text-body-sm text-on-surface-variant">
+      <h1 className="text-headline-lg font-semibold tracking-tight text-on-surface">Check your email</h1>
+      <p className="mt-2 text-body-sm text-on-surface-variant/80">
         We sent a verification link
         {email ? (
           <>
-            {" "}to <span className="font-medium text-on-surface">{email}</span>
+            {" "}to <span className="font-semibold text-on-surface">{email}</span>
           </>
         ) : null}
         . Click it to activate your account, then sign in.
       </p>
 
       {actionData?.resent && (
-        <p className="mt-4 rounded-lg bg-primary/10 px-3 py-2 text-body-sm text-primary">
+        <p className="mt-4 rounded-xl border border-primary/20 bg-primary/8 px-4 py-3 text-body-sm text-primary animate-fade-in-section">
           Verification email sent. Check your inbox.
         </p>
       )}
@@ -65,18 +65,20 @@ export default function VerifyPending({ actionData }: Route.ComponentProps) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-lg bg-primary px-4 py-2 text-label-md font-medium text-on-primary transition-colors hover:bg-primary-fixed disabled:opacity-60"
+          className="w-full h-11 rounded-xl bg-primary text-label-md font-semibold text-on-primary shadow-[0_4px_20px_rgba(192,193,255,0.2)] hover:bg-primary-fixed-dim hover:shadow-[0_4px_24px_rgba(192,193,255,0.35)] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none"
         >
           {isSubmitting ? "Sending…" : "Resend verification email"}
         </button>
       </Form>
 
-      <Link
-        to="/login"
-        className="mt-4 inline-block text-body-sm text-on-surface-variant transition-colors hover:text-primary"
-      >
-        Back to sign in
-      </Link>
+      <div className="mt-6">
+        <Link
+          to="/login"
+          className="text-label-md text-on-surface-variant/75 transition-colors hover:text-primary hover:underline underline-offset-4"
+        >
+          Back to sign in
+        </Link>
+      </div>
     </section>
   );
 }
