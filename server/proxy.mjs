@@ -218,7 +218,7 @@ async function proxyHttp(req, res, targetPath, options = {}) {
       method: req.method,
       headers,
     },
-    (upstreamRes) => {
+    async (upstreamRes) => {
       upstreamRes.on("error", failProxy);
       const statusCode = upstreamRes.statusCode ?? 502;
       const contentType = headerValue(upstreamRes.headers["content-type"]) ?? "unknown";
@@ -232,7 +232,10 @@ async function proxyHttp(req, res, targetPath, options = {}) {
         requestId: correlation.requestId,
         editorCorrelationId: correlation.editorCorrelationId,
       });
-      res.writeHead(statusCode, responseHeaders(upstreamRes.headers, auth.setCookie, correlation));
+      const setCookie = statusCode === 401
+        ? await destroySessionCookie(req)
+        : auth.setCookie;
+      res.writeHead(statusCode, responseHeaders(upstreamRes.headers, setCookie, correlation));
       upstreamRes.pipe(res);
     },
   );
@@ -652,6 +655,11 @@ async function accessTokenFromRequest(req, options = {}) {
       setCookie: await sessionStorage.destroySession(session),
     };
   }
+}
+
+async function destroySessionCookie(req) {
+  const session = await sessionStorage.getSession(req.headers.cookie);
+  return sessionStorage.destroySession(session);
 }
 
 function hasCookie(header, name) {

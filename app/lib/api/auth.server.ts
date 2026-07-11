@@ -42,8 +42,17 @@ function toSessionUser(dto: ApiUserDto): SessionUser {
 export class AuthApi {
   constructor(private client: ApiClient) {}
 
-  async login(email: string, password: string, log?: RequestLogger): Promise<AuthTokens> {
-    return this.client.post<AuthTokens>(`${API_ROUTES.AUTH}/login`, { email, password }, { auth: noAuth(), log });
+  async login(
+    email: string,
+    password: string,
+    replaceExistingSession = false,
+    log?: RequestLogger,
+  ): Promise<AuthTokens> {
+    return this.client.post<AuthTokens>(
+      `${API_ROUTES.AUTH}/login`,
+      { email, password, replaceExistingSession },
+      { auth: noAuth(), log },
+    );
   }
 
   async register(email: string, password: string, displayName: string, log?: RequestLogger): Promise<void> {
@@ -112,7 +121,7 @@ export class AuthApi {
 export const authApi = new AuthApi(apiClient);
 
 // Backward compatible exports
-export const loginRequest = (e: string, p: string, l?: RequestLogger) => authApi.login(e, p, l);
+export const loginRequest = (e: string, p: string, r = false, l?: RequestLogger) => authApi.login(e, p, r, l);
 export const registerRequest = (e: string, p: string, d: string, l?: RequestLogger) => authApi.register(e, p, d, l);
 export const refreshRequest = (t: string, l?: RequestLogger) => authApi.refresh(t, l);
 export const logoutRequest = (t: string, l?: RequestLogger) => authApi.logout(t, l);

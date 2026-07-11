@@ -4,68 +4,6 @@
  */
 
 export interface paths {
-    "/api/timelines": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    projectId?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TimelineDto"][];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["CreateTimelineRequest"];
-                    "text/json": components["schemas"]["CreateTimelineRequest"];
-                    "application/*+json": components["schemas"]["CreateTimelineRequest"];
-                };
-            };
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TimelineDto"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/timelines/projects/{projectId}/current": {
         parameters: {
             query?: never;
@@ -124,6 +62,68 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/timelines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    projectId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TimelineDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateTimelineRequest"];
+                    "text/json": components["schemas"]["CreateTimelineRequest"];
+                    "application/*+json": components["schemas"]["CreateTimelineRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TimelineDto"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -206,6 +206,86 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["RenderJobDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/timelines/render-jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RenderJobDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/timelines/projects/{projectId}/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RecordVideoEditorPerformanceRequest"];
+                    "text/json": components["schemas"]["RecordVideoEditorPerformanceRequest"];
+                    "application/*+json": components["schemas"]["RecordVideoEditorPerformanceRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
                     };
                 };
             };
@@ -354,7 +434,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["TaskIssueDto"];
+                        "application/json": components["schemas"]["TaskIssueDetailDto"];
                     };
                 };
             };
@@ -388,7 +468,28 @@ export interface paths {
             };
         };
         post?: never;
-        delete?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -432,6 +533,113 @@ export interface paths {
         };
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateTaskCommentRequest"];
+                    "text/json": components["schemas"]["CreateTaskCommentRequest"];
+                    "application/*+json": components["schemas"]["CreateTaskCommentRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskCommentDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/comments/{commentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    commentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateTaskCommentRequest"];
+                    "text/json": components["schemas"]["UpdateTaskCommentRequest"];
+                    "application/*+json": components["schemas"]["UpdateTaskCommentRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskCommentDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    commentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -538,7 +746,28 @@ export interface paths {
             };
         };
         post?: never;
-        delete?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -645,7 +874,28 @@ export interface paths {
             };
         };
         post?: never;
-        delete?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -907,6 +1157,137 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    page?: number | string;
+                    pageSize?: number | string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PagedResultOfProjectMediaDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AttachProjectMediaRequest"];
+                    "text/json": components["schemas"]["AttachProjectMediaRequest"];
+                    "application/*+json": components["schemas"]["AttachProjectMediaRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectMediaDto"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/image-composition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImageCompositionDto"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SaveImageCompositionRequest"];
+                    "text/json": components["schemas"]["SaveImageCompositionRequest"];
+                    "application/*+json": components["schemas"]["SaveImageCompositionRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImageCompositionDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2743,6 +3124,47 @@ export interface paths {
         };
         trace?: never;
     };
+    "/api/auth/me/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateOnboardingProfileRequest"];
+                    "text/json": components["schemas"]["UpdateOnboardingProfileRequest"];
+                    "application/*+json": components["schemas"]["UpdateOnboardingProfileRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OnboardingProfileDto"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/auth/me/change-password": {
         parameters: {
             query?: never;
@@ -3835,6 +4257,9 @@ export interface components {
         AssignAudioCategoryDto: {
             mediaIds: string[];
         };
+        AttachProjectMediaRequest: {
+            mediaIds: string[];
+        };
         AuthTokenDto: {
             accessToken: string;
             refreshToken: string;
@@ -3865,6 +4290,9 @@ export interface components {
         };
         CreateStudioRequest: {
             name: string;
+        };
+        CreateTaskCommentRequest: {
+            body: string;
         };
         CreateTaskIssueRequest: {
             kind: components["schemas"]["TaskIssueKind"];
@@ -3906,12 +4334,26 @@ export interface components {
         };
         /** Format: binary */
         IFormFile: string;
+        ImageCompositionDto: {
+            /** Format: uuid */
+            projectId: string;
+            documentJson: null | components["schemas"]["JsonElement"];
+            /** Format: int32 */
+            revisionNumber: number | string;
+            /** Format: date-time */
+            updatedAt: null | string;
+            /** Format: uuid */
+            updatedByUserId: null | string;
+        };
         InvitationTokenRequest: {
             token: string;
         };
+        JsonElement: unknown;
         LoginRequest: {
             email: string;
             password: string;
+            /** @default false */
+            replaceExistingSession: boolean;
         };
         MediaAccessMemberDto: {
             /** Format: uuid */
@@ -4022,6 +4464,12 @@ export interface components {
         };
         NotificationStatus: number;
         NotificationType: number;
+        OnboardingProfileDto: {
+            personality: string;
+            creationGoals: string[];
+            /** Format: date-time */
+            onboardingCompletedAt: null | string;
+        };
         OwnerKind: number;
         PagedResultOfMediaDto: {
             items: components["schemas"]["MediaDto"][];
@@ -4058,6 +4506,17 @@ export interface components {
         };
         PagedResultOfProjectDto: {
             items: components["schemas"]["ProjectDto"][];
+            /** Format: int32 */
+            page: number | string;
+            /** Format: int32 */
+            pageSize: number | string;
+            /** Format: int32 */
+            totalCount: number | string;
+            /** Format: int32 */
+            totalPages?: number | string;
+        };
+        PagedResultOfProjectMediaDto: {
+            items: components["schemas"]["ProjectMediaDto"][];
             /** Format: int32 */
             page: number | string;
             /** Format: int32 */
@@ -4134,6 +4593,35 @@ export interface components {
             isStarred: boolean;
         };
         ProjectKind: number;
+        ProjectMediaDto: {
+            /** Format: uuid */
+            mediaId: string;
+            kind: null | components["schemas"]["MediaKind"];
+            availability: string;
+            filename: null | string;
+            /** Format: uuid */
+            ownerId: null | string;
+            ownerKind: null | components["schemas"]["OwnerKind"];
+            status: null | string;
+            storageKey: null | string;
+            /** Format: int64 */
+            sizeBytes: null | number | string;
+            canonicalStorageKey: null | string;
+            proxyStorageKey: null | string;
+            thumbnailStorageKey: null | string;
+            errorMessage: null | string;
+            /** Format: double */
+            durationSeconds: null | number | string;
+            /** Format: int32 */
+            width: null | number | string;
+            /** Format: int32 */
+            height: null | number | string;
+            codec: null | string;
+            /** Format: double */
+            frameRate: null | number | string;
+            /** Format: date-time */
+            createdAt: null | string;
+        };
         ProjectRole: number;
         ProjectTrashItemDto: {
             /** Format: uuid */
@@ -4145,6 +4633,9 @@ export interface components {
             deletedAt: string;
             /** Format: int32 */
             purgesInDays: number | string;
+        };
+        RecordVideoEditorPerformanceRequest: {
+            metrics: components["schemas"]["VideoEditorPerformanceMetricDto"][];
         };
         RegisterRequest: {
             email: string;
@@ -4164,8 +4655,18 @@ export interface components {
             /** Format: int32 */
             revisionNumber: null | number | string;
             status: string;
+            outputBucketName: null | string;
             outputStorageKey: null | string;
+            outputContentType: null | string;
+            /** Format: int64 */
+            outputSizeBytes: null | number | string;
             outputUrl: null | string;
+            errorCode: null | string;
+            errorMessage: null | string;
+            /** Format: date-time */
+            startedAt: null | string;
+            /** Format: date-time */
+            finishedAt: null | string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -4176,7 +4677,7 @@ export interface components {
             timelineId: string;
             /** Format: int32 */
             revisionNumber: number | string;
-            settings: unknown;
+            settings: components["schemas"]["JsonElement"];
         };
         ResendVerificationRequest: {
             email: string;
@@ -4184,6 +4685,22 @@ export interface components {
         ResetPasswordRequest: {
             token: string;
             newPassword: string;
+        };
+        SaveImageCompositionRequest: {
+            documentJson: components["schemas"]["JsonElement"];
+            operationsJson: null | components["schemas"]["JsonElement"];
+            /** Format: int32 */
+            baseRevisionNumber: number | string;
+        };
+        SaveTimelineDocumentRequest: {
+            documentJson: components["schemas"]["JsonElement"];
+            operationsJson: components["schemas"]["JsonElement"];
+            /** Format: int32 */
+            baseRevisionNumber: number | string;
+            /** Format: int32 */
+            documentSchemaVersion: number | string;
+            source: null | string;
+            label: null | string;
         };
         ShareAlbumRequest: {
             email: string;
@@ -4196,16 +4713,6 @@ export interface components {
         ShareProjectRequest: {
             email: string;
             role: components["schemas"]["ProjectRole"];
-        };
-        SaveTimelineDocumentRequest: {
-            documentJson: unknown;
-            operationsJson: unknown;
-            /** Format: int32 */
-            baseRevisionNumber: number | string;
-            /** Format: int32 */
-            documentSchemaVersion: number | string;
-            source: null | string;
-            label: null | string;
         };
         StudioAuditCategory: number;
         StudioAuditLogEntryDto: {
@@ -4294,17 +4801,81 @@ export interface components {
             avatarUrl: null | string;
             publicSlug: null | string;
         };
+        TaskActivityDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            taskIssueId: string;
+            /** Format: uuid */
+            actorUserId: null | string;
+            actorEmail: null | string;
+            actorDisplayName: null | string;
+            action: string;
+            summary: string;
+            metadataJson: null | string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         TaskAssigneeDto: {
             /** Format: uuid */
             userId: string;
             email: string;
             displayName: string;
         };
-        TaskReviewerDto: {
+        TaskCommentDto: {
             /** Format: uuid */
-            userId: string;
-            email: string;
-            displayName: string;
+            id: string;
+            /** Format: uuid */
+            taskIssueId: string;
+            /** Format: uuid */
+            authorUserId: string;
+            authorEmail: string;
+            authorDisplayName: string;
+            body: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            editedAt: null | string;
+        };
+        TaskIssueDetailDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            studioId: string;
+            /** Format: uuid */
+            projectId: null | string;
+            projectName: null | string;
+            /** Format: uuid */
+            parentTaskIssueId: null | string;
+            kind: components["schemas"]["TaskIssueKind"];
+            status: components["schemas"]["TaskIssueStatus"];
+            title: string;
+            description: null | string;
+            /** Format: date-time */
+            dueDate: null | string;
+            milestone: null | components["schemas"]["TaskMilestoneDto"];
+            assignees: components["schemas"]["TaskAssigneeDto"][];
+            reviewers: components["schemas"]["TaskReviewerDto"][];
+            labels: components["schemas"]["TaskLabelDto"][];
+            /** Format: uuid */
+            createdByUserId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            closedAt: null | string;
+            /** Format: int32 */
+            commentsCount: number | string;
+            /** Format: int32 */
+            subtaskCount: number | string;
+            /** Format: int32 */
+            completedSubtaskCount: number | string;
+            subtasks: components["schemas"]["TaskIssueDto"][];
+            comments: components["schemas"]["TaskCommentDto"][];
+            activity: components["schemas"]["TaskActivityDto"][];
         };
         TaskIssueDto: {
             /** Format: uuid */
@@ -4371,6 +4942,12 @@ export interface components {
             updatedAt: string;
         };
         TaskMilestoneStatus: number;
+        TaskReviewerDto: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+        };
         TimelineDocumentDto: {
             /** Format: uuid */
             projectId: string;
@@ -4378,7 +4955,7 @@ export interface components {
             timelineId: string;
             /** Format: uuid */
             revisionId: string;
-            documentJson: unknown;
+            documentJson: components["schemas"]["JsonElement"];
             /** Format: int32 */
             revisionNumber: number | string;
             /** Format: int32 */
@@ -4437,6 +5014,10 @@ export interface components {
             role: null | components["schemas"]["Permission"];
             isHidden: boolean;
         };
+        UpdateOnboardingProfileRequest: {
+            personality: string;
+            creationGoals: null | string[];
+        };
         UpdatePreferencesRequest: {
             emailNotificationsEnabled: boolean;
             productUpdatesEnabled: boolean;
@@ -4471,6 +5052,9 @@ export interface components {
             description: null | string;
             avatarUrl: null | string;
             publicSlug: null | string;
+        };
+        UpdateTaskCommentRequest: {
+            body: string;
         };
         UpdateTaskIssueRequest: {
             kind: components["schemas"]["TaskIssueKind"];
@@ -4522,6 +5106,7 @@ export interface components {
         UserSettingsDto: {
             user: components["schemas"]["UserDto"];
             preferences: components["schemas"]["UserPreferencesDto"];
+            onboarding: components["schemas"]["OnboardingProfileDto"];
             planLimits: components["schemas"]["PlanLimitsDto"];
         };
         UserStudioRole: number;
@@ -4531,6 +5116,21 @@ export interface components {
         VerifyEmailResult: {
             tokens: components["schemas"]["AuthTokenDto"];
             isNewlyVerified: boolean;
+        };
+        VideoEditorPerformanceMetricDto: {
+            name: string;
+            /** Format: double */
+            durationMs: number | string;
+            /** Format: date-time */
+            measuredAt: string;
+            /** Format: int32 */
+            trackCount: null | number | string;
+            /** Format: int32 */
+            itemCount: null | number | string;
+            /** Format: int32 */
+            renderedItemCount: null | number | string;
+            /** Format: double */
+            timelineDurationSeconds: null | number | string;
         };
     };
     responses: never;
