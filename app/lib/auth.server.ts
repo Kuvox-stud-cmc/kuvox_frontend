@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 
-import { refreshRequest } from "./api.server";
+import { ApiError, fetchMe, refreshRequest } from "./api.server";
 import { logger, type RequestLogger } from "./logger.server";
 import {
   commitSession,
@@ -53,8 +53,21 @@ export async function requireUser(
 
   // Still valid (with a small clock-skew buffer)?
   if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5_000) {
-    log.debug({ userId: user.id }, "auth guard: session valid");
-    return user;
+    try {
+      const validatedUser = await fetchMe(accessToken, log);
+      log.debug({ userId: validatedUser.id }, "auth guard: session valid");
+      return validatedUser;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        log.warn({ userId: user.id }, "auth guard: active session was replaced");
+        throw redirect("/login?reason=session-replaced", {
+          headers: { "Set-Cookie": await destroySession(session) },
+        });
+      }
+
+      log.warn({ userId: user.id, err: error }, "auth guard: session validation unavailable");
+      return user;
+    }
   }
 
   // Expired — try to rotate using the refresh token, then re-run the loader with the
@@ -73,6 +86,11 @@ export async function requireUser(
       if (error instanceof Response) {
         throw error; // the redirect above
       }
+      if (error instanceof ApiError && error.code === "session_replaced") {
+        throw redirect("/login?reason=session-replaced", {
+          headers: { "Set-Cookie": await destroySession(session) },
+        });
+      }
       log.warn({ userId: user.id }, "auth guard: token refresh failed, logging out");
       // fall through to a clean logout on refresh failure
     }
@@ -89,9 +107,39 @@ export async function redirectIfAuthenticated(
   to = "/dashboard",
   log?: RequestLogger,
 ): Promise<void> {
-  const user = await getOptionalUser(request, log);
-  if (user) {
-    if (log) log.debug({ userId: user.id }, `redirectIfAuthenticated: redirecting to ${to}`);
-    throw redirect(to);
+  const session = await getSession(request);
+  const user = session.get("user");
+  const accessToken = session.get("accessToken");
+  const refreshToken = session.get("refreshToken");
+  const expiresAt = session.get("expiresAt");
+
+  if (!user || !accessToken) return;
+
+  try {
+    if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5_000) {
+      await fetchMe(accessToken, log);
+      if (log) log.debug({ userId: user.id }, `redirectIfAuthenticated: redirecting to ${to}`);
+      throw redirect(to);
+    }
+
+    if (refreshToken) {
+      const tokens = await refreshRequest(refreshToken, log);
+      await fetchMe(tokens.accessToken, log);
+      session.set("accessToken", tokens.accessToken);
+      session.set("refreshToken", tokens.refreshToken);
+      session.set("expiresAt", tokens.expiresAt);
+      throw redirect(to, {
+        headers: { "Set-Cookie": await commitSession(session) },
+      });
+    }
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    if (error instanceof ApiError && error.status === 401) {
+      throw redirect(request.url, {
+        headers: { "Set-Cookie": await destroySession(session) },
+      });
+    }
+
+    if (log) log.warn({ userId: user.id, err: error }, "redirectIfAuthenticated: validation unavailable");
   }
 }

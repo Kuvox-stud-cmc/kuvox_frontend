@@ -170,6 +170,8 @@ export interface EditorUiSessionState {
   toastMessage: string | null;
   searchQuery: string;
   commandInput: string;
+  inspectorOpen: boolean;
+  activeInspectorSection: string;
 }
 
 export interface VideoEditorHistoryFrame {
@@ -280,9 +282,9 @@ const initialUi: EditorUiSessionState = {
   editorMode: "manual",
   libraryOpen: true,
   timelineOpen: true,
-  libraryWidth: 280,
-  timelineHeight: 292,
-  inspectorWidth: 320,
+  libraryWidth: 250,
+  timelineHeight: 260,
+  inspectorWidth: 280,
   activeLibraryTab: "clips",
   selectedMediaId: "clip-beach",
   timelineZoom: 50,
@@ -297,6 +299,8 @@ const initialUi: EditorUiSessionState = {
   toastMessage: null,
   searchQuery: "",
   commandInput: "Add cap",
+  inspectorOpen: true,
+  activeInspectorSection: "transform",
 };
 
 const initialState: EditorState = {
@@ -516,15 +520,25 @@ const editorSlice = createSlice({
       state.playback.currentTime = clampTime(state.playback.currentTime, state.document);
       state.ui.selectedMediaId = state.ui.selectedMediaId ?? firstMediaId(state.document);
     },
-    videoOperationApplied(state, action: PayloadAction<VideoOperation | VideoOperationBatch>) {
+    videoOperationApplied(
+      state,
+      action: PayloadAction<
+        VideoOperation | VideoOperationBatch | { operation: VideoOperation | VideoOperationBatch; squash?: boolean }
+      >
+    ) {
       if (!state.document) {
         state.lastError = "No active video document.";
         state.ui.toastMessage = "No active video document";
         return;
       }
 
+      const payload = action.payload;
+      const isWrapped = payload && typeof payload === "object" && "operation" in payload;
+      const rawOperation = isWrapped ? (payload as any).operation : payload;
+      const squash = isWrapped ? Boolean((payload as any).squash) : false;
+
       const beforeDocument = cloneJson(state.document);
-      const batch = normalizeVideoOperationPayload(action.payload);
+      const batch = normalizeVideoOperationPayload(rawOperation);
       const result = applyVideoOperationBatch(state.document, batch);
 
       if (!result.ok) {
@@ -538,6 +552,7 @@ const editorSlice = createSlice({
         batch,
         result,
         toastMessage: result.warnings[0] ?? "Edit applied",
+        squash,
       });
     },
     mediaAssetAddedToTimeline(state, action: PayloadAction<MediaDto | { media: MediaDto; trackId?: string; timelineStart?: number }>) {
@@ -767,6 +782,12 @@ const editorSlice = createSlice({
     },
     inspectorWidthChanged(state, action: PayloadAction<number>) {
       state.ui.inspectorWidth = Math.min(480, Math.max(240, action.payload));
+    },
+    inspectorOpenChanged(state, action: PayloadAction<boolean>) {
+      state.ui.inspectorOpen = action.payload;
+    },
+    activeInspectorSectionChanged(state, action: PayloadAction<string>) {
+      state.ui.activeInspectorSection = action.payload;
     },
     libraryTabChanged(state, action: PayloadAction<LibraryTab>) {
       state.ui.activeLibraryTab = action.payload;
@@ -1209,6 +1230,8 @@ export const {
   libraryWidthChanged,
   timelineHeightChanged,
   inspectorWidthChanged,
+  inspectorOpenChanged,
+  activeInspectorSectionChanged,
   libraryTabChanged,
   assetSelected,
   clipSelected,
@@ -1366,6 +1389,8 @@ export const selectLibraryPanelState = createSelector([selectEditorUi], (ui) => 
 }));
 export const selectInspectorPanelState = createSelector([selectEditorUi], (ui) => ({
   width: ui.inspectorWidth,
+  open: ui.inspectorOpen,
+  activeSection: ui.activeInspectorSection,
 }));
 export const selectChromeState = createSelector([selectEditorUi], (ui) => ({
   editorMode: ui.editorMode,
@@ -1562,6 +1587,7 @@ function applySuccessfulVideoEdit(
     result: VideoOperationApplyResult;
     toastMessage: string;
     selectAfterApply?: (selection: VideoEditorSelection) => VideoEditorSelection;
+    squash?: boolean;
   },
 ): void {
   if (!input.result.historyEntry || !input.result.undo) {
@@ -1571,15 +1597,30 @@ function applySuccessfulVideoEdit(
   }
 
   const provisionalAfterDocument = cloneJson(input.result.document);
+  
+  let undoStack = [...state.undoStack];
+  const lastFrame = undoStack[undoStack.length - 1];
+  const isSameItemAndOp = lastFrame &&
+    lastFrame.batch.operations[0]?.type === input.batch.operations[0]?.type &&
+    lastFrame.batch.operations[0]?.affectedEntityIds[0] === input.batch.operations[0]?.affectedEntityIds[0];
+
+  const beforeDoc = (input.squash && isSameItemAndOp) ? lastFrame.beforeDocument : input.beforeDocument;
+
   const provisionalFrame = createHistoryFrame({
-    beforeDocument: input.beforeDocument,
+    beforeDocument: beforeDoc,
     afterDocument: provisionalAfterDocument,
     batch: input.batch,
     result: input.result,
     historyEntry: input.result.historyEntry,
     undo: input.result.undo,
   });
-  const undoStack = pushBoundedHistoryFrame(state.undoStack, provisionalFrame);
+
+  if (input.squash && isSameItemAndOp) {
+    undoStack[undoStack.length - 1] = provisionalFrame;
+  } else {
+    undoStack = pushBoundedHistoryFrame(state.undoStack, provisionalFrame);
+  }
+
   const afterDocument = withDocumentHistoryAvailability(provisionalAfterDocument, undoStack.length > 0, false);
   const result = {
     ...input.result,

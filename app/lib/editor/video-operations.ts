@@ -14,6 +14,10 @@ import type {
   VideoTrack,
   VideoTrackKind,
   VideoTransform,
+  VideoItemProperties,
+  AudioItemProperties,
+  ImageItemProperties,
+  TextItemProperties,
 } from "./video-document";
 import { validateVideoProjectDocument } from "./video-document";
 import { validateAudioFadesForDuration } from "./editor-audio";
@@ -117,6 +121,7 @@ export interface UpdateTextOperation extends VideoOperationMetadata {
   layerOrder?: number;
   timelineStart?: number;
   duration?: number;
+  properties?: TextItemProperties;
 }
 
 export interface UpdateAudioOperation extends VideoOperationMetadata {
@@ -125,6 +130,7 @@ export interface UpdateAudioOperation extends VideoOperationMetadata {
   volume?: number;
   muted?: boolean;
   fades?: VideoAudioFades;
+  properties?: AudioItemProperties;
 }
 
 export interface UpdateSpeedOperation extends VideoOperationMetadata {
@@ -142,6 +148,7 @@ export interface UpdateTransformCropOperation extends VideoOperationMetadata {
   crop?: VideoCrop;
   opacity?: number;
   layerOrder?: number;
+  properties?: VideoItemProperties | ImageItemProperties;
 }
 
 export interface SetProjectSettingsOperation extends VideoOperationMetadata {
@@ -647,7 +654,7 @@ function validateOperationSemantics(
       errors.push("updateText can only target text items.");
       return;
     }
-    const updated: TextTimelineItem = { ...location.item, ...pickDefinedTextUpdate(operation) };
+    const updated: TextTimelineItem = { ...location.item, ...pickDefinedTextUpdate(operation, location.item) };
     validatePotentialItem(document, location, updated, errors);
     return;
   }
@@ -657,7 +664,7 @@ function validateOperationSemantics(
       errors.push("updateAudio can only target audio items.");
       return;
     }
-    const updated: AudioTimelineItem = { ...location.item, ...pickDefinedAudioUpdate(operation) };
+    const updated: AudioTimelineItem = { ...location.item, ...pickDefinedAudioUpdate(operation, location.item) };
     validatePotentialItem(document, location, updated, errors);
     return;
   }
@@ -683,7 +690,7 @@ function validateOperationSemantics(
       errors.push("updateTransformCrop can only target visual timeline items.");
       return;
     }
-    const updated = { ...location.item, ...pickDefinedTransformCropUpdate(operation) } as VideoTimelineItem;
+    const updated = { ...location.item, ...pickDefinedTransformCropUpdate(operation, location.item) } as VideoTimelineItem;
     validatePotentialItem(document, location, updated, errors);
   }
 }
@@ -718,11 +725,13 @@ function applyRawVideoOperation(document: VideoProjectDocument, operation: Video
   }
 
   if (operation.type === "updateText") {
-    return applyUpdateItem(document, operation, pickDefinedTextUpdate(operation));
+    const loc = findItem(document, operation.itemId);
+    return applyUpdateItem(document, operation, pickDefinedTextUpdate(operation, loc?.item));
   }
 
   if (operation.type === "updateAudio") {
-    return applyUpdateItem(document, operation, pickDefinedAudioUpdate(operation));
+    const loc = findItem(document, operation.itemId);
+    return applyUpdateItem(document, operation, pickDefinedAudioUpdate(operation, loc?.item));
   }
 
   if (operation.type === "updateSpeed") {
@@ -734,7 +743,8 @@ function applyRawVideoOperation(document: VideoProjectDocument, operation: Video
   }
 
   if (operation.type === "updateTransformCrop") {
-    return applyUpdateItem(document, operation, pickDefinedTransformCropUpdate(operation));
+    const loc = findItem(document, operation.itemId);
+    return applyUpdateItem(document, operation, pickDefinedTransformCropUpdate(operation, loc?.item));
   }
 
   return applySetProjectSettings(document, operation);
@@ -1002,6 +1012,7 @@ function createUpdateInverse(operation: VideoOperation & { itemId: string }, pre
       ...(operation.layerOrder !== undefined ? { layerOrder: previousItem.layerOrder } : {}),
       ...(operation.timelineStart !== undefined ? { timelineStart: previousItem.timelineStart } : {}),
       ...(operation.duration !== undefined ? { duration: previousItem.duration } : {}),
+      ...(operation.properties !== undefined ? { properties: previousItem.properties } : {}),
     });
   }
 
@@ -1012,6 +1023,7 @@ function createUpdateInverse(operation: VideoOperation & { itemId: string }, pre
       ...(operation.volume !== undefined ? { volume: previousItem.volume } : {}),
       ...(operation.muted !== undefined ? { muted: previousItem.muted } : {}),
       ...(operation.fades !== undefined ? { fades: previousItem.fades } : {}),
+      ...(operation.properties !== undefined ? { properties: previousItem.properties } : {}),
     });
   }
 
@@ -1033,6 +1045,7 @@ function createUpdateInverse(operation: VideoOperation & { itemId: string }, pre
       ...(operation.crop !== undefined && previousItem.type === "video" ? { crop: previousItem.crop } : {}),
       ...(operation.opacity !== undefined && previousItem.type !== "text" ? { opacity: previousItem.opacity } : {}),
       ...(operation.layerOrder !== undefined && "layerOrder" in previousItem ? { layerOrder: previousItem.layerOrder } : {}),
+      ...(operation.properties !== undefined ? { properties: previousItem.properties } : {}),
     });
   }
 
@@ -1371,7 +1384,24 @@ function failedApply(
   };
 }
 
-function pickDefinedTextUpdate(operation: UpdateTextOperation): Partial<TextTimelineItem> {
+function mergeItemProperties(item: any, properties: any) {
+  if (!properties) return item?.properties;
+  const existing = item?.properties || {};
+  const merged = { ...existing };
+  for (const [groupKey, groupVal] of Object.entries(properties)) {
+    if (groupVal && typeof groupVal === "object" && !Array.isArray(groupVal)) {
+      merged[groupKey] = {
+        ...existing[groupKey],
+        ...(groupVal as any),
+      };
+    } else {
+      merged[groupKey] = groupVal;
+    }
+  }
+  return merged;
+}
+
+function pickDefinedTextUpdate(operation: UpdateTextOperation, item: any): Partial<TextTimelineItem> {
   return omitUndefined({
     text: operation.text,
     style: operation.style,
@@ -1379,14 +1409,16 @@ function pickDefinedTextUpdate(operation: UpdateTextOperation): Partial<TextTime
     layerOrder: operation.layerOrder,
     timelineStart: operation.timelineStart,
     duration: operation.duration,
+    properties: mergeItemProperties(item, operation.properties),
   });
 }
 
-function pickDefinedAudioUpdate(operation: UpdateAudioOperation): Partial<AudioTimelineItem> {
+function pickDefinedAudioUpdate(operation: UpdateAudioOperation, item: any): Partial<AudioTimelineItem> {
   return omitUndefined({
     volume: operation.volume,
     muted: operation.muted,
     fades: operation.fades,
+    properties: mergeItemProperties(item, operation.properties),
   });
 }
 
@@ -1399,12 +1431,13 @@ function pickDefinedTrackUpdate(operation: UpdateTrackOperation): Partial<VideoT
   });
 }
 
-function pickDefinedTransformCropUpdate(operation: UpdateTransformCropOperation): Partial<VideoTimelineItem> {
+function pickDefinedTransformCropUpdate(operation: UpdateTransformCropOperation, item: any): Partial<VideoTimelineItem> {
   return omitUndefined({
     transform: operation.transform,
     crop: operation.crop,
     opacity: operation.opacity,
     layerOrder: operation.layerOrder,
+    properties: mergeItemProperties(item, operation.properties),
   }) as Partial<VideoTimelineItem>;
 }
 
@@ -1585,4 +1618,97 @@ function validateOptionalUnitNumber(value: unknown, path: string, errors: string
   if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1)) {
     errors.push(`${path} must be between 0 and 1 when provided.`);
   }
+}
+
+export function operationMetadata(label: string, affectedEntityIds: string[]): VideoOperationMetadata {
+  const timestamp = new Date().toISOString();
+  return {
+    id: `operation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    source: "manual",
+    timestamp,
+    label,
+    affectedEntityIds,
+  };
+}
+
+export function trimOperation(
+  item: VideoTimelineItem,
+  fields: Partial<Pick<TrimItemOperation, "timelineStart" | "duration" | "sourceIn" | "sourceOut">>,
+  label: string,
+): TrimItemOperation {
+  const baseFields = {
+    timelineStart: item.timelineStart,
+    duration: item.duration,
+  };
+
+  return {
+    ...operationMetadata(label, [item.id]),
+    type: "trimItem",
+    itemId: item.id,
+    ...baseFields,
+    ...fields,
+  };
+}
+
+export function updateTextOperation(
+  itemId: string,
+  fields: Omit<Partial<UpdateTextOperation>, keyof VideoOperationMetadata | "type" | "itemId">,
+  label: string,
+): UpdateTextOperation {
+  return {
+    ...operationMetadata(label, [itemId]),
+    type: "updateText",
+    itemId,
+    ...fields,
+  };
+}
+
+export function updateAudioOperation(
+  itemId: string,
+  fields: Omit<Partial<UpdateAudioOperation>, keyof VideoOperationMetadata | "type" | "itemId">,
+  label: string,
+): UpdateAudioOperation {
+  return {
+    ...operationMetadata(label, [itemId]),
+    type: "updateAudio",
+    itemId,
+    ...fields,
+  };
+}
+
+export function updateSpeedOperation(
+  itemId: string,
+  fields: Omit<UpdateSpeedOperation, keyof VideoOperationMetadata | "type" | "itemId">,
+  label: string,
+): UpdateSpeedOperation {
+  return {
+    ...operationMetadata(label, [itemId]),
+    type: "updateSpeed",
+    itemId,
+    ...fields,
+  };
+}
+
+export function updateTransformCropOperation(
+  itemId: string,
+  fields: Omit<Partial<UpdateTransformCropOperation>, keyof VideoOperationMetadata | "type" | "itemId">,
+  label: string,
+): UpdateTransformCropOperation {
+  return {
+    ...operationMetadata(label, [itemId]),
+    type: "updateTransformCrop",
+    itemId,
+    ...fields,
+  };
+}
+
+export function setProjectSettingsOperation(
+  settings: Partial<VideoProjectSettings>,
+  label: string,
+): SetProjectSettingsOperation {
+  return {
+    ...operationMetadata(label, ["settings"]),
+    type: "setProjectSettings",
+    settings,
+  };
 }

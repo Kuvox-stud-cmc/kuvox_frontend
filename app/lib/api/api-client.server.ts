@@ -5,17 +5,21 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code?: string,
   ) {
     super(message);
   }
 }
 
-export async function readError(response: Response): Promise<string> {
+export async function readError(response: Response): Promise<{ message: string; code?: string }> {
   try {
     const body = await response.json();
-    return body?.detail || body?.title || "Request failed.";
+    return {
+      message: body?.detail || body?.title || "Request failed.",
+      code: typeof body?.code === "string" ? body.code : undefined,
+    };
   } catch {
-    return "Request failed.";
+    return { message: "Request failed." };
   }
 }
 
@@ -128,7 +132,8 @@ export class ApiClient {
     const response = await pipeline(`${this.baseUrl}${path}`, { ...init, headers });
 
     if (!response.ok) {
-      throw new ApiError(response.status, await readError(response));
+      const error = await readError(response);
+      throw new ApiError(response.status, error.message, error.code);
     }
     return (await response.json()) as T;
   }
@@ -142,7 +147,8 @@ export class ApiClient {
     const response = await pipeline(`${this.baseUrl}${path}`, { ...init, headers });
 
     if (!response.ok) {
-      throw new ApiError(response.status, await readError(response));
+      const error = await readError(response);
+      throw new ApiError(response.status, error.message, error.code);
     }
   }
 

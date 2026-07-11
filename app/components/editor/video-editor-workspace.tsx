@@ -64,6 +64,9 @@ import {
   toastShown,
   timelineOpenChanged,
   textItemCreated,
+  selectInspectorPanelState,
+  inspectorOpenChanged,
+  activeInspectorSectionChanged,
   type VideoEditorHistoryFrame,
 } from "~/store/slices/editor-slice";
 
@@ -127,7 +130,8 @@ export function VideoEditorWorkspace({
   const [draftRecovery, setDraftRecovery] = useState<DraftRecoveryState>({ state: "none" });
   const [narrowManualPane, setNarrowManualPane] = useState<NarrowManualPane>("preview");
   const [responsiveDrawer, setResponsiveDrawer] = useState<ResponsiveManualDrawer>(null);
-  const [desktopInspectorOpen, setDesktopInspectorOpen] = useState(false);
+  const { open: desktopInspectorOpen, activeSection: activeInspectorSection } = useAppSelector(selectInspectorPanelState);
+  const [activeRailTab, setActiveRailTab] = useState("media");
   const responsiveDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const editor = useAppSelector(selectEditorState);
   const editorMode = useAppSelector(selectEditorMode);
@@ -551,13 +555,12 @@ export function VideoEditorWorkspace({
         ) : null}
 
         <div
-          className={`relative flex min-h-0 flex-1 overflow-hidden ${
-            editorMode === "manual" && narrowManualPane === "timeline"
+          className={`relative flex min-h-0 flex-1 overflow-hidden ${editorMode === "manual" && narrowManualPane === "timeline"
               ? "max-[759px]:hidden"
               : ""
-          }`}
+            }`}
         >
-          <ManualNavigationRail />
+          <ManualNavigationRail activeTab={activeRailTab} onTabChange={setActiveRailTab} />
           {!libraryOpen ? (
             <button
               type="button"
@@ -573,6 +576,7 @@ export function VideoEditorWorkspace({
           ) : null}
           <EditorPanelErrorBoundary label="Media library">
             <MediaLibraryPanel
+              activeTab={activeRailTab}
               media={live.media}
               updatesById={live.updatesById}
               mediaLoadError={mediaLoadError}
@@ -614,6 +618,14 @@ export function VideoEditorWorkspace({
               </EditorPanelErrorBoundary>
               <ToolRail
                 showLabels
+                inspectorOpen={desktopInspectorOpen}
+                onInspectorToggle={() => dispatch(inspectorOpenChanged(!desktopInspectorOpen))}
+                activeSection={activeInspectorSection}
+                onSectionChange={(section) => {
+                  dispatch(editorModeChanged("manual"));
+                  dispatch(activeInspectorSectionChanged(section));
+                  dispatch(inspectorOpenChanged(true));
+                }}
                 className="z-40 hidden h-full w-16 shrink-0 flex-col border-l border-outline-variant bg-surface min-[1180px]:flex"
               />
             </>
@@ -622,11 +634,25 @@ export function VideoEditorWorkspace({
               <ToolRail
                 showLabels
                 inspectorOpen={desktopInspectorOpen}
-                onInspectorToggle={() => setDesktopInspectorOpen((open) => !open)}
+                onInspectorToggle={() => dispatch(inspectorOpenChanged(!desktopInspectorOpen))}
+                activeSection={activeInspectorSection}
+                onSectionChange={(section) => {
+                  if (desktopInspectorOpen && activeInspectorSection === section) {
+                    dispatch(inspectorOpenChanged(false));
+                  } else {
+                    dispatch(activeInspectorSectionChanged(section));
+                    dispatch(inspectorOpenChanged(true));
+                  }
+                }}
                 className="z-40 hidden h-full w-16 shrink-0 flex-col border-l border-outline-variant bg-surface min-[1180px]:flex"
               />
               <VideoInspectorPanel
-                onRequestClose={closeResponsiveDrawer}
+                activeSection={activeInspectorSection}
+                onSectionChange={(section) => dispatch(activeInspectorSectionChanged(section))}
+                onRequestClose={() => {
+                  dispatch(inspectorOpenChanged(false));
+                  closeResponsiveDrawer();
+                }}
                 visibilityClassName={
                   responsiveDrawer === "inspector"
                     ? "absolute inset-y-0 right-0 z-40 flex shadow-2xl min-[1180px]:relative min-[1180px]:shadow-none"
@@ -695,6 +721,9 @@ function ResponsiveManualControls({
   onPaneChange: (pane: NarrowManualPane) => void;
   onOpenDrawer: (drawer: Exclude<ResponsiveManualDrawer, null>, trigger: HTMLElement) => void;
 }) {
+  const dispatch = useAppDispatch();
+  const { open: desktopInspectorOpen, activeSection: activeInspectorSection } = useAppSelector(selectInspectorPanelState);
+
   return (
     <div
       data-responsive-manual-controls
@@ -706,11 +735,10 @@ function ResponsiveManualControls({
           aria-label="Open media library"
           aria-pressed={drawer === "library"}
           onClick={(event) => onOpenDrawer("library", event.currentTarget)}
-          className={`flex h-11 items-center gap-2 rounded-[4px] px-3 text-label-md font-semibold transition-colors motion-reduce:transition-none ${
-            drawer === "library"
+          className={`flex h-11 items-center gap-2 rounded-[4px] px-3 text-label-md font-semibold transition-colors motion-reduce:transition-none ${drawer === "library"
               ? "bg-surface-container-highest text-primary"
               : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-          }`}
+            }`}
         >
           <EditorIcon className="text-[19px]">perm_media</EditorIcon>
           <span className="hidden min-[520px]:inline">Media</span>
@@ -728,11 +756,10 @@ function ResponsiveManualControls({
               role="tab"
               aria-selected={activePane === pane}
               onClick={() => onPaneChange(pane)}
-              className={`h-10 rounded-[4px] px-3 text-label-md font-semibold capitalize transition-colors motion-reduce:transition-none ${
-                activePane === pane
+              className={`h-10 rounded-[4px] px-3 text-label-md font-semibold capitalize transition-colors motion-reduce:transition-none ${activePane === pane
                   ? "bg-surface-container-highest text-on-surface"
                   : "text-on-surface-variant hover:text-on-surface"
-              }`}
+                }`}
             >
               {pane}
             </button>
@@ -744,11 +771,10 @@ function ResponsiveManualControls({
           aria-label="Open inspector"
           aria-pressed={drawer === "inspector"}
           onClick={(event) => onOpenDrawer("inspector", event.currentTarget)}
-          className={`ml-auto flex h-11 items-center gap-2 rounded-[4px] px-3 text-label-md font-semibold transition-colors motion-reduce:transition-none max-[759px]:ml-0 ${
-            drawer === "inspector"
+          className={`ml-auto flex h-11 items-center gap-2 rounded-[4px] px-3 text-label-md font-semibold transition-colors motion-reduce:transition-none max-[759px]:ml-0 ${drawer === "inspector"
               ? "bg-surface-container-highest text-primary"
               : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-          }`}
+            }`}
         >
           <span className="hidden min-[520px]:inline">Inspector</span>
           <EditorIcon className="text-[19px]">tune</EditorIcon>
@@ -756,22 +782,34 @@ function ResponsiveManualControls({
       </div>
       <ToolRail
         orientation="horizontal"
+        inspectorOpen={desktopInspectorOpen}
+        onInspectorToggle={() => dispatch(inspectorOpenChanged(!desktopInspectorOpen))}
+        activeSection={activeInspectorSection}
+        onSectionChange={(section) => {
+          if (desktopInspectorOpen && activeInspectorSection === section) {
+            dispatch(inspectorOpenChanged(false));
+          } else {
+            dispatch(activeInspectorSectionChanged(section));
+            dispatch(inspectorOpenChanged(true));
+          }
+        }}
         className="w-full shrink-0 overflow-x-auto border-t border-outline-variant bg-surface-container-lowest"
       />
     </div>
   );
 }
 
-function ManualNavigationRail() {
+function ManualNavigationRail({ activeTab, onTabChange }: { activeTab: string, onTabChange: (id: string) => void }) {
   const dispatch = useAppDispatch();
   const editorMode = useAppSelector(selectEditorMode);
   const items = [
     { id: "media", label: "Media", icon: "perm_media", enabled: true },
     { id: "text", label: "Text", icon: "title", enabled: true },
-    { id: "effects", label: "Effects", icon: "auto_fix_normal", enabled: false },
-    { id: "transitions", label: "Transitions", icon: "movie_edit", enabled: false },
-    { id: "audio", label: "Audio", icon: "music_note", enabled: true },
-    { id: "elements", label: "Elements", icon: "category", enabled: false },
+    { id: "effects", label: "Effects", icon: "auto_fix_normal", enabled: true },
+    { id: "transitions", label: "Transitions", icon: "movie_edit", enabled: true },
+    { id: "brand_kits", label: "Brand Kits", icon: "branding_watermark", enabled: true },
+    { id: "elements", label: "Elements", icon: "category", enabled: true },
+    { id: "ai_tools", label: "AI Tools", icon: "smart_toy", enabled: true },
   ] as const;
 
   return (
@@ -786,21 +824,17 @@ function ManualNavigationRail() {
             type="button"
             disabled={!item.enabled}
             aria-label={item.label}
-            aria-pressed={item.id === "media" || undefined}
+            aria-pressed={item.id === activeTab || undefined}
             onClick={() => {
-              if (item.id === "media" || item.id === "audio") {
-                dispatch(libraryOpenChanged(true));
-              } else if (item.id === "text") {
-                dispatch(textItemCreated({ preset: "caption" }));
-              }
+              onTabChange(item.id);
+              dispatch(libraryOpenChanged(true));
             }}
-            className={`flex min-h-12 w-full flex-col items-center justify-center gap-1 text-[9px] font-semibold transition-colors motion-reduce:transition-none ${
-              item.id === "media"
+            className={`flex min-h-12 w-full flex-col items-center justify-center gap-1 text-[9px] font-semibold transition-colors motion-reduce:transition-none ${item.id === activeTab
                 ? "bg-primary/10 text-primary"
                 : item.enabled
                   ? "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
                   : "cursor-not-allowed text-on-surface-variant/30"
-            }`}
+              }`}
           >
             <EditorIcon className="text-[21px]">{item.icon}</EditorIcon>
             {item.label}
@@ -810,9 +844,8 @@ function ManualNavigationRail() {
       <button
         type="button"
         onClick={() => dispatch(editorModeChanged("ai"))}
-        className={`mt-auto flex min-h-14 w-full flex-col items-center justify-center gap-1 border-t border-outline-variant pt-2 text-[9px] font-bold text-primary hover:bg-primary/10 ${
-          editorMode === "ai" ? "bg-primary/10" : ""
-        }`}
+        className={`mt-auto hidden flex min-h-14 w-full flex-col items-center justify-center gap-1 border-t border-outline-variant pt-2 text-[9px] font-bold text-primary hover:bg-primary/10 ${editorMode === "ai" ? "bg-primary/10" : ""
+          }`}
         aria-label="Open AI tools"
         aria-pressed={editorMode === "ai"}
       >
@@ -980,11 +1013,10 @@ function DraftRecoveryBanner({
   return (
     <div
       data-editor-draft-recovery-banner={recovery.state}
-      className={`z-40 flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 2xl:px-4 ${
-        isPrompt
+      className={`z-40 flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 2xl:px-4 ${isPrompt
           ? "bg-tertiary-container text-on-tertiary-container"
           : "bg-surface-container-high text-on-surface"
-      }`}
+        }`}
     >
       <div className="min-w-0">
         <p className="truncate text-body-sm font-semibold">{recovery.message}</p>

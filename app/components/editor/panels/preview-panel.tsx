@@ -93,17 +93,62 @@ export function PreviewPanel({
   const mediaLayerRef = useRef<Konva.Layer>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const [activeEffect, setActiveEffect] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("kuvox_active_effect");
+    }
+    return null;
+  });
+
+  const [activeTransition, setActiveTransition] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("kuvox_active_transition");
+    }
+    return null;
+  });
+
+  const [transitionTrigger, setTransitionTrigger] = useState(0);
+
+  useEffect(() => {
+    const handleEffectChange = () => {
+      setActiveEffect(localStorage.getItem("kuvox_active_effect"));
+    };
+    const handleTransitionChange = () => {
+      setActiveTransition(localStorage.getItem("kuvox_active_transition"));
+      setTransitionTrigger(prev => prev + 1);
+    };
+    window.addEventListener("kuvox-effect-changed", handleEffectChange);
+    window.addEventListener("kuvox-transition-changed", handleTransitionChange);
+    return () => {
+      window.removeEventListener("kuvox-effect-changed", handleEffectChange);
+      window.removeEventListener("kuvox-transition-changed", handleTransitionChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const linkId = "kuvox-google-fonts";
+      if (!window.document.getElementById(linkId)) {
+        const link = window.document.createElement("link");
+        link.id = linkId;
+        link.href = "https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;600;700&family=Outfit:wght@400;600;700&family=Pacifico&family=Playfair+Display:wght@700&family=Poppins:wght@400;600;700&family=Roboto:wght@400;700&family=Space+Grotesk:wght@500;700&family=Syne:wght@700;800&display=swap";
+        link.rel = "stylesheet";
+        window.document.head.appendChild(link);
+      }
+    }
+  }, []);
+
   const plan = useMemo(
     () =>
       document
         ? createProgramMonitorPlan({
-            document,
-            currentTime: playback.currentTime,
-            previewQuality: qualityPreference,
-            soloedAudioTrackIds,
-            previewVolume: playback.volume,
-            previewMuted: playback.muted,
-          })
+          document,
+          currentTime: playback.currentTime,
+          previewQuality: qualityPreference,
+          soloedAudioTrackIds,
+          previewVolume: playback.volume,
+          previewMuted: playback.muted,
+        })
         : null,
     [document, playback.currentTime, playback.muted, playback.volume, qualityPreference, soloedAudioTrackIds],
   );
@@ -248,18 +293,18 @@ export function PreviewPanel({
         />
       ))}
 
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-2 lg:p-3 2xl:p-5">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-1.5 lg:p-2 2xl:p-3">
         <div
           ref={setPreviewAreaSize.ref}
           className="flex h-full w-full items-center justify-center overflow-hidden"
         >
           <div
-            className={`relative overflow-hidden rounded-[6px] border bg-black shadow-[0_18px_50px_rgba(0,0,0,0.38)] transition-colors duration-200 ${
-              dragOverActive ? "border-primary" : "border-outline-variant"
-            }`}
+            className={`relative overflow-hidden rounded-[6px] border bg-black shadow-[0_18px_50px_rgba(0,0,0,0.38)] transition-colors duration-200 ${dragOverActive ? "border-primary" : "border-outline-variant"
+              }`}
             style={{
               width: stageSize.width,
               height: stageSize.height,
+              filter: getCSSFilterForEffect(activeEffect),
             }}
             onDragOver={(event) => {
               if (!Array.from(event.dataTransfer.types).includes("application/x-kuvox-media-id")) return;
@@ -295,6 +340,34 @@ export function PreviewPanel({
               onSelectTextOverlay={selectTextOverlay}
               onCommitTextTransform={commitTextTransform}
             />
+            {activeEffect === "Vignette" && (
+              <div className="pointer-events-none absolute inset-0 z-30 bg-[radial-gradient(circle,transparent_40%,rgba(0,0,0,0.65)_100%)]" />
+            )}
+            {transitionTrigger > 0 && (
+              <TransitionPreviewOverlay
+                key={transitionTrigger}
+                transitionType={activeTransition}
+              />
+            )}
+            <style>{`
+              @keyframes kuvoxFadeInOut {
+                0% { opacity: 0; }
+                40% { opacity: 1; }
+                60% { opacity: 1; }
+                100% { opacity: 0; }
+              }
+              @keyframes kuvoxFlashInOut {
+                0% { opacity: 0; }
+                25% { opacity: 1; }
+                100% { opacity: 0; }
+              }
+              .animate-fade-in-out {
+                animation: kuvoxFadeInOut 0.8s ease-in-out forwards;
+              }
+              .animate-flash-in-out {
+                animation: kuvoxFlashInOut 0.6s ease-out forwards;
+              }
+            `}</style>
             {dragOverActive && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 pointer-events-none">
                 <div className="rounded-[6px] border border-primary/30 bg-surface-container-high/90 px-4 py-2 text-label-md font-semibold text-primary shadow-lg backdrop-blur-sm">
@@ -306,8 +379,8 @@ export function PreviewPanel({
         </div>
       </div>
 
-      <div className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-t border-outline-variant bg-surface px-2 lg:px-3 2xl:h-16 2xl:px-5">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-t border-outline-variant bg-surface px-2 lg:px-3 2xl:h-14 2xl:px-4">
+        <div className="flex min-w-0 items-center font-mono text-[13px] font-semibold tracking-widest">
           <input
             aria-label="Current timecode"
             data-editor-shortcuts="ignore"
@@ -324,9 +397,10 @@ export function PreviewPanel({
                 event.currentTarget.blur();
               }
             }}
-            className="h-8 w-[118px] rounded-[4px] border border-outline-variant bg-surface-container-high px-2 font-mono text-label-md font-semibold tracking-widest text-primary outline-none focus:border-primary"
+            className="w-[106px] rounded-[4px] bg-transparent text-primary outline-none transition-colors hover:bg-white/5 focus:bg-surface-container-high px-1 py-1"
           />
-          <span className="hidden truncate text-label-md text-on-surface-variant 2xl:block">/ {durationTime}</span>
+          <span className="px-1 text-on-surface-variant/40">/</span>
+          <span className="text-on-surface-variant">{durationTime}</span>
         </div>
 
         <div className="flex items-center justify-center gap-1 lg:gap-1.5 2xl:gap-3">
@@ -383,11 +457,10 @@ export function PreviewPanel({
                 key={quality}
                 type="button"
                 onClick={() => setQualityPreference(quality)}
-                className={`h-7 rounded-[3px] px-2 text-label-sm font-semibold capitalize ${
-                  qualityPreference === quality
+                className={`h-7 rounded-[3px] px-2 text-label-sm font-semibold capitalize ${qualityPreference === quality
                     ? "bg-surface-container-high text-primary"
                     : "text-on-surface-variant hover:text-on-surface"
-                }`}
+                  }`}
               >
                 {quality === "balanced" ? "Proxy" : "Full"}
               </button>
@@ -412,9 +485,11 @@ export function PreviewPanel({
       {activeModal === "fullscreen" ? (
         <div className="fixed inset-0 z-[76] flex flex-col bg-black">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/10 px-3">
-            <span className="font-mono text-label-md font-semibold tracking-widest text-white/80">
-              {formatTimecode(playback.currentTime, frameRate)} / {durationTime}
-            </span>
+            <div className="flex items-center font-mono text-[13px] font-semibold tracking-widest">
+              <span className="text-primary">{formatTimecode(playback.currentTime, frameRate)}</span>
+              <span className="px-2 text-white/30">/</span>
+              <span className="text-white/70">{durationTime}</span>
+            </div>
             <button
               type="button"
               className="flex h-8 w-8 items-center justify-center rounded-[4px] text-white/75 hover:bg-white/10 hover:text-white"
@@ -524,6 +599,8 @@ function ProgramMonitorStage({
     }
   }, [frameBounds, onCommitTextTransform, settings]);
 
+  const hasActiveVisual = Boolean(plan?.activeVisual);
+
   return (
     <Stage
       width={stageSize.width}
@@ -535,7 +612,12 @@ function ProgramMonitorStage({
     >
       <Layer>
         <Rect x={0} y={0} width={stageSize.width} height={stageSize.height} fill="#050505" />
-        <Rect {...frameBounds} fill="#070707" stroke="rgba(255,255,255,0.18)" strokeWidth={1} />
+        <Rect
+          {...frameBounds}
+          fill="#070707"
+          stroke={hasActiveVisual ? "transparent" : "rgba(255,255,255,0.18)"}
+          strokeWidth={hasActiveVisual ? 0 : 1}
+        />
       </Layer>
 
       <Layer ref={mediaLayerRef}>
@@ -549,7 +631,7 @@ function ProgramMonitorStage({
               settings={settings}
             />
           ) : (
-            <EmptyFrame frameBounds={frameBounds} title={fallbackTitle} />
+            <EmptyFrame frameBounds={frameBounds} />
           )}
           {plan?.overlays.map((overlay) => (
             <OverlayNode
@@ -567,7 +649,7 @@ function ProgramMonitorStage({
       </Layer>
 
       <Layer listening={false}>
-        {safeGuides.map((guide, index) => (
+        {!hasActiveVisual && safeGuides.map((guide, index) => (
           <Rect
             key={index}
             {...guide}
@@ -821,31 +903,21 @@ function MediaOverlayNode({
   );
 }
 
-function EmptyFrame({ frameBounds, title }: { frameBounds: PreviewRect; title: string }) {
+function EmptyFrame({ frameBounds }: { frameBounds: PreviewRect }) {
+  const calculatedFontSize = Math.floor(frameBounds.height * 0.10);
   return (
     <>
       <Rect {...frameBounds} fillLinearGradientStartPoint={{ x: frameBounds.x, y: frameBounds.y }} fillLinearGradientEndPoint={{ x: frameBounds.x + frameBounds.width, y: frameBounds.y + frameBounds.height }} fillLinearGradientColorStops={[0, "#111111", 0.55, "#1b2426", 1, "#191919"]} />
       <Text
-        text="No active visual"
+        text="Preview"
         x={frameBounds.x}
-        y={frameBounds.y + frameBounds.height / 2 - 22}
+        y={frameBounds.y + frameBounds.height / 2 - calculatedFontSize / 2}
         width={frameBounds.width}
         align="center"
-        fill="rgba(255,255,255,0.72)"
-        fontFamily="Inter"
-        fontSize={15}
-        fontStyle="bold"
-      />
-      <Text
-        text={title}
-        x={frameBounds.x + 20}
-        y={frameBounds.y + frameBounds.height / 2 + 3}
-        width={Math.max(0, frameBounds.width - 40)}
-        align="center"
         fill="rgba(255,255,255,0.46)"
-        fontFamily="Inter"
-        fontSize={11}
-        ellipsis
+        fontFamily="Roboto"
+        fontSize={calculatedFontSize}
+        fontStyle="bold"
       />
     </>
   );
@@ -1527,4 +1599,70 @@ function parseTimecode(value: string, frameRate: number): number | null {
 
   const [hours, minutes, seconds, frames] = parts;
   return hours * 3600 + minutes * 60 + seconds + frames / Math.max(1, frameRate);
+}
+
+function getCSSFilterForEffect(effect: string | null): string {
+  if (!effect) return "none";
+  switch (effect) {
+    case "Gaussian":
+    case "Box Blur":
+    case "Motion Blur":
+    case "Background Blur":
+      return "blur(4px)";
+    case "Glow":
+    case "Bloom":
+      return "brightness(1.15) contrast(1.1) saturate(1.1)";
+    case "Sharpen":
+      return "contrast(1.08) brightness(1.02)";
+    case "Cinematic":
+    case "Rec.709":
+      return "contrast(1.12) saturate(1.05) brightness(0.96)";
+    case "Teal & Orange":
+      return "hue-rotate(-5deg) saturate(1.25) contrast(1.05)";
+    case "Warm":
+      return "sepia(0.2) saturate(1.1) brightness(1.04)";
+    case "Cool":
+      return "hue-rotate(-15deg) saturate(1.15) brightness(1.02)";
+    case "B&W":
+    case "Film":
+      return "grayscale(1) contrast(1.15)";
+    case "Glitch":
+    case "RGB Split":
+      return "hue-rotate(20deg) contrast(1.2)";
+    case "Lens":
+      return "contrast(1.1) saturate(0.9)";
+    case "Shadow":
+      return "brightness(0.85) contrast(1.05)";
+    case "Light Leak":
+    case "Lens Flare":
+      return "brightness(1.1) saturate(1.2)";
+    default:
+      return "none";
+  }
+}
+
+function TransitionPreviewOverlay({ transitionType }: { transitionType: string | null }) {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    setVisible(true);
+    const timer = setTimeout(() => setVisible(false), 800);
+    return () => clearTimeout(timer);
+  }, [transitionType]);
+
+  if (!visible || !transitionType) return null;
+
+  if (transitionType === "Fade" || transitionType === "Cross Dissolve" || transitionType === "Cut") {
+    return (
+      <div className="pointer-events-none absolute inset-0 z-35 bg-black animate-fade-in-out" />
+    );
+  }
+
+  if (transitionType === "Flash" || transitionType === "Light Leak" || transitionType === "Glitch") {
+    return (
+      <div className="pointer-events-none absolute inset-0 z-35 bg-white animate-flash-in-out" />
+    );
+  }
+
+  return null;
 }

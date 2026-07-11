@@ -28,6 +28,7 @@ export async function action({ request }: Route.ActionArgs) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const redirectTo = String(formData.get("redirectTo") ?? "/dashboard");
+  const replaceExistingSession = formData.get("replaceExistingSession") === "true";
 
   if (!email || !password) {
     return { error: "Email and password are required." };
@@ -36,7 +37,7 @@ export async function action({ request }: Route.ActionArgs) {
   const log = createRequestLogger(request);
 
   try {
-    const tokens = await loginRequest(email, password, log);
+    const tokens = await loginRequest(email, password, replaceExistingSession, log);
     const user = await fetchMe(tokens.accessToken, log);
     log.info({ userId: user.id }, "login succeeded");
 
@@ -50,9 +51,23 @@ export async function action({ request }: Route.ActionArgs) {
       headers: { "Set-Cookie": await commitSession(session) },
     });
   } catch (error) {
+    if (error instanceof ApiError && error.code === "active_session_conflict") {
+      log.warn("login requires explicit active-session takeover");
+      return {
+        error: "This account already has an active session.",
+        activeSessionConflict: true,
+        unverified: false,
+        email,
+      };
+    }
     if (error instanceof ApiError && error.status === 401) {
       log.warn("login failed: invalid credentials");
-      return { error: "Invalid email or password.", unverified: false, email };
+      return {
+        error: "Invalid email or password.",
+        activeSessionConflict: replaceExistingSession,
+        unverified: false,
+        email,
+      };
     }
     if (error instanceof ApiError && error.status === 403) {
       // Hard gate: the account exists but isn't verified yet.
@@ -72,6 +87,7 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
   const [searchParams] = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const resetSuccess = searchParams.get("reset") === "success";
+  const sessionReplaced = searchParams.get("reason") === "session-replaced";
 
   return (
     <section>
@@ -86,6 +102,12 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
         </p>
       )}
 
+      {sessionReplaced && (
+        <p className="mt-4 rounded-xl border border-error/20 bg-error-container/10 px-4 py-3 text-body-sm text-error animate-fade-in-section">
+          Your session ended because this account signed in elsewhere.
+        </p>
+      )}
+
       {actionData?.error && (
         <div className="mt-4 rounded-xl border border-error/20 bg-error-container/10 px-4 py-3 text-body-sm text-error animate-fade-in-section">
           <p>{actionData.error}</p>
@@ -96,6 +118,11 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
             >
               Resend verification email
             </Link>
+          )}
+          {actionData.activeSessionConflict && (
+            <p className="mt-1.5 text-on-surface-variant">
+              Continuing will sign out the previous browser or device.
+            </p>
           )}
         </div>
       )}
@@ -145,10 +172,16 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
 
         <button
           type="submit"
+          name="replaceExistingSession"
+          value={actionData?.activeSessionConflict ? "true" : "false"}
           disabled={isSubmitting}
           className="w-full h-11 mt-6 rounded-xl bg-primary text-label-md font-semibold text-on-primary shadow-[0_4px_20px_rgba(192,193,255,0.2)] hover:bg-primary-fixed-dim hover:shadow-[0_4px_24px_rgba(192,193,255,0.35)] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none"
         >
-          {isSubmitting ? "Signing in…" : "Sign in"}
+          {isSubmitting
+            ? "Signing in…"
+            : actionData?.activeSessionConflict
+              ? "End existing session and sign in"
+              : "Sign in"}
         </button>
       </Form>
 
