@@ -69,7 +69,7 @@ export default function Checkout() {
       {/* Back link */}
       <Link
         to="/pricing"
-        className="flex items-center gap-1.5 text-body-sm text-on-surface-variant hover:text-primary transition-colors duration-200 group w-fit"
+        className="flex items-center gap-1.5 text-body-sm text-on-surface-variant hover:text-[#EFE3D2] transition-colors duration-200 group w-fit"
       >
         <span className="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform duration-200">
           arrow_back
@@ -84,7 +84,7 @@ export default function Checkout() {
         </h1>
         <p className="text-body-sm sm:text-body-lg text-on-surface-variant">
           You&apos;re subscribing to the{" "}
-          <span className="text-primary font-medium">{plan.name}</span> plan.
+          <span className="text-[#EFE3D2] font-medium">{plan.name}</span> plan.
         </p>
       </div>
 
@@ -256,7 +256,7 @@ export default function Checkout() {
             {/* Submit button */}
             <button
               type="submit"
-              className="w-full bg-primary text-on-primary py-3 sm:py-3.5 rounded-sm font-medium text-label-md hover:bg-primary-fixed transition-colors duration-200 mt-2 flex items-center justify-center gap-2"
+              className="w-full bg-[#F5F2ED] text-[#111111] border border-white/20 shadow-[0_8px_28px_rgba(0,0,0,0.22)] py-3 sm:py-3.5 rounded-sm font-medium text-label-md hover:bg-white transition-colors duration-200 mt-2 flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-[18px]">
                 lock

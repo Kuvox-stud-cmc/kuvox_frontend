@@ -148,12 +148,12 @@ export default function About() {
         className={`${BLEED_OUT} relative min-h-[400px] sm:min-h-[500px] lg:min-h-[500px] flex flex-col items-center justify-center ${BLEED_PAD} py-16 sm:py-20 lg:py-24 border-b border-outline-variant`}
         style={{
           background:
-            "radial-gradient(circle at 50% 50%, rgba(128,131,255,0.08) 0%, transparent 70%)",
+            "radial-gradient(circle at 50% 42%, rgba(232,108,181,0.10) 0%, transparent 58%), radial-gradient(circle at 50% 54%, rgba(138,219,231,0.08) 0%, transparent 72%)",
         }}
       >
         <div className="max-w-4xl text-center space-y-4 sm:space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-outline-variant">
-            <span className="text-label-md text-primary uppercase tracking-widest">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E86CB5]/10 border border-[#F7A8D3]/25 shadow-[0_0_22px_rgba(232,108,181,0.08)]">
+            <span className="text-label-md text-[#F7A8D3] uppercase tracking-widest">
               Our Mission
             </span>
           </div>
@@ -185,9 +185,9 @@ export default function About() {
           {TEAM_MEMBERS.map((member) => (
             <div
               key={member.name}
-              className="bg-surface-container-low border border-outline-variant rounded-xl p-5 sm:p-6 text-center group hover:border-primary/50 transition-colors"
+              className="bg-surface-container-low border border-outline-variant rounded-xl p-5 sm:p-6 text-center group hover:border-[#F7A8D3]/35 hover:bg-[#111816]/95 transition-colors"
             >
-              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-surface-container-highest rounded-full mx-auto mb-4 sm:mb-6 flex items-center justify-center text-on-surface-variant">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-surface-container-highest rounded-full mx-auto mb-4 sm:mb-6 flex items-center justify-center text-on-surface-variant group-hover:text-[#F7A8D3] group-hover:shadow-[0_0_28px_rgba(232,108,181,0.10)] transition-all">
                 <span className="material-symbols-outlined text-3xl sm:text-4xl">
                   person
                 </span>
@@ -195,7 +195,7 @@ export default function About() {
               <h3 className="text-body-lg sm:text-headline-md font-medium text-on-surface mb-1">
                 {member.name}
               </h3>
-              <p className="text-label-md text-primary mb-3 sm:mb-4">
+              <p className="text-label-md text-[#F7A8D3] mb-3 sm:mb-4">
                 {member.role}
               </p>
               <p className="text-body-sm text-on-surface-variant">
@@ -210,13 +210,13 @@ export default function About() {
       <section className="py-10 sm:py-12 lg:py-16 max-w-7xl mx-auto w-full border-b border-outline-variant">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-element-gap">
           {/* System Status */}
-          <div className="lg:col-span-8 p-5 sm:p-6 lg:p-8 bg-surface-container-low border border-outline-variant rounded-xl flex flex-col justify-between group hover:bg-surface-container-high transition-colors">
+          <div className="lg:col-span-8 p-5 sm:p-6 lg:p-8 bg-surface-container-low border border-outline-variant rounded-xl flex flex-col justify-between group hover:border-[#F7A8D3]/25 hover:bg-surface-container-high transition-colors">
             <div>
               <div className="flex justify-between items-start mb-8 sm:mb-12">
                 <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold text-on-surface tracking-tight">
                   System Status
                 </h2>
-                <span className="material-symbols-outlined text-primary">
+                <span className="material-symbols-outlined text-[#F7A8D3]">
                   analytics
                 </span>
               </div>
@@ -224,7 +224,7 @@ export default function About() {
                 {STATUS_ITEMS.map((item) => (
                   <div
                     key={item.label}
-                    className="flex items-center justify-between p-3 sm:p-4 bg-surface-container border border-outline-variant rounded-sm"
+                    className="flex items-center justify-between p-3 sm:p-4 bg-surface-container border border-outline-variant rounded-sm hover:border-[#F7A8D3]/25 transition-colors"
                   >
                     <span className="text-body-sm">{item.label}</span>
                     <span className="text-secondary text-label-sm font-semibold">
@@ -241,7 +241,7 @@ export default function About() {
           </div>
 
           {/* Connect / Social */}
-          <div className="lg:col-span-4 p-5 sm:p-6 lg:p-8 bg-surface-container-low border border-outline-variant rounded-xl flex flex-col justify-between">
+          <div className="lg:col-span-4 p-5 sm:p-6 lg:p-8 bg-surface-container-low border border-outline-variant rounded-xl flex flex-col justify-between hover:border-[#F7A8D3]/25 transition-colors">
             <div>
               <h2 className="text-body-lg sm:text-headline-md font-medium text-on-surface mb-6 sm:mb-8">
                 Connect
@@ -251,7 +251,7 @@ export default function About() {
                   <a
                     key={link.label}
                     href={link.href}
-                    className="flex items-center justify-between p-3 sm:p-4 bg-surface-container border border-outline-variant rounded-sm hover:bg-primary-container hover:text-on-primary-container transition-all"
+                    className="flex items-center justify-between p-3 sm:p-4 bg-surface-container border border-outline-variant rounded-sm hover:bg-[#E86CB5]/10 hover:border-[#F7A8D3]/30 hover:text-[#F7A8D3] transition-all"
                   >
                     <div className="flex items-center gap-3">
                       <span className="material-symbols-outlined">
@@ -291,7 +291,7 @@ export default function About() {
                 reliability of your creative workflow.
               </p>
             </div>
-            <button className="flex items-center gap-2 text-label-md text-primary border border-primary px-4 sm:px-6 py-2.5 sm:py-3 rounded-sm hover:bg-primary/10 transition-colors whitespace-nowrap">
+            <button className="flex items-center gap-2 text-label-md text-[#F7A8D3] border border-[#F7A8D3]/40 px-4 sm:px-6 py-2.5 sm:py-3 rounded-sm hover:bg-[#E86CB5]/10 transition-colors whitespace-nowrap">
               View Full Changelog
               <span className="material-symbols-outlined text-[18px]">
                 arrow_forward
@@ -308,7 +308,7 @@ export default function About() {
                 <div className="md:col-span-1">
                   <span
                     className={`text-label-md px-3 py-1 rounded-sm ${entry.isLatest
-                      ? "text-primary bg-primary/10"
+                      ? "text-[#F7A8D3] bg-[#E86CB5]/10 border border-[#F7A8D3]/20"
                       : "text-on-surface-variant bg-surface-container-highest"
                       }`}
                   >
@@ -319,7 +319,7 @@ export default function About() {
                   </div>
                 </div>
                 <div className="md:col-span-3 space-y-3 sm:space-y-4">
-                  <h3 className="text-body-lg sm:text-headline-md font-medium group-hover:text-primary transition-colors">
+                  <h3 className="text-body-lg sm:text-headline-md font-medium group-hover:text-[#F7A8D3] transition-colors">
                     {entry.title}
                   </h3>
                   <p className="text-body-sm text-on-surface-variant">
@@ -343,7 +343,7 @@ export default function About() {
       <section className="py-16 sm:py-20 lg:py-24 max-w-7xl mx-auto w-full border-b border-outline-variant">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10 sm:gap-12 lg:gap-16">
           <div className="space-y-6 sm:space-y-8">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#E86CB5]/10 border border-[#F7A8D3]/20 flex items-center justify-center text-[#F7A8D3]">
               <span className="material-symbols-outlined">shield</span>
             </div>
             <h2 className="text-headline-lg-mobile sm:text-headline-lg font-semibold">
@@ -356,13 +356,13 @@ export default function About() {
             </p>
             <Link
               to="/privacy"
-              className="inline-block text-label-md text-primary underline underline-offset-4 hover:text-primary-container transition-colors"
+              className="inline-block text-label-md text-[#F7A8D3] underline underline-offset-4 hover:text-[#EFE3D2] transition-colors"
             >
               Read Privacy Policy
             </Link>
           </div>
           <div className="space-y-6 sm:space-y-8">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-tertiary/10 flex items-center justify-center text-tertiary">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-tertiary/10 flex items-center justify-center text-tertiary border border-[#F7A8D3]/10">
               <span className="material-symbols-outlined">gavel</span>
             </div>
             <h2 className="text-headline-lg-mobile sm:text-headline-lg font-semibold">
@@ -401,7 +401,7 @@ export default function About() {
                   key={contact.email}
                   className="flex items-start gap-3 sm:gap-4"
                 >
-                  <span className="material-symbols-outlined text-primary mt-0.5 sm:mt-1">
+                  <span className="material-symbols-outlined text-[#F7A8D3] mt-0.5 sm:mt-1">
                     {contact.icon}
                   </span>
                   <div>
@@ -410,7 +410,7 @@ export default function About() {
                     </h4>
                     <a
                       href={`mailto:${contact.email}`}
-                      className="text-body-sm text-on-surface-variant hover:text-primary transition-colors"
+                      className="text-body-sm text-on-surface-variant hover:text-[#F7A8D3] transition-colors"
                     >
                       {contact.email}
                     </a>
@@ -428,7 +428,7 @@ export default function About() {
               {OFFICES.map((office) => (
                 <div
                   key={office.city}
-                  className="bg-surface-container-low p-5 sm:p-6 rounded-xl border border-outline-variant hover:border-primary/50 transition-colors"
+                  className="bg-surface-container-low p-5 sm:p-6 rounded-xl border border-outline-variant hover:border-[#F7A8D3]/35 transition-colors"
                 >
                   <h4 className="text-body-lg sm:text-headline-md font-medium text-on-surface mb-2">
                     {office.city}
@@ -461,7 +461,7 @@ export default function About() {
               Building the future of high-fidelity creative computation.
             </h2>
             <div className="mt-6 sm:mt-8 flex gap-4">
-              <button className="bg-on-surface text-surface px-6 sm:px-8 py-2.5 sm:py-3 rounded-full text-label-md font-bold hover:bg-primary transition-colors">
+              <button className="bg-on-surface text-surface px-6 sm:px-8 py-2.5 sm:py-3 rounded-full text-label-md font-bold hover:bg-[#F7A8D3] transition-colors">
                 Join the Team
               </button>
             </div>

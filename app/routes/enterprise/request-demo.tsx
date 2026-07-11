@@ -65,7 +65,7 @@ export default function RequestDemo() {
       {/* Back link */}
       <Link
         to="/enterprise"
-        className="flex items-center gap-1.5 text-body-sm text-on-surface-variant hover:text-primary transition-colors duration-200 group w-fit"
+        className="flex items-center gap-1.5 text-body-sm text-on-surface-variant hover:text-[#F7A8D3] transition-colors duration-200 group w-fit"
       >
         <span className="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform duration-200">
           arrow_back
@@ -90,7 +90,7 @@ export default function RequestDemo() {
         <div className="md:col-span-3">
           <form
             onSubmit={(e) => e.preventDefault()}
-            className="bg-surface-container border border-outline-variant rounded-xl p-4 sm:p-5 md:p-6 lg:p-8 flex flex-col gap-4 sm:gap-5 md:gap-6"
+            className="bg-[#111816]/95 border border-[#C9A962]/20 rounded-xl p-4 sm:p-5 md:p-6 lg:p-8 flex flex-col gap-4 sm:gap-5 md:gap-6"
           >
             <h2 className="text-headline-md font-semibold text-on-surface">
               Your Details
@@ -108,7 +108,7 @@ export default function RequestDemo() {
                 id="demo-name"
                 type="text"
                 placeholder="Your name"
-                className="bg-surface-container-low border border-outline-variant rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                className="bg-[#100e0c] border border-[#C9A962]/20 rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-[#F7A8D3]/55 focus:ring-1 focus:ring-[#E86CB5]/20 transition-colors"
               />
             </div>
 
@@ -124,7 +124,7 @@ export default function RequestDemo() {
                 id="demo-email"
                 type="email"
                 placeholder="you@company.com"
-                className="bg-surface-container-low border border-outline-variant rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                className="bg-[#100e0c] border border-[#C9A962]/20 rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-[#F7A8D3]/55 focus:ring-1 focus:ring-[#E86CB5]/20 transition-colors"
               />
             </div>
 
@@ -141,7 +141,7 @@ export default function RequestDemo() {
                   id="demo-company"
                   type="text"
                   placeholder="Company name"
-                  className="bg-surface-container-low border border-outline-variant rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                  className="bg-[#100e0c] border border-[#C9A962]/20 rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-[#F7A8D3]/55 focus:ring-1 focus:ring-[#E86CB5]/20 transition-colors"
                 />
               </div>
               <div className="flex flex-col gap-1.5 sm:gap-2">
@@ -154,7 +154,7 @@ export default function RequestDemo() {
                 <select
                   id="demo-team-size"
                   defaultValue=""
-                  className="bg-surface-container-low border border-outline-variant rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors appearance-none"
+                  className="bg-[#100e0c] border border-[#C9A962]/20 rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface focus:outline-none focus:border-[#F7A8D3]/55 focus:ring-1 focus:ring-[#E86CB5]/20 transition-colors appearance-none"
                 >
                   <option value="" disabled>
                     Select team size
@@ -181,7 +181,7 @@ export default function RequestDemo() {
                 id="demo-datetime"
                 type="text"
                 placeholder="e.g. Next Tuesday afternoon, or Jun 15 at 2pm EST"
-                className="bg-surface-container-low border border-outline-variant rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                className="bg-[#100e0c] border border-[#C9A962]/20 rounded-lg px-3.5 sm:px-4 py-2.5 sm:py-3 text-body-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-[#F7A8D3]/55 focus:ring-1 focus:ring-[#E86CB5]/20 transition-colors"
               />
             </div>
 
@@ -195,7 +195,7 @@ export default function RequestDemo() {
                   <label
                     key={interest.id}
                     htmlFor={`interest-${interest.id}`}
-                    className="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-lg border border-outline-variant bg-surface-container-low hover:border-primary/40 transition-colors cursor-pointer group/check"
+                    className="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-lg border border-[#C9A962]/20 bg-[#100e0c] hover:border-[#F7A8D3]/35 transition-colors cursor-pointer group/check"
                   >
                     <input
                       id={`interest-${interest.id}`}
@@ -203,7 +203,7 @@ export default function RequestDemo() {
                       className="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary/30 bg-surface-container-low accent-primary"
                     />
                     <span
-                      className="material-symbols-outlined text-on-surface-variant/60 group-hover/check:text-primary text-[18px] transition-colors duration-200"
+                      className="material-symbols-outlined text-on-surface-variant/60 group-hover/check:text-[#F7A8D3] text-[18px] transition-colors duration-200"
                       style={{ fontVariationSettings: "'FILL' 1" }}
                     >
                       {interest.icon}
@@ -219,7 +219,7 @@ export default function RequestDemo() {
             {/* Submit */}
             <button
               type="submit"
-              className="w-full bg-primary text-on-primary py-3 sm:py-3.5 rounded-sm font-medium text-label-md hover:bg-primary-fixed transition-colors duration-200 mt-2 flex items-center justify-center gap-2"
+              className="w-full bg-[#F5F2ED] text-[#111111] border border-[#F7A8D3]/20 shadow-[0_8px_28px_rgba(0,0,0,0.22),0_0_22px_rgba(232,108,181,0.08)] py-3 sm:py-3.5 rounded-sm font-medium text-label-md hover:bg-white transition-colors duration-200 mt-2 flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-[18px]">
                 play_circle
@@ -231,7 +231,7 @@ export default function RequestDemo() {
 
         {/* ── Right: What to Expect ───────────────────────────────────── */}
         <div className="md:col-span-2 order-first md:order-last">
-          <div className="bg-surface-container border border-outline-variant rounded-xl p-4 sm:p-5 md:p-6 flex flex-col gap-4 sm:gap-5 md:gap-6 md:sticky md:top-20 lg:top-24">
+          <div className="bg-[#100e0c]/95 border border-[#C9A962]/20 rounded-xl p-4 sm:p-5 md:p-6 flex flex-col gap-4 sm:gap-5 md:gap-6 md:sticky md:top-20 lg:top-24">
             <h2 className="text-headline-md font-semibold text-on-surface">
               What to Expect
             </h2>
@@ -239,7 +239,7 @@ export default function RequestDemo() {
             <div className="flex flex-col gap-4 sm:gap-5">
               {EXPECTATIONS.map((item) => (
                 <div key={item.icon} className="flex items-center gap-3">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-[#5C3E2A]/25 border border-[#C9A962]/20 flex items-center justify-center shrink-0">
                     <span
                       className="material-symbols-outlined text-primary text-[18px] sm:text-[20px]"
                       style={{ fontVariationSettings: "'FILL' 1" }}
@@ -260,7 +260,7 @@ export default function RequestDemo() {
             {/* Cross-link */}
             <Link
               to="/enterprise/contact-sales"
-              className="flex items-center justify-center gap-2 text-body-sm text-primary hover:text-primary-fixed transition-colors duration-200 font-medium"
+              className="flex items-center justify-center gap-2 text-body-sm text-primary hover:text-[#F7A8D3] transition-colors duration-200 font-medium"
             >
               <span className="material-symbols-outlined text-[18px]">
                 mail

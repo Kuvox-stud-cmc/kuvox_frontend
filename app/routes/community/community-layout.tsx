@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet } from "react-router";
 
 function CommunityTopNav() {
   return (
-    <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-container-margin h-toolbar-height bg-surface/80 backdrop-blur-md border-b border-outline-variant/30">
+    <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-container-margin h-toolbar-height bg-[#0c0a08]/82 backdrop-blur-md border-b border-[#C9A962]/20">
       <div className="flex items-center gap-8">
         <Link to="/" className="text-headline-md font-headline-md font-bold text-primary tracking-tight hover:opacity-80 transition-opacity">
           Kuvox
@@ -14,7 +14,7 @@ function CommunityTopNav() {
             className={({ isActive }) =>
               `font-body-md text-body-md transition-all duration-200 active:scale-95 ${
                 isActive
-                  ? "text-primary border-b-2 border-primary pb-1"
+                  ? "text-[#F7A8D3] border-b-2 border-[#F7A8D3] pb-1"
                   : "text-on-surface-variant hover:text-on-surface"
               }`
             }
@@ -26,7 +26,7 @@ function CommunityTopNav() {
             className={({ isActive }) =>
               `font-body-md text-body-md transition-all duration-200 active:scale-95 ${
                 isActive
-                  ? "text-primary border-b-2 border-primary pb-1"
+                  ? "text-[#F7A8D3] border-b-2 border-[#F7A8D3] pb-1"
                   : "text-on-surface-variant hover:text-on-surface"
               }`
             }
@@ -38,7 +38,7 @@ function CommunityTopNav() {
             className={({ isActive }) =>
               `font-body-md text-body-md transition-all duration-200 active:scale-95 ${
                 isActive
-                  ? "text-primary border-b-2 border-primary pb-1"
+                  ? "text-[#F7A8D3] border-b-2 border-[#F7A8D3] pb-1"
                   : "text-on-surface-variant hover:text-on-surface"
               }`
             }
@@ -50,7 +50,7 @@ function CommunityTopNav() {
             className={({ isActive }) =>
               `font-body-md text-body-md transition-all duration-200 active:scale-95 ${
                 isActive
-                  ? "text-primary border-b-2 border-primary pb-1"
+                  ? "text-[#F7A8D3] border-b-2 border-[#F7A8D3] pb-1"
                   : "text-on-surface-variant hover:text-on-surface"
               }`
             }
@@ -66,7 +66,7 @@ function CommunityTopNav() {
         <button className="material-symbols-outlined text-on-surface-variant hover:bg-white/5 p-2 rounded-full transition-colors">
           account_circle
         </button>
-        <button className="bg-primary text-on-primary px-4 py-1.5 rounded-lg text-label-mono font-label-mono hover:opacity-90 transition-all duration-200 active:scale-95">
+        <button className="bg-[#F5F2ED] text-[#111111] px-4 py-1.5 rounded-lg text-label-mono font-label-mono hover:bg-white transition-all duration-200 active:scale-95 border border-[#F7A8D3]/20">
           Join Community
         </button>
       </div>
@@ -84,10 +84,10 @@ function CommunitySidebar() {
   ];
 
   return (
-    <aside className="h-screen w-64 fixed left-0 top-0 hidden lg:flex flex-col p-panel-padding bg-surface-container border-r border-outline-variant/10 z-40 mt-toolbar-height">
+    <aside className="h-screen w-64 fixed left-0 top-0 hidden lg:flex flex-col p-panel-padding bg-[#100e0c]/95 border-r border-[#C9A962]/15 z-40 mt-toolbar-height">
       <div className="mb-8 pt-4">
         <div className="flex items-center gap-3 px-3 mb-6">
-          <div className="w-10 h-10 rounded-full border border-outline-variant/30 bg-surface-container-high flex items-center justify-center text-primary font-bold">
+          <div className="w-10 h-10 rounded-full border border-[#F7A8D3]/25 bg-[#5C3E2A]/25 flex items-center justify-center text-[#F7A8D3] font-bold">
             KX
           </div>
           <div>
@@ -97,7 +97,7 @@ function CommunitySidebar() {
             </p>
           </div>
         </div>
-        <button className="w-full flex items-center justify-center gap-2 bg-surface-container-high hover:bg-surface-container-highest text-primary py-3 rounded-xl mb-6 transition-colors border border-outline-variant/20">
+        <button className="w-full flex items-center justify-center gap-2 bg-[#5C3E2A]/22 hover:bg-[#5C3E2A]/34 text-[#F7A8D3] py-3 rounded-xl mb-6 transition-colors border border-[#C9A962]/20">
           <span className="material-symbols-outlined">add</span>
           <span className="font-label-mono text-label-mono">New Post</span>
         </button>
@@ -110,8 +110,8 @@ function CommunitySidebar() {
               className={({ isActive }) =>
                 `flex items-center gap-4 px-4 py-3 rounded-lg group transition-colors ${
                   isActive
-                    ? "bg-primary-container/20 text-primary border-r-2 border-primary"
-                    : "text-on-surface-variant hover:bg-surface-variant"
+                    ? "bg-[#5C3E2A]/25 text-[#F7A8D3] border-r-2 border-[#F7A8D3]"
+                    : "text-on-surface-variant hover:bg-[#5C3E2A]/16"
                 }`
               }
             >
@@ -119,7 +119,7 @@ function CommunitySidebar() {
                 <>
                   <span
                     className={`material-symbols-outlined transition-colors ${
-                      isActive ? "" : "group-hover:text-primary"
+                      isActive ? "" : "group-hover:text-[#F7A8D3]"
                     }`}
                   >
                     {link.icon}
@@ -134,14 +134,14 @@ function CommunitySidebar() {
       <div className="mt-auto pb-4 space-y-1 border-t border-outline-variant/10 pt-4">
         <Link
           to="#"
-          className="flex items-center gap-4 px-4 py-2 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors"
+          className="flex items-center gap-4 px-4 py-2 rounded-lg text-on-surface-variant hover:bg-[#5C3E2A]/16 transition-colors"
         >
           <span className="material-symbols-outlined">settings</span>
           <span className="font-label-mono text-label-mono">Settings</span>
         </Link>
         <Link
           to="/help"
-          className="flex items-center gap-4 px-4 py-2 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors"
+          className="flex items-center gap-4 px-4 py-2 rounded-lg text-on-surface-variant hover:bg-[#5C3E2A]/16 transition-colors"
         >
           <span className="material-symbols-outlined">help</span>
           <span className="font-label-mono text-label-mono">Support</span>
@@ -153,13 +153,13 @@ function CommunitySidebar() {
 
 function CommunityMobileNav() {
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-surface/80 backdrop-blur-md border-t border-outline-variant/30 px-6 py-3 flex justify-between items-center z-50">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0c0a08]/82 backdrop-blur-md border-t border-[#C9A962]/20 px-6 py-3 flex justify-between items-center z-50">
       <NavLink
         to="/community"
         end
         className={({ isActive }) =>
           `flex flex-col items-center gap-1 ${
-            isActive ? "text-primary" : "text-on-surface-variant hover:text-primary"
+            isActive ? "text-[#F7A8D3]" : "text-on-surface-variant hover:text-[#F7A8D3]"
           }`
         }
       >
@@ -179,7 +179,7 @@ function CommunityMobileNav() {
         to="/community/forums"
         className={({ isActive }) =>
           `flex flex-col items-center gap-1 ${
-            isActive ? "text-primary" : "text-on-surface-variant hover:text-primary"
+            isActive ? "text-[#F7A8D3]" : "text-on-surface-variant hover:text-[#F7A8D3]"
           }`
         }
       >
@@ -199,7 +199,7 @@ function CommunityMobileNav() {
         to="/community/showcase"
         className={({ isActive }) =>
           `flex flex-col items-center gap-1 ${
-            isActive ? "text-primary" : "text-on-surface-variant hover:text-primary"
+            isActive ? "text-[#F7A8D3]" : "text-on-surface-variant hover:text-[#F7A8D3]"
           }`
         }
       >
@@ -219,7 +219,7 @@ function CommunityMobileNav() {
         to="/community/learn"
         className={({ isActive }) =>
           `flex flex-col items-center gap-1 ${
-            isActive ? "text-primary" : "text-on-surface-variant hover:text-primary"
+            isActive ? "text-[#F7A8D3]" : "text-on-surface-variant hover:text-[#F7A8D3]"
           }`
         }
       >
@@ -241,7 +241,7 @@ function CommunityMobileNav() {
 
 function CommunityFooter() {
   return (
-    <footer className="w-full py-12 bg-surface-container-lowest border-t border-outline-variant/20 flex flex-col items-center justify-center gap-4 px-container-margin pb-24 lg:pb-12">
+    <footer className="w-full py-12 bg-[#100e0c] border-t border-[#C9A962]/20 flex flex-col items-center justify-center gap-4 px-container-margin pb-24 lg:pb-12">
       <span className="font-headline-sm text-headline-sm text-on-surface">Kuvox</span>
       <div className="flex gap-8">
         <Link
@@ -298,10 +298,11 @@ export default function CommunityLayout() {
   }, []);
 
   return (
-    <div className="bg-background text-on-surface font-body-md overflow-x-hidden selection:bg-primary/30 min-h-screen">
+    <div className="premium-page-shell relative bg-background text-on-surface font-body-md overflow-x-hidden selection:bg-primary/30 min-h-screen">
+      <div className="premium-gold-sparkle premium-gold-sparkle-fixed" aria-hidden="true" />
       <CommunityTopNav />
       <CommunitySidebar />
-      <main className="lg:ml-64 pt-toolbar-height min-h-screen flex flex-col">
+      <main className="relative lg:ml-64 pt-toolbar-height min-h-screen flex flex-col">
         <div className="flex-grow">
           <Outlet />
         </div>
