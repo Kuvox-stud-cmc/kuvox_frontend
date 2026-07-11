@@ -10,6 +10,7 @@ import {
   setActiveDraggedMedia,
 } from "~/lib/editor/editor-media";
 import { resolveMediaPipeline } from "~/lib/media-pipeline";
+import { upsertEffectOperation, upsertTransitionOperation } from "~/lib/editor/video-operations";
 import type { MediaRealtimeUpdate } from "~/lib/media-realtime";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
@@ -21,8 +22,11 @@ import {
   modalOpened,
   searchQueryChanged,
   selectLibraryPanelState,
+  selectSelectedItemIds,
+  selectVideoDocument,
   textItemCreated,
   toastShown,
+  videoOperationApplied,
   type LibraryTab,
 } from "~/store/slices/editor-slice";
 
@@ -581,6 +585,8 @@ function durationLabel(media: MediaDto): string {
 }
 
 function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () => void }) {
+  const document = useAppSelector(selectVideoDocument);
+  const selectedItemIds = useAppSelector(selectSelectedItemIds);
   const sections = getMockSections(tab);
   const [activeSectionIdx, setActiveSectionIdx] = useState(0);
 
@@ -636,12 +642,36 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
         text: itemName,
       }));
     } else if (tab === "effects") {
-      localStorage.setItem("kuvox_active_effect", itemName);
-      window.dispatchEvent(new Event("kuvox-effect-changed"));
+      const targetItemIds = selectedItemIds.filter((itemId) =>
+        document?.tracks.some((track) => track.items.some((item) => item.id === itemId && item.type !== "audio")),
+      );
+      if (targetItemIds.length === 0) {
+        dispatch(toastShown("Select a visual item before applying an effect"));
+        return;
+      }
+      const effectType = normalizeEditorFeatureType(itemName);
+      dispatch(videoOperationApplied(upsertEffectOperation({
+        id: `effect-${effectType}-${targetItemIds.join("-")}`,
+        type: effectType,
+        targetItemIds,
+        enabled: true,
+        parameters: {},
+      }, `Apply ${itemName}`)));
       dispatch(toastShown(`Effect applied: ${itemName}`));
     } else if (tab === "transitions") {
-      localStorage.setItem("kuvox_active_transition", itemName);
-      window.dispatchEvent(new Event("kuvox-transition-changed"));
+      const targetItemIds = transitionTargets(document, selectedItemIds);
+      if (targetItemIds.length < 2) {
+        dispatch(toastShown("Select two adjacent visual items before applying a transition"));
+        return;
+      }
+      const transitionType = normalizeEditorFeatureType(itemName);
+      dispatch(videoOperationApplied(upsertTransitionOperation({
+        id: `transition-${targetItemIds.join("-")}`,
+        type: transitionType,
+        targetItemIds,
+        duration: document?.settings.defaultTransitionDuration ?? 0.4,
+        easing: "ease-in-out",
+      }, `Apply ${itemName}`)));
       dispatch(toastShown(`Transition selected: ${itemName}`));
     } else if (tab === "elements") {
       let svgUrl = "";
@@ -796,6 +826,31 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
       </div>
     </div>
   );
+}
+
+function normalizeEditorFeatureType(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function transitionTargets(
+  document: ReturnType<typeof selectVideoDocument>,
+  selectedItemIds: string[],
+): string[] {
+  if (!document) return [];
+  const selected = new Set(selectedItemIds);
+  const visualItems = document.tracks
+    .filter((track) => track.kind !== "audio")
+    .flatMap((track) => track.items)
+    .filter((item) => item.type !== "audio")
+    .sort((left, right) => left.timelineStart - right.timelineStart);
+  const explicit = visualItems.filter((item) => selected.has(item.id));
+  if (explicit.length >= 2) return explicit.slice(0, 2).map((item) => item.id);
+  if (explicit.length === 1) {
+    const index = visualItems.findIndex((item) => item.id === explicit[0].id);
+    const neighbor = visualItems[index + 1] ?? visualItems[index - 1];
+    return neighbor ? [explicit[0].id, neighbor.id] : [];
+  }
+  return [];
 }
 
 function getMockDescription(tab: string) {

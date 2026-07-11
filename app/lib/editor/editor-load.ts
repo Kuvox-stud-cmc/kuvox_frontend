@@ -7,7 +7,7 @@ import {
   type EditorCacheScope,
   buildEditorCacheScope,
 } from "./editor-cache";
-import type { ServerVideoTimeline } from "./video-timeline-api.client";
+import type { ServerVideoTimeline, VideoTimelineLoadResult } from "./video-timeline-api.client";
 import {
   createEmptyVideoProjectDocument,
   type VideoProjectDocument,
@@ -17,7 +17,7 @@ import {
   type DraftRecoveryState,
 } from "./editor-recovery";
 
-export type EditorLoadDocumentSource = "draft" | "server" | "empty";
+export type EditorLoadDocumentSource = "draft" | "server" | "cached" | "empty";
 export type EditorLoadSyncStatus = "clean" | "saved-local" | "server-changed";
 export type EditorLoadConflictReason = "local-unsynced-server-changed";
 
@@ -40,11 +40,15 @@ export interface ResolvedEditorLoad {
   draftRecovery: DraftRecoveryState;
 }
 
+export type EditorLoadResolution =
+  | { status: "ready"; value: ResolvedEditorLoad }
+  | { status: "failure"; message: string; warnings: string[] };
+
 export interface ResolveCachedEditorDocumentInput {
   project: ProjectDto;
   draft: EditorCacheResult<VideoProjectDocument>;
   draftRecord?: EditorCacheResult<CachedVideoTimelineDraftRecord>;
-  serverTimeline?: ServerVideoTimeline | null;
+  serverTimeline: VideoTimelineLoadResult;
   cachedProject?: EditorCacheResult<ProjectDto>;
   cachedSnapshot?: EditorCacheResult<CachedProjectSnapshotRecord>;
   pendingSync?: EditorCacheResult<CachedPendingSyncRecord[]>;
@@ -61,7 +65,7 @@ export function buildEditorCacheScopeFromProject(
   });
 }
 
-export function resolveCachedEditorDocument(input: ResolveCachedEditorDocumentInput): ResolvedEditorLoad {
+export function resolveCachedEditorDocument(input: ResolveCachedEditorDocumentInput): EditorLoadResolution {
   const warnings = collectWarnings(input);
   const draftRecovery = draftRecoveryState({
     draft: input.draft,
@@ -71,49 +75,74 @@ export function resolveCachedEditorDocument(input: ResolveCachedEditorDocumentIn
   if (draftRecovery.state === "warning") {
     warnings.push(draftRecovery.message);
   }
-  const pendingSyncCount = input.pendingSync?.ok ? input.pendingSync.value.length : 0;
   const draftDocument = input.draft.ok ? input.draft.value : null;
-  const serverDocument = input.serverTimeline?.document ?? null;
-  const document =
-    draftDocument ??
-    serverDocument ??
-    createEmptyVideoProjectDocument({
-      id: input.project.id,
-      name: input.project.name,
-      createdAt: input.project.createdAt,
-      updatedAt: input.project.updatedAt,
-    });
-  const source: EditorLoadDocumentSource = draftDocument ? "draft" : serverDocument ? "server" : "empty";
+  const serverTimeline = input.serverTimeline.status === "found" ? input.serverTimeline.timeline : null;
+  const pendingSyncCount = input.pendingSync?.ok ? input.pendingSync.value.length : 0;
+  const hasLocalUnsynced = Boolean(
+    draftDocument && (
+      pendingSyncCount > 0 ||
+      (input.draftRecord?.ok === true && input.draftRecord.value.hasUnsyncedChanges === true) ||
+      isDraftNewerThanSnapshot(draftDocument, input.cachedSnapshot)
+    )
+  );
+  const previouslyOpened = input.cachedProject?.ok === true || input.cachedSnapshot?.ok === true;
+
+  if (input.serverTimeline.status === "unavailable" && !hasLocalUnsynced && !(draftDocument && previouslyOpened)) {
+    return {
+      status: "failure",
+      message: input.serverTimeline.message || "Server timeline could not be loaded and no cached project is available.",
+      warnings,
+    };
+  }
+
+  const document = hasLocalUnsynced
+    ? draftDocument!
+    : serverTimeline?.document
+      ?? draftDocument
+      ?? createEmptyVideoProjectDocument({
+        id: input.project.id,
+        name: input.project.name,
+        createdAt: input.project.createdAt,
+        updatedAt: input.project.updatedAt,
+      });
+  const source: EditorLoadDocumentSource = hasLocalUnsynced
+    ? "draft"
+    : serverTimeline
+      ? "server"
+      : draftDocument
+        ? "cached"
+        : "empty";
   const conflict = detectEditorLoadConflict({
     project: input.project,
     draft: draftDocument,
     draftRecord: input.draftRecord,
-    serverTimeline: input.serverTimeline,
+    serverTimeline,
     cachedProject: input.cachedProject,
     cachedSnapshot: input.cachedSnapshot,
     pendingSyncCount,
   });
-  const hasLocalUnsynced =
-    conflict !== null ||
-    pendingSyncCount > 0 ||
-    (input.draftRecord?.ok === true && input.draftRecord.value.hasUnsyncedChanges === true) ||
-    isDraftNewerThanSnapshot(draftDocument, input.cachedSnapshot);
-
   return {
-    document,
-    source,
-    syncStatus: conflict ? "server-changed" : hasLocalUnsynced ? "saved-local" : "clean",
-    pendingSyncCount,
-    conflict,
-    serverTimelineId: input.serverTimeline?.timelineId ?? null,
-    serverRevisionNumber: input.draftRecord?.ok
-      ? input.draftRecord.value.serverRevisionNumber ?? null
-      : input.serverTimeline?.revisionNumber ?? null,
-    lastSyncedAt: input.draftRecord?.ok
-      ? input.draftRecord.value.lastSyncedAt ?? null
-      : input.serverTimeline?.updatedAt ?? null,
-    warnings,
-    draftRecovery,
+    status: "ready",
+    value: {
+      document,
+      source,
+      syncStatus: conflict ? "server-changed" : hasLocalUnsynced ? "saved-local" : "clean",
+      pendingSyncCount,
+      conflict,
+      serverTimelineId: serverTimeline?.timelineId ?? null,
+      serverRevisionNumber: hasLocalUnsynced && input.draftRecord?.ok
+        ? input.draftRecord.value.serverRevisionNumber ?? null
+        : serverTimeline?.revisionNumber ?? (input.draftRecord?.ok
+          ? input.draftRecord.value.serverRevisionNumber ?? null
+          : null),
+      lastSyncedAt: hasLocalUnsynced && input.draftRecord?.ok
+        ? input.draftRecord.value.lastSyncedAt ?? null
+        : serverTimeline?.updatedAt ?? (input.draftRecord?.ok
+          ? input.draftRecord.value.lastSyncedAt ?? null
+          : null),
+      warnings,
+      draftRecovery,
+    },
   };
 }
 

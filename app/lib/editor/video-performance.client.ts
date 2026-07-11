@@ -35,7 +35,6 @@ const maxDurationMs = 10 * 60 * 1000;
 const allowedMetricNames = new Set<string>(videoEditorPerformanceMetricNames);
 
 let pendingMetrics: Array<{ projectId: string; metric: VideoEditorPerformanceMetric }> = [];
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function createVideoEditorPerformanceMetric(
   name: VideoEditorPerformanceMetricName,
@@ -94,22 +93,10 @@ export function queueVideoEditorPerformanceMetric(
 ): void {
   if (!projectId || !metric) return;
   pendingMetrics.push({ projectId, metric });
-  if (pendingMetrics.length >= maxMetricBatchSize) {
-    void flushVideoEditorPerformanceMetrics();
-    return;
-  }
-  if (flushTimer !== null) return;
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    void flushVideoEditorPerformanceMetrics();
-  }, 1500);
+  if (pendingMetrics.length > maxMetricBatchSize) pendingMetrics = pendingMetrics.slice(-maxMetricBatchSize);
 }
 
 export async function flushVideoEditorPerformanceMetrics(): Promise<void> {
-  if (flushTimer !== null) {
-    clearTimeout(flushTimer);
-    flushTimer = null;
-  }
   const batch = pendingMetrics;
   pendingMetrics = [];
   const byProject = new Map<string, VideoEditorPerformanceMetric[]>();

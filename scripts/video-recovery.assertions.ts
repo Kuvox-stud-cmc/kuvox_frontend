@@ -84,7 +84,7 @@ function assertCorruptDraftWarning(): void {
 function assertReloadServerCopyIsGuarded(): void {
   const source = read("app/components/editor/use-video-autosave.ts");
   const saveIndex = source.indexOf("await saveVideoTimelineDraft(currentDocument, cacheScope");
-  const fetchIndex = source.indexOf("const server = await getVideoTimelineFromBff(projectId)");
+  const fetchIndex = source.indexOf("const serverResult = await getVideoTimelineFromBff(projectId)");
   const loadIndex = source.indexOf("dispatch(editorDocumentLoaded({\n        document: server.document");
   const clearIndex = source.indexOf("await clearLocalTimelineDraftAfterServerReload(cacheScope, projectId)", loadIndex);
   const deleteIndex = source.indexOf("await deleteVideoTimelineDraft(cacheScope, projectId)");

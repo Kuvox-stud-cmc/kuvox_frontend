@@ -14,7 +14,10 @@ import {
   listMediaAssets,
   listPendingSync,
   saveProjectMetadata,
+  saveEditorBootstrap,
   saveMediaAssets,
+  saveProjectSnapshot,
+  saveVideoTimelineDraft,
   saveUndoCheckpoint,
 } from "~/lib/editor/editor-cache";
 import {
@@ -27,12 +30,10 @@ import {
 } from "~/lib/editor/editor-observability.client";
 import type { DraftRecoveryState } from "~/lib/editor/editor-recovery";
 import {
-  hydrateMediaDurationFromBrowserMetadata,
   mediaDtoToVideoMediaReference,
 } from "~/lib/editor/editor-media";
 import { getVideoTimelineFromBff } from "~/lib/editor/video-timeline-api.client";
 import {
-  attachProjectMediaFromBff,
   projectMediaToMediaDto,
 } from "~/lib/editor/project-media-api.client";
 import {
@@ -49,7 +50,8 @@ import {
   editorModeChanged,
   editorLoadFailed,
   editorLoadStarted,
-  mediaAssetAddedToTimeline,
+  mediaPreparationRequested,
+  pendingTimelineInsertionAdded,
   modalClosed,
   projectMediaAvailabilityLoaded,
   libraryOpenChanged,
@@ -65,6 +67,7 @@ import {
   timelineOpenChanged,
   textItemCreated,
   selectInspectorPanelState,
+  selectHasUnsyncedChanges,
   inspectorOpenChanged,
   activeInspectorSectionChanged,
   type VideoEditorHistoryFrame,
@@ -72,19 +75,17 @@ import {
 
 import { AiAssistantPanel } from "./ai-assistant-panel";
 import { EditorPanelErrorBoundary } from "./editor-panel-error-boundary";
+import { EditorExitGuard } from "./editor-exit-guard";
 import { EditorIcon } from "./editor-ui";
 import { EditorModalLayer, EditorPopoverLayer, EditorToast } from "./editor-overlays";
 import { EditorTopBar } from "./editor-top-bar";
 import { MediaLibraryPanel } from "./media-library-panel";
-import {
-  assistantMessages,
-  editorProject,
-} from "./mock-editor-data";
 import { PreviewPanel } from "./panels/preview-panel";
 import { TimelinePanel } from "./panels/timeline-panel";
 import { ToolRail } from "./tool-rail";
 import { useVideoAutosave } from "./use-video-autosave";
 import { useVideoKeyboardShortcuts } from "./use-video-keyboard-shortcuts";
+import { insertionPreparationRequest, useMediaPreparation } from "./use-media-preparation";
 import { VideoExportModal } from "./video-export-modal";
 import { VideoInspectorPanel } from "./video-inspector-panel";
 import type { VideoMediaKind, VideoMediaReference, VideoProjectDocument, VideoTimelineItem } from "~/lib/editor/video-document";
@@ -134,6 +135,7 @@ export function VideoEditorWorkspace({
   const [activeRailTab, setActiveRailTab] = useState("media");
   const responsiveDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const editor = useAppSelector(selectEditorState);
+  const hasUnsyncedChanges = useAppSelector(selectHasUnsyncedChanges);
   const editorMode = useAppSelector(selectEditorMode);
   const { libraryOpen } = useAppSelector(selectChromeState);
   const conflict = useAppSelector(selectEditorConflict);
@@ -153,8 +155,13 @@ export function VideoEditorWorkspace({
     projectName: project.name,
     cacheScope,
     editor,
+    onProjectMediaAttached: (attached) => {
+      setProjectMediaRows((current) => mergeProjectMediaRows(current, attached));
+      dispatch(projectMediaAvailabilityLoaded(attached));
+    },
   });
   useVideoKeyboardShortcuts(editorRootRef, { onSave: autosave.syncNow });
+  useMediaPreparation(project.id);
 
   useEffect(() => {
     setProjectMediaRows(projectMedia);
@@ -193,15 +200,7 @@ export function VideoEditorWorkspace({
           getVideoTimelineDraft(cacheScope, project.id),
           getVideoTimelineDraftRecord(cacheScope, project.id),
           listPendingSync(cacheScope, project.id),
-          getVideoTimelineFromBff(project.id, { correlationId }).catch((error) => {
-            logVideoEditorEvent("editor.load.failure", {
-              projectId: project.id,
-              correlationId,
-              source: "server",
-              reason: error instanceof Error ? error.message : "Server timeline could not be loaded.",
-            }, "warn");
-            return null;
-          }),
+          getVideoTimelineFromBff(project.id, { correlationId }),
           listCommandHistory(cacheScope, project.id),
         ]);
 
@@ -215,7 +214,16 @@ export function VideoEditorWorkspace({
           commandHistory,
         });
 
-        const resolved = resolveCachedEditorDocument({
+        if (serverTimeline.status === "unavailable") {
+          logVideoEditorEvent("editor.load.failure", {
+            projectId: project.id,
+            correlationId,
+            source: "server",
+            reason: serverTimeline.message,
+          }, "warn");
+        }
+
+        const resolution = resolveCachedEditorDocument({
           project,
           cachedProject,
           cachedSnapshot,
@@ -224,6 +232,11 @@ export function VideoEditorWorkspace({
           pendingSync,
           serverTimeline,
         });
+        if (resolution.status === "failure") {
+          dispatch(editorLoadFailed({ message: resolution.message }));
+          return;
+        }
+        const resolved = resolution.value;
         const document = hydrateProjectMediaPlaceholders(resolved.document, projectMedia);
         setDraftRecovery(resolved.draftRecovery);
 
@@ -265,8 +278,40 @@ export function VideoEditorWorkspace({
           );
         }
 
-        if (!resolved.conflict) {
-          await saveProjectMetadata(project, cacheScope);
+        if (serverTimeline.status !== "unavailable") {
+          const server = serverTimeline.status === "found" ? serverTimeline.timeline : null;
+          const serverDocument = server?.document ?? (resolved.source === "empty" ? resolved.document : null);
+          const serverRevisionNumber = server?.revisionNumber ?? 0;
+          const serverUpdatedAt = server?.updatedAt ?? project.updatedAt;
+          await Promise.all([
+            saveProjectMetadata(project, cacheScope),
+            saveEditorBootstrap({
+              scope: cacheScope,
+              projectId: project.id,
+              project,
+              canWrite,
+              media,
+              projectMedia,
+              serverRevisionNumber,
+              expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+            }),
+            ...(serverDocument ? [saveProjectSnapshot({
+              scope: cacheScope,
+              projectId: project.id,
+              snapshot: JSON.parse(JSON.stringify(serverDocument)),
+              documentSchemaVersion: serverDocument.schemaVersion,
+              revision: serverRevisionNumber,
+              projectUpdatedAt: project.updatedAt,
+            })] : []),
+            ...(serverDocument && (resolved.source === "server" || resolved.source === "empty")
+              ? [saveVideoTimelineDraft(serverDocument, cacheScope, {
+                serverRevisionNumber,
+                lastSyncedAt: serverUpdatedAt,
+                hasUnsyncedChanges: false,
+                syncError: null,
+              })]
+              : []),
+          ]);
         }
 
         if (commandHistory.ok) {
@@ -289,7 +334,7 @@ export function VideoEditorWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [cacheScope, dispatch, project, projectMedia]);
+  }, [cacheScope, canWrite, dispatch, media, project, projectMedia]);
 
   useEffect(() => {
     if (media.length === 0) return;
@@ -421,48 +466,65 @@ export function VideoEditorWorkspace({
     }
   }, [closeResponsiveDrawer, editorMode, responsiveDrawer]);
 
-  const attachMediaForTimeline = useCallback(async (item: MediaDto) => {
+  const prepareMediaForTimeline = useCallback((item: MediaDto) => {
     if (!canWrite) {
       dispatch(toastShown("View only: you cannot place media on this timeline"));
       return false;
     }
 
-    try {
-      const attached = await attachProjectMediaFromBff(project.id, [item.id]);
-      setProjectMediaRows((current) => mergeProjectMediaRows(current, attached));
-      dispatch(projectMediaAvailabilityLoaded(attached));
-      return true;
-    } catch (error) {
-      dispatch(toastShown(error instanceof Error ? error.message : "Media could not be attached to this project"));
-      return false;
-    }
-  }, [canWrite, dispatch, project.id]);
+    const localRow = projectMediaRowFromMedia(item);
+    setProjectMediaRows((current) => mergeProjectMediaRows(current, [localRow]));
+    dispatch(projectMediaAvailabilityLoaded([localRow]));
+    return true;
+  }, [canWrite, dispatch]);
 
-  const addMediaToTimeline = useCallback(async (item: MediaDto) => {
-    if (!await attachMediaForTimeline(item)) return;
-    const hydrated = await hydrateMediaDurationFromBrowserMetadata(item);
-    if (hydrated !== item) {
-      live.mergeMedia(hydrated);
-      void saveMediaAssets([hydrated], cacheScope);
+  const queuePendingInsertion = useCallback((
+    item: MediaDto,
+    placement: { trackId?: string; timelineStart: number },
+  ) => {
+    const request = insertionPreparationRequest(
+      item,
+      placement.timelineStart,
+      document?.settings.previewQuality ?? "balanced",
+    );
+    if (!request) {
+      dispatch(toastShown("Media has no editor-ready object"));
+      return;
     }
-    dispatch(mediaAssetAddedToTimeline(hydrated));
-  }, [attachMediaForTimeline, cacheScope, dispatch, live]);
+    const knownDuration = Number(item.durationSeconds);
+    const provisionalDuration = item.kind === MediaKind.Image
+      ? 5
+      : Number.isFinite(knownDuration) && knownDuration > 0 ? knownDuration : 3;
+    const id = `pending-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    dispatch(pendingTimelineInsertionAdded({
+      id,
+      projectId: project.id,
+      media: item,
+      trackId: placement.trackId,
+      timelineStart: placement.timelineStart,
+      provisionalDuration,
+      resourceKey: request.key,
+      status: "queued",
+      createdAt: performance.now(),
+    }));
+    dispatch(mediaPreparationRequested(request));
+  }, [dispatch, document?.settings.previewQuality, project.id]);
 
-  const addDroppedMediaToTimeline = useCallback(async (mediaId: string, placement?: { trackId?: string; timelineStart: number }) => {
+  const addMediaToTimeline = useCallback((item: MediaDto) => {
+    if (!prepareMediaForTimeline(item)) return;
+    queuePendingInsertion(item, { timelineStart: editor.playback.currentTime });
+  }, [editor.playback.currentTime, prepareMediaForTimeline, queuePendingInsertion]);
+
+  const addDroppedMediaToTimeline = useCallback((mediaId: string, placement?: { trackId?: string; timelineStart: number }) => {
     const item = live.media.find((candidate) => candidate.id === mediaId);
     if (!item) {
       dispatch(toastShown("Media is no longer available"));
       return;
     }
 
-    if (!await attachMediaForTimeline(item)) return;
-    const hydrated = await hydrateMediaDurationFromBrowserMetadata(item);
-    if (hydrated !== item) {
-      live.mergeMedia(hydrated);
-      void saveMediaAssets([hydrated], cacheScope);
-    }
-    dispatch(mediaAssetAddedToTimeline(placement ? { media: hydrated, ...placement } : hydrated));
-  }, [attachMediaForTimeline, cacheScope, dispatch, live]);
+    if (!prepareMediaForTimeline(item)) return;
+    queuePendingInsertion(item, placement ?? { timelineStart: editor.playback.currentTime });
+  }, [editor.playback.currentTime, prepareMediaForTimeline, live.media, queuePendingInsertion]);
 
   const handleUploaded = useCallback(async (item: MediaDto) => {
     live.mergeMedia(item);
@@ -515,8 +577,13 @@ export function VideoEditorWorkspace({
         } as CSSProperties
       }
     >
+      <EditorExitGuard
+        hasUnsyncedChanges={hasUnsyncedChanges}
+        flushLocalDraft={autosave.flushLocalDraft}
+        syncNow={autosave.syncNow}
+      />
       <EditorTopBar
-        project={{ ...editorProject, id: project.id, name: project.name }}
+        project={project}
         user={user}
         notifications={notifications}
         onSync={autosave.syncNow}
@@ -532,6 +599,12 @@ export function VideoEditorWorkspace({
             await autosave.reloadServerCopy();
             setDraftRecovery({ state: "none" });
           }}
+        />
+      ) : editor.localSaveStatus === "failed" ? (
+        <EditorSyncFailureBanner
+          error={editor.localSaveError ?? "Local save failed. This page cannot be left safely yet."}
+          onRetry={() => void autosave.flushLocalDraft().catch(() => undefined)}
+          retrying={false}
         />
       ) : editor.syncStatus === "sync-failed" ? (
         <EditorSyncFailureBanner
@@ -596,12 +669,6 @@ export function VideoEditorWorkspace({
           </EditorPanelErrorBoundary>
           <EditorPanelErrorBoundary label="Preview">
             <PreviewPanel
-              project={{
-                ...editorProject,
-                id: project.id,
-                name: project.name,
-                previewTitle: project.name,
-              }}
               onMediaDrop={addDroppedMediaToTimeline}
             />
           </EditorPanelErrorBoundary>
@@ -609,7 +676,6 @@ export function VideoEditorWorkspace({
             <>
               <EditorPanelErrorBoundary label="Assistant">
                 <AiAssistantPanel
-                  messages={assistantMessages}
                   projectId={project.id}
                   cacheScope={cacheScope}
                   media={live.media}
@@ -971,6 +1037,40 @@ function mergeProjectMediaRows(current: ProjectMediaDto[], rows: ProjectMediaDto
     byId.set(row.mediaId, row);
   }
   return Array.from(byId.values());
+}
+
+function projectMediaRowFromMedia(media: MediaDto): ProjectMediaDto {
+  return {
+    mediaId: media.id,
+    kind: media.kind,
+    availability: media.status.toLowerCase() === "failed" ? "failed" : media.status.toLowerCase() === "ready" ? "available" : "processing",
+    filename: media.filename,
+    ownerId: media.ownerId,
+    ownerKind: media.ownerKind,
+    status: media.status,
+    storageKey: media.storageKey,
+    sizeBytes: nullableNumber(media.sizeBytes),
+    canonicalStorageKey: media.canonicalStorageKey,
+    proxyStorageKey: media.proxyStorageKey,
+    thumbnailStorageKey: media.thumbnailStorageKey,
+    errorMessage: media.errorMessage,
+    durationSeconds: nullableNumber(media.durationSeconds),
+    width: nullableNumber(media.width),
+    height: nullableNumber(media.height),
+    codec: media.codec,
+    frameRate: nullableNumber(media.frameRate),
+    shotCount: null,
+    createdAt: media.createdAt,
+  };
+}
+
+function nullableNumber(value: string | number | null | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function EditorSyncFailureBanner({

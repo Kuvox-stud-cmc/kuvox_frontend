@@ -126,9 +126,11 @@ function assertSupportedTimelinePasses(): void {
   const result = validateVideoExport(document, readyMediaForDocument(document), settings(document));
   assert.equal(result.ok, true);
   assert.equal(result.errors.length, 0);
-  assert.equal(result.manifest?.schemaVersion, 1);
+  assert.equal(result.manifest?.schemaVersion, 2);
   assert.equal(result.manifest?.projectId, document.projectId);
-  assert.ok(result.manifest?.visualItems.some((item) => item.itemId === "image-1"));
+  const image = result.manifest?.visualItems.find((item) => item.itemId === "image-1");
+  assert.ok(image);
+  assert.deepEqual(image.crop, { top: 0, right: 0, bottom: 0, left: 0 });
 }
 
 function assertEffectsAndTransitionsAreBlocked(): void {
@@ -206,19 +208,19 @@ function assertObjectStorageKeysDoNotBecomeOutputUrls(): void {
     outputStorageKey: "renders/project/video.mp4",
   });
   assert.equal(storageOnly.status, "completed");
-  assert.equal(storageOnly.outputStorageKey, "renders/project/video.mp4");
   assert.equal(storageOnly.outputUrl, null);
 
-  const apiUrl = normalizeVideoRenderJob({
+  const completed = normalizeVideoRenderJob({
     id: "job-api",
     status: "completed",
-    outputUrl: "/bff/renders/job-api/output",
+    outputAvailable: true,
   });
-  assert.equal(apiUrl.outputUrl, "/bff/renders/job-api/output");
+  assert.equal(completed.outputUrl, "/bff/timelines/render-jobs/job-api/output");
 
   const objectStoreUrl = normalizeVideoRenderJob({
     id: "job-object-store",
     status: "completed",
+    outputAvailable: false,
     outputUrl: "https://objects.example.test/renders/project/video.mp4",
   });
   assert.equal(objectStoreUrl.outputUrl, null);
@@ -286,6 +288,7 @@ function imageItem(id: string, mediaId: string): ImageOverlayTimelineItem {
     timelineStart: 1,
     duration: 5,
     transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    crop: { top: 0, right: 0, bottom: 0, left: 0 },
     opacity: 1,
     layerOrder: 2,
   };

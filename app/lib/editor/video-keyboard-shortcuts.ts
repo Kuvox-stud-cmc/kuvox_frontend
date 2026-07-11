@@ -7,8 +7,10 @@ import type {
   DeleteItemOperation,
   MoveItemOperation,
   SplitItemOperation,
+  UpdateTransformCropOperation,
   VideoOperationMetadata,
 } from "./video-operations";
+import { updateTransformCropOperation } from "./video-operations";
 import type {
   VideoProjectDocument,
   VideoTimelineItem,
@@ -205,6 +207,41 @@ export function buildShortcutNudgeOperations({
 
 export function frameDurationSeconds(document: VideoProjectDocument | null | undefined): number {
   return 1 / Math.max(1, document?.settings.frameRate ?? 30);
+}
+
+export function isSingleSelectedVisual(
+  document: VideoProjectDocument,
+  selectedItemIds: string[],
+): boolean {
+  if (selectedItemIds.length !== 1) return false;
+  const location = findTimelineItemLocation(document, selectedItemIds[0]);
+  return location?.item.type === "video" || location?.item.type === "image";
+}
+
+export function buildVisualPositionNudgeOperation({
+  document,
+  selectedItemIds,
+  deltaX,
+  deltaY,
+}: {
+  document: VideoProjectDocument;
+  selectedItemIds: string[];
+  deltaX: number;
+  deltaY: number;
+}): UpdateTransformCropOperation | null {
+  if (selectedItemIds.length !== 1) return null;
+  const location = findTimelineItemLocation(document, selectedItemIds[0]);
+  if (!location || location.track.locked || location.track.hidden) return null;
+  if (location.item.type !== "video" && location.item.type !== "image") return null;
+
+  const transform = location.item.transform;
+  return updateTransformCropOperation(location.item.id, {
+    transform: {
+      ...transform,
+      x: Math.round(transform.x + deltaX),
+      y: Math.round(transform.y + deltaY),
+    },
+  }, "Move visual");
 }
 
 function unlockedSelectedItems(

@@ -1,0 +1,20 @@
+@font-face { font-family: "Inter"; src: url("/fonts/Inter.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Inter"; src: url("/fonts/Inter-Italic.ttf") format("truetype"); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Roboto"; src: url("/fonts/Roboto.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Roboto"; src: url("/fonts/Roboto-Italic.ttf") format("truetype"); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-Italic.ttf") format("truetype"); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/PlayfairDisplay.ttf") format("truetype"); font-style: normal; font-weight: 400 900; font-display: block; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/PlayfairDisplay-Italic.ttf") format("truetype"); font-style: italic; font-weight: 400 900; font-display: block; }
+@font-face { font-family: "Outfit"; src: url("/fonts/Outfit.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-Regular.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-Italic.ttf") format("truetype"); font-style: italic; font-weight: 400; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-Medium.ttf") format("truetype"); font-style: normal; font-weight: 500; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-SemiBold.ttf") format("truetype"); font-style: normal; font-weight: 600; font-display: block; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-Bold.ttf") format("truetype"); font-style: normal; font-weight: 700; font-display: block; }
+@font-face { font-family: "Syne"; src: url("/fonts/Syne.ttf") format("truetype"); font-style: normal; font-weight: 400 800; font-display: block; }
+@font-face { font-family: "Space Grotesk"; src: url("/fonts/SpaceGrotesk.ttf") format("truetype"); font-style: normal; font-weight: 300 700; font-display: block; }
+@font-face { font-family: "Pacifico"; src: url("/fonts/Pacifico-Regular.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: block; }
+@font-face { font-family: "Bungee"; src: url("/fonts/Bungee-Regular.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: block; }
+@font-face { font-family: "Lora"; src: url("/fonts/Lora.ttf") format("truetype"); font-style: normal; font-weight: 400 700; font-display: block; }
+@font-face { font-family: "Lora"; src: url("/fonts/Lora-Italic.ttf") format("truetype"); font-style: italic; font-weight: 400 700; font-display: block; }

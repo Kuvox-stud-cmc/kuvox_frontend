@@ -1,6 +1,6 @@
 import type { TimelineEditorToolId } from "./editor-tools";
 
-export const VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION = 1;
+export const VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION = 3;
 
 export type VideoDocumentSchemaVersion = typeof VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION;
 
@@ -75,6 +75,7 @@ interface VideoTimelineItemBase {
   id: string;
   timelineStart: number;
   duration: number;
+  advanced?: VideoAdvancedItemState;
 }
 
 export interface VideoClipTimelineItem extends VideoTimelineItemBase {
@@ -116,6 +117,7 @@ export interface ImageOverlayTimelineItem extends VideoTimelineItemBase {
   type: "image" | "overlay";
   mediaId: string;
   transform: VideoTransform;
+  crop: VideoCrop;
   opacity: number;
   layerOrder: number;
   properties?: ImageItemProperties;
@@ -127,6 +129,8 @@ export interface VideoTransform {
   scaleX: number;
   scaleY: number;
   rotation: number;
+  anchorX?: number;
+  anchorY?: number;
 }
 
 export interface VideoCrop {
@@ -173,6 +177,100 @@ export interface VideoEffect {
   targetItemIds: string[];
   enabled: boolean;
   parameters: Record<string, JsonValue>;
+}
+
+export type CubicBezierEasing = [number, number, number, number];
+
+export interface VideoKeyframe<T> {
+  id: string;
+  time: number;
+  value: T;
+  easing?: CubicBezierEasing;
+}
+
+export interface VideoAnimatableValue<T> {
+  value: T;
+  keyframes?: VideoKeyframe<T>[];
+}
+
+export interface VideoTrackingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VideoTrackingPoint {
+  time: number;
+  box: VideoTrackingBox;
+  confidence: number;
+}
+
+export interface VideoTrackingTarget {
+  id: string;
+  label?: string;
+  initialBox: VideoTrackingBox;
+  path: VideoTrackingPoint[];
+  analysis: {
+    model: string;
+    modelVersion?: string;
+    analyzedAt: string;
+    frameInterval: number;
+  };
+}
+
+export interface VideoAutoReframeSettings {
+  targetAspectRatio: string;
+  safeMargin: number;
+  smoothing: number;
+  trackingTargetId?: string;
+  generatedAt: string;
+}
+
+export interface VideoCurvePoint { x: number; y: number; }
+export interface VideoColorCurves {
+  master: VideoCurvePoint[];
+  red: VideoCurvePoint[];
+  green: VideoCurvePoint[];
+  blue: VideoCurvePoint[];
+}
+
+export interface VideoHslBand { hue: number; saturation: number; lightness: number; }
+export type VideoHslBandName = "red" | "yellow" | "green" | "cyan" | "blue" | "magenta";
+export type VideoHslControls = Record<VideoHslBandName, VideoHslBand>;
+export type VideoRgbMatrix = [number, number, number, number, number, number, number, number, number];
+
+export interface VideoFreezeFrameSegment {
+  id: string;
+  timelineStart: number;
+  duration: number;
+  sourceTime: number;
+}
+
+export interface VideoTimeRemapPoint {
+  timelineTime: number;
+  sourceTime: number;
+}
+
+export interface VideoTimeRemap {
+  points: VideoTimeRemapPoint[];
+  preservePitch: boolean;
+  audioBehavior: "remap" | "mute";
+}
+
+export interface VideoAdvancedItemState {
+  transform?: Partial<Record<"x" | "y" | "scaleX" | "scaleY" | "rotation" | "anchorX" | "anchorY", VideoAnimatableValue<number>>>;
+  crop?: Partial<Record<"top" | "right" | "bottom" | "left", VideoAnimatableValue<number>>>;
+  opacity?: VideoAnimatableValue<number>;
+  trackingTargets?: VideoTrackingTarget[];
+  autoReframe?: VideoAutoReframeSettings;
+  color?: {
+    curves?: VideoColorCurves;
+    hsl?: VideoHslControls;
+    rgbMatrix?: VideoRgbMatrix;
+  };
+  freezeFrames?: VideoFreezeFrameSegment[];
+  timeRemap?: VideoTimeRemap;
 }
 
 export interface VideoDocumentHistory {
@@ -423,30 +521,57 @@ export function validateVideoProjectDocument(value: unknown): VideoProjectDocume
     return { ok: false, errors: ["Document must be an object."] };
   }
 
-  if (value.schemaVersion !== VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION) {
+  const migrated = migrateVideoProjectDocument(value);
+  if (!migrated) {
+    return { ok: false, errors: ["Unsupported video document schemaVersion."] };
+  }
+  const documentValue = migrated;
+
+  if (documentValue.schemaVersion !== VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION) {
     errors.push("Unsupported video document schemaVersion.");
   }
 
-  validateRequiredString(value.projectId, "projectId", errors);
-  validateRequiredString(value.name, "name", errors);
-  validateIsoDateString(value.createdAt, "createdAt", errors);
-  validateIsoDateString(value.updatedAt, "updatedAt", errors);
-  validateSettings(value.settings, errors);
-  validateMedia(value.media, errors);
+  validateRequiredString(documentValue.projectId, "projectId", errors);
+  validateRequiredString(documentValue.name, "name", errors);
+  validateIsoDateString(documentValue.createdAt, "createdAt", errors);
+  validateIsoDateString(documentValue.updatedAt, "updatedAt", errors);
+  validateSettings(documentValue.settings, errors);
+  validateMedia(documentValue.media, errors);
 
-  const mediaById = isRecord(value.media) ? value.media : {};
+  const mediaById = isRecord(documentValue.media) ? documentValue.media : {};
   const mediaIds = new Set(Object.keys(mediaById));
-  const itemIds = validateTracks(value.tracks, mediaById, mediaIds, errors);
+  const itemIds = validateTracks(documentValue.tracks, mediaById, mediaIds, errors);
 
-  validateTargetedList(value.transitions, "transitions", itemIds, errors, validateTransition);
-  validateTargetedList(value.effects, "effects", itemIds, errors, validateEffect);
-  validateHistory(value.history, errors);
+  validateTargetedList(documentValue.transitions, "transitions", itemIds, errors, validateTransition);
+  validateTargetedList(documentValue.effects, "effects", itemIds, errors, validateEffect);
+  validateHistory(documentValue.history, errors);
 
   if (errors.length > 0) {
     return { ok: false, errors };
   }
 
-  return { ok: true, document: value as unknown as VideoProjectDocument, errors: [] };
+  return { ok: true, document: documentValue, errors: [] };
+}
+
+export function migrateVideoProjectDocument(value: unknown): VideoProjectDocument | null {
+  if (!isRecord(value)) return null;
+  if (value.schemaVersion === VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION) {
+    return value as unknown as VideoProjectDocument;
+  }
+  if (value.schemaVersion !== 1 && value.schemaVersion !== 2) return null;
+
+  const migrated = cloneJson(value) as Record<string, unknown>;
+  if (Array.isArray(migrated.tracks)) {
+    for (const track of migrated.tracks) {
+      if (!isRecord(track) || !Array.isArray(track.items)) continue;
+      for (const item of track.items) {
+        if (!isRecord(item) || (item.type !== "image" && item.type !== "overlay")) continue;
+        item.crop = { ...defaultCrop };
+      }
+    }
+  }
+  migrated.schemaVersion = VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION;
+  return migrated as unknown as VideoProjectDocument;
 }
 
 export function isVideoProjectDocument(value: unknown): value is VideoProjectDocument {
@@ -696,6 +821,7 @@ function validateTimelineItem(
 
   validateNonNegativeNumber(value.timelineStart, `${path}.timelineStart`, errors);
   validatePositiveNumber(value.duration, `${path}.duration`, errors);
+  validateAdvancedItemState(value.advanced, `${path}.advanced`, value.duration, errors);
 
   if (!isOneOf(value.type, ["video", "audio", "text", "image", "overlay"])) {
     errors.push(`${path}.type must be video, audio, text, image, or overlay.`);
@@ -712,7 +838,7 @@ function validateTimelineItem(
     validateOptionalString(value.shotId, `${path}.shotId`, errors);
     validateOptionalString(value.linkedGroupId, `${path}.linkedGroupId`, errors);
     validateTransform(value.transform, `${path}.transform`, errors);
-    validateCrop(value.crop, `${path}.crop`, errors);
+    validateCrop(value.crop, `${path}.crop`, mediaById[value.mediaId as string], errors);
     validateUnitNumber(value.opacity, `${path}.opacity`, errors);
     return;
   }
@@ -740,6 +866,7 @@ function validateTimelineItem(
   }
   validateMediaKind(value.mediaId, "image", mediaById, `${path}.mediaId`, errors);
   validateTransform(value.transform, `${path}.transform`, errors);
+  validateCrop(value.crop, `${path}.crop`, mediaById[value.mediaId as string], errors);
   validateUnitNumber(value.opacity, `${path}.opacity`, errors);
   validateInteger(value.layerOrder, `${path}.layerOrder`, errors);
 }
@@ -807,9 +934,149 @@ function validateTransform(value: unknown, path: string, errors: string[]): void
   validatePositiveNumber(value.scaleX, `${path}.scaleX`, errors);
   validatePositiveNumber(value.scaleY, `${path}.scaleY`, errors);
   validateFiniteNumber(value.rotation, `${path}.rotation`, errors);
+  validateOptionalUnitNumber(value.anchorX, `${path}.anchorX`, errors);
+  validateOptionalUnitNumber(value.anchorY, `${path}.anchorY`, errors);
 }
 
-function validateCrop(value: unknown, path: string, errors: string[]): void {
+function validateAdvancedItemState(value: unknown, path: string, duration: unknown, errors: string[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object when provided.`);
+    return;
+  }
+
+  for (const groupName of ["transform", "crop"] as const) {
+    const group = value[groupName];
+    if (group === undefined) continue;
+    if (!isRecord(group)) {
+      errors.push(`${path}.${groupName} must be an object.`);
+      continue;
+    }
+    Object.entries(group).forEach(([name, animatable]) =>
+      validateAnimatableNumber(animatable, `${path}.${groupName}.${name}`, errors),
+    );
+  }
+  if (value.opacity !== undefined) validateAnimatableNumber(value.opacity, `${path}.opacity`, errors, true);
+
+  if (value.trackingTargets !== undefined) {
+    if (!Array.isArray(value.trackingTargets)) {
+      errors.push(`${path}.trackingTargets must be an array.`);
+    } else {
+      value.trackingTargets.forEach((target, index) => validateTrackingTarget(target, `${path}.trackingTargets.${index}`, errors));
+    }
+  }
+
+  if (value.freezeFrames !== undefined) {
+    if (!Array.isArray(value.freezeFrames)) {
+      errors.push(`${path}.freezeFrames must be an array.`);
+    } else {
+      value.freezeFrames.forEach((segment, index) => {
+        const segmentPath = `${path}.freezeFrames.${index}`;
+        if (!isRecord(segment)) {
+          errors.push(`${segmentPath} must be an object.`);
+          return;
+        }
+        validateRequiredString(segment.id, `${segmentPath}.id`, errors);
+        validateNonNegativeNumber(segment.timelineStart, `${segmentPath}.timelineStart`, errors);
+        validatePositiveNumber(segment.duration, `${segmentPath}.duration`, errors);
+        validateNonNegativeNumber(segment.sourceTime, `${segmentPath}.sourceTime`, errors);
+        if (typeof duration === "number" && typeof segment.timelineStart === "number" && typeof segment.duration === "number" && segment.timelineStart + segment.duration > duration) {
+          errors.push(`${segmentPath} must fit within the timeline item duration.`);
+        }
+      });
+    }
+  }
+
+  if (value.timeRemap !== undefined) validateTimeRemap(value.timeRemap, `${path}.timeRemap`, errors);
+  if (value.autoReframe !== undefined && !isRecord(value.autoReframe)) errors.push(`${path}.autoReframe must be an object.`);
+  if (value.color !== undefined && !isRecord(value.color)) errors.push(`${path}.color must be an object.`);
+}
+
+function validateAnimatableNumber(value: unknown, path: string, errors: string[], unit = false): void {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an animatable value.`);
+    return;
+  }
+  if (unit) validateUnitNumber(value.value, `${path}.value`, errors);
+  else validateFiniteNumber(value.value, `${path}.value`, errors);
+  if (value.keyframes === undefined) return;
+  if (!Array.isArray(value.keyframes)) {
+    errors.push(`${path}.keyframes must be an array.`);
+    return;
+  }
+  let previousTime = -1;
+  value.keyframes.forEach((keyframe, index) => {
+    const keyframePath = `${path}.keyframes.${index}`;
+    if (!isRecord(keyframe)) {
+      errors.push(`${keyframePath} must be an object.`);
+      return;
+    }
+    validateRequiredString(keyframe.id, `${keyframePath}.id`, errors);
+    validateNonNegativeNumber(keyframe.time, `${keyframePath}.time`, errors);
+    if (typeof keyframe.time === "number" && keyframe.time < previousTime) errors.push(`${path}.keyframes must be sorted by time.`);
+    if (typeof keyframe.time === "number") previousTime = keyframe.time;
+    if (unit) validateUnitNumber(keyframe.value, `${keyframePath}.value`, errors);
+    else validateFiniteNumber(keyframe.value, `${keyframePath}.value`, errors);
+    if (keyframe.easing !== undefined && (!Array.isArray(keyframe.easing) || keyframe.easing.length !== 4 || keyframe.easing.some((entry) => typeof entry !== "number" || !Number.isFinite(entry)))) {
+      errors.push(`${keyframePath}.easing must contain four finite numbers.`);
+    }
+  });
+}
+
+function validateTrackingTarget(value: unknown, path: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object.`);
+    return;
+  }
+  validateRequiredString(value.id, `${path}.id`, errors);
+  validateTrackingBox(value.initialBox, `${path}.initialBox`, errors);
+  if (!Array.isArray(value.path)) errors.push(`${path}.path must be an array.`);
+  else value.path.forEach((point, index) => {
+    const pointPath = `${path}.path.${index}`;
+    if (!isRecord(point)) return errors.push(`${pointPath} must be an object.`);
+    validateNonNegativeNumber(point.time, `${pointPath}.time`, errors);
+    validateTrackingBox(point.box, `${pointPath}.box`, errors);
+    validateUnitNumber(point.confidence, `${pointPath}.confidence`, errors);
+  });
+  if (!isRecord(value.analysis)) errors.push(`${path}.analysis must be an object.`);
+}
+
+function validateTrackingBox(value: unknown, path: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object.`);
+    return;
+  }
+  validateUnitNumber(value.x, `${path}.x`, errors);
+  validateUnitNumber(value.y, `${path}.y`, errors);
+  validateUnitNumber(value.width, `${path}.width`, errors);
+  validateUnitNumber(value.height, `${path}.height`, errors);
+  if (typeof value.x === "number" && typeof value.width === "number" && value.x + value.width > 1) errors.push(`${path} must stay within normalized bounds.`);
+  if (typeof value.y === "number" && typeof value.height === "number" && value.y + value.height > 1) errors.push(`${path} must stay within normalized bounds.`);
+}
+
+function validateTimeRemap(value: unknown, path: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object.`);
+    return;
+  }
+  if (!Array.isArray(value.points) || value.points.length < 2) {
+    errors.push(`${path}.points must contain at least two points.`);
+  } else {
+    let previousTimelineTime = -1;
+    value.points.forEach((point, index) => {
+      const pointPath = `${path}.points.${index}`;
+      if (!isRecord(point)) return errors.push(`${pointPath} must be an object.`);
+      validateNonNegativeNumber(point.timelineTime, `${pointPath}.timelineTime`, errors);
+      validateNonNegativeNumber(point.sourceTime, `${pointPath}.sourceTime`, errors);
+      if (typeof point.timelineTime === "number" && point.timelineTime <= previousTimelineTime) errors.push(`${path}.points timelineTime values must be strictly increasing.`);
+      if (typeof point.timelineTime === "number") previousTimelineTime = point.timelineTime;
+    });
+  }
+  validateBoolean(value.preservePitch, `${path}.preservePitch`, errors);
+  if (!isOneOf(value.audioBehavior, ["remap", "mute"])) errors.push(`${path}.audioBehavior must be remap or mute.`);
+}
+
+function validateCrop(value: unknown, path: string, media: unknown, errors: string[]): void {
   if (!isRecord(value)) {
     errors.push(`${path} must be an object.`);
     return;
@@ -819,6 +1086,27 @@ function validateCrop(value: unknown, path: string, errors: string[]): void {
   validateUnitNumber(value.right, `${path}.right`, errors);
   validateUnitNumber(value.bottom, `${path}.bottom`, errors);
   validateUnitNumber(value.left, `${path}.left`, errors);
+
+  if (
+    typeof value.left !== "number" || typeof value.right !== "number" ||
+    typeof value.top !== "number" || typeof value.bottom !== "number"
+  ) {
+    return;
+  }
+
+  const horizontalSpan = 1 - value.left - value.right;
+  const verticalSpan = 1 - value.top - value.bottom;
+  if (horizontalSpan <= 0) errors.push(`${path}.left + ${path}.right must be less than 1.`);
+  if (verticalSpan <= 0) errors.push(`${path}.top + ${path}.bottom must be less than 1.`);
+
+  if (isRecord(media)) {
+    if (typeof media.width === "number" && horizontalSpan * media.width < 1 - 1e-9) {
+      errors.push(`${path} must leave at least one source pixel horizontally.`);
+    }
+    if (typeof media.height === "number" && verticalSpan * media.height < 1 - 1e-9) {
+      errors.push(`${path} must leave at least one source pixel vertically.`);
+    }
+  }
 }
 
 function validateAudioFades(value: unknown, path: string, errors: string[]): void {
@@ -1051,6 +1339,10 @@ function validateUnitNumber(value: unknown, path: string, errors: string[]): voi
   }
 }
 
+function validateOptionalUnitNumber(value: unknown, path: string, errors: string[]): void {
+  if (value !== undefined) validateUnitNumber(value, path, errors);
+}
+
 function validateInteger(value: unknown, path: string, errors: string[]): void {
   validateFiniteNumber(value, path, errors);
   if (typeof value === "number" && !Number.isInteger(value)) {
@@ -1092,6 +1384,10 @@ function isJsonValue(value: unknown): value is JsonValue {
   }
 
   return Object.values(value).every(isJsonValue);
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export interface Keyframe<T> {

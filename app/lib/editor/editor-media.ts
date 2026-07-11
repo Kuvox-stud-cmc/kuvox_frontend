@@ -166,6 +166,12 @@ export function buildAddMediaToTimelineOperation({
         scaleY: 1,
         rotation: 0,
       },
+      crop: {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      },
       opacity: 1,
       layerOrder: nextLayerOrder(document),
     };
@@ -519,4 +525,3 @@ export function setActiveDraggedMedia(media: DraggedMediaInfo | null) {
 export function getActiveDraggedMedia(): DraggedMediaInfo | null {
   return activeDraggedMedia;
 }
-

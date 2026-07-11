@@ -1,7 +1,7 @@
 import { createSelector, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import {
-  createMockVideoProjectDocument,
+  createEmptyVideoProjectDocument,
   type VideoEditorSelection,
   type VideoMediaReference,
   type VideoPlaybackState,
@@ -53,6 +53,12 @@ import {
 import type { CachedCommandHistoryRecord } from "~/lib/editor/editor-cache";
 import type { VideoAiCommandStatus } from "~/lib/editor/video-ai-command-planner";
 import type { VideoAiCommandSuggestion } from "~/lib/editor/video-ai-command-suggestions";
+import type {
+  MediaPreparationRequest,
+  MediaPreparationResourceState,
+  MediaPreparationStatus,
+  PreparedMediaMetadata,
+} from "~/lib/editor/media-preparation";
 
 /**
  * Legacy media-type flag retained while the video editor scaffold is refactored.
@@ -73,6 +79,7 @@ export type EditorSyncStatus =
   | "failed"
   | "sync-failed"
   | "server-changed";
+export type EditorLocalSaveStatus = "idle" | "saving" | "saved" | "failed";
 
 export interface MockAssistantMessage {
   id: string;
@@ -129,6 +136,29 @@ export interface SemanticShotReference {
   existingItemId?: string;
 }
 
+export interface PendingTimelineInsertion {
+  id: string;
+  projectId: string;
+  media: MediaDto;
+  trackId?: string;
+  timelineStart: number;
+  provisionalDuration: number;
+  resourceKey: string;
+  status: MediaPreparationStatus | "committing";
+  error?: string;
+  createdAt: number;
+}
+
+export interface PreviewBufferingState {
+  buffering: boolean;
+  requestedTime: number | null;
+  requiredResourceKeys: string[];
+  resumeIntent: boolean;
+  startedAt: number | null;
+  generation: number;
+  failureResourceKey?: string;
+}
+
 export type InspectorSubject =
   | {
       kind: "item";
@@ -165,6 +195,7 @@ export interface EditorUiSessionState {
   activeToolId: TimelineEditorToolId;
   snappingEnabled: boolean;
   clipsLinked: boolean;
+  visualScalesLinked: boolean;
   activeModal: ActiveModal;
   activePopover: ActivePopover;
   toastMessage: string | null;
@@ -197,6 +228,9 @@ export interface EditorState {
   syncStatus: EditorSyncStatus;
   loadSource: EditorLoadDocumentSource | null;
   pendingSyncCount: number;
+  localSaveStatus: EditorLocalSaveStatus;
+  lastLocalSavedRevision: number | null;
+  localSaveError: string | null;
   conflict: EditorLoadConflict | null;
   serverTimelineId: string | null;
   serverRevisionNumber: number | null;
@@ -213,6 +247,7 @@ export interface EditorState {
   historyMutationCount: number;
   selection: VideoEditorSelection;
   playback: VideoPlaybackState;
+  playbackSeekRevision: number;
   ui: EditorUiSessionState;
   assistantMessages: MockAssistantMessage[];
   aiCommandStatus: VideoAiCommandStatus;
@@ -232,6 +267,10 @@ export interface EditorState {
   semanticReadinessByMediaId: Record<string, SemanticMediaReadiness>;
   recentCommandHistory: CachedCommandHistoryRecord[];
   projectMediaById: Record<string, ProjectMediaAvailabilityState>;
+  mediaPreparationEnabled: boolean;
+  mediaPreparationByKey: Record<string, MediaPreparationResourceState>;
+  pendingTimelineInsertions: PendingTimelineInsertion[];
+  previewBuffering: PreviewBufferingState;
 }
 
 type ProjectOpenedPayload = string | { projectId: string; projectName?: string };
@@ -264,15 +303,15 @@ const maxVideoHistoryFrames = 50;
 
 const initialSelection: VideoEditorSelection = {
   selectedTrackIds: [],
-  selectedItemIds: ["tl-beach"],
+  selectedItemIds: [],
   selectedTransitionIds: [],
   selectedEffectIds: [],
-  activeItemId: "tl-beach",
+  activeItemId: undefined,
 };
 
 const initialPlayback: VideoPlaybackState = {
   playing: false,
-  currentTime: 83,
+  currentTime: 0,
   volume: 1,
   muted: false,
   loop: false,
@@ -286,7 +325,7 @@ const initialUi: EditorUiSessionState = {
   timelineHeight: 260,
   inspectorWidth: 280,
   activeLibraryTab: "clips",
-  selectedMediaId: "clip-beach",
+  selectedMediaId: null,
   timelineZoom: 50,
   timelineScrollLeft: 0,
   timelineScrollTop: 0,
@@ -294,11 +333,12 @@ const initialUi: EditorUiSessionState = {
   activeToolId: "select",
   snappingEnabled: true,
   clipsLinked: false,
+  visualScalesLinked: true,
   activeModal: null,
   activePopover: null,
   toastMessage: null,
   searchQuery: "",
-  commandInput: "Add cap",
+  commandInput: "",
   inspectorOpen: true,
   activeInspectorSection: "transform",
 };
@@ -311,6 +351,9 @@ const initialState: EditorState = {
   syncStatus: "clean",
   loadSource: null,
   pendingSyncCount: 0,
+  localSaveStatus: "idle",
+  lastLocalSavedRevision: null,
+  localSaveError: null,
   conflict: null,
   serverTimelineId: null,
   serverRevisionNumber: null,
@@ -327,6 +370,7 @@ const initialState: EditorState = {
   historyMutationCount: 0,
   selection: initialSelection,
   playback: initialPlayback,
+  playbackSeekRevision: 0,
   ui: initialUi,
   assistantMessages: [],
   aiCommandStatus: "idle",
@@ -346,6 +390,17 @@ const initialState: EditorState = {
   semanticReadinessByMediaId: {},
   recentCommandHistory: [],
   projectMediaById: {},
+  mediaPreparationEnabled: false,
+  mediaPreparationByKey: {},
+  pendingTimelineInsertions: [],
+  previewBuffering: {
+    buffering: false,
+    requestedTime: null,
+    requiredResourceKeys: [],
+    resumeIntent: false,
+    startedAt: null,
+    generation: 0,
+  },
 };
 
 const editorSlice = createSlice({
@@ -353,16 +408,23 @@ const editorSlice = createSlice({
   initialState,
   reducers: {
     editorLoadStarted(state, action: PayloadAction<{ projectId: string }>) {
+      resetDocumentSessionState(state);
       state.projectId = action.payload.projectId;
+      state.document = null;
       state.documentStatus = "idle";
       state.syncStatus = "syncing";
       state.loadSource = null;
       state.pendingSyncCount = 0;
+      state.localSaveStatus = "idle";
+      state.lastLocalSavedRevision = null;
+      state.localSaveError = null;
       state.conflict = null;
       state.serverTimelineId = null;
       state.serverRevisionNumber = null;
       state.syncError = null;
       state.lastError = null;
+      state.loadedRevision = null;
+      state.lastSavedRevision = null;
       state.lastAppliedOperationIds = [];
       state.projectMediaById = {};
       state.semanticReadinessByMediaId = {};
@@ -380,12 +442,18 @@ const editorSlice = createSlice({
         return;
       }
 
+      resetDocumentSessionState(state);
       state.document = withDocumentHistoryAvailability(validation.document, false, false);
       state.projectId = validation.document.projectId;
       state.documentStatus = "ready";
       state.syncStatus = action.payload.syncStatus;
       state.loadSource = action.payload.source;
       state.pendingSyncCount = action.payload.pendingSyncCount ?? 0;
+      state.localSaveStatus = action.payload.source === "draft" || action.payload.source === "cached" ? "saved" : "idle";
+      state.lastLocalSavedRevision = action.payload.source === "draft" || action.payload.source === "cached"
+        ? validation.document.history.revision
+        : null;
+      state.localSaveError = null;
       state.conflict = action.payload.conflict ?? null;
       state.serverTimelineId = action.payload.serverTimelineId ?? null;
       state.serverRevisionNumber = action.payload.serverRevisionNumber ?? null;
@@ -398,9 +466,6 @@ const editorSlice = createSlice({
       resetVideoHistoryState(state);
       resetAiCommandState(state);
       resetSemanticSearchState(state);
-      state.selection = sanitizeSelection(state.selection, state.document);
-      state.playback.currentTime = clampTime(state.playback.currentTime, state.document);
-      state.ui.selectedMediaId = state.ui.selectedMediaId ?? firstMediaId(state.document);
       state.ui.toastMessage =
         action.payload.conflict
           ? "Server changed while local edits are saved"
@@ -425,19 +490,51 @@ const editorSlice = createSlice({
       }
       state.syncError = null;
     },
+    editorLocalMutationPersisted(
+      state,
+      action: PayloadAction<{ documentRevision: number; pendingSyncCount: number }>,
+    ) {
+      state.pendingSyncCount = action.payload.pendingSyncCount;
+      state.localSaveStatus = "saved";
+      state.lastLocalSavedRevision = action.payload.documentRevision;
+      state.localSaveError = null;
+      if (state.document?.history.revision === action.payload.documentRevision && state.syncStatus === "dirty") {
+        state.syncStatus = "saved-local";
+      }
+      state.syncError = null;
+    },
+    editorLocalSaveFailed(state, action: PayloadAction<{ error: string; pendingSyncCount?: number }>) {
+      state.localSaveStatus = "failed";
+      state.localSaveError = action.payload.error;
+      state.lastError = action.payload.error;
+      state.pendingSyncCount = action.payload.pendingSyncCount ?? state.pendingSyncCount;
+      state.ui.toastMessage = "Local save failed";
+    },
     editorBackendSyncSucceeded(
       state,
-      action: PayloadAction<{ revisionNumber: number; syncedAt: string; pendingSyncCount?: number; timelineId?: string | null }>,
+      action: PayloadAction<{
+        revisionNumber: number;
+        savedDocumentRevision: number;
+        syncedAt: string;
+        pendingSyncCount?: number;
+        timelineId?: string | null;
+        fullySynced?: boolean;
+      }>,
     ) {
       state.serverTimelineId = action.payload.timelineId ?? state.serverTimelineId;
       state.serverRevisionNumber = action.payload.revisionNumber;
       state.lastSyncedAt = action.payload.syncedAt;
-      state.lastSavedRevision = state.document?.history.revision ?? state.lastSavedRevision;
+      state.lastSavedRevision = action.payload.savedDocumentRevision;
       state.pendingSyncCount = action.payload.pendingSyncCount ?? 0;
-      state.syncStatus = "synced";
+      if (action.payload.fullySynced !== false) {
+        state.localSaveStatus = "saved";
+        state.lastLocalSavedRevision = action.payload.savedDocumentRevision;
+        state.localSaveError = null;
+      }
+      state.syncStatus = action.payload.fullySynced === false ? "saved-local" : "synced";
       state.syncError = null;
       state.conflict = null;
-      state.ui.toastMessage = "Timeline synced";
+      state.ui.toastMessage = action.payload.fullySynced === false ? "Newer edits saved locally" : "Timeline synced";
     },
     editorBackendSyncFailed(state, action: PayloadAction<{ error: string; pendingSyncCount?: number }>) {
       state.syncStatus = "sync-failed";
@@ -445,6 +542,14 @@ const editorSlice = createSlice({
       state.lastError = action.payload.error;
       state.pendingSyncCount = action.payload.pendingSyncCount ?? state.pendingSyncCount;
       state.ui.toastMessage = "Timeline sync failed";
+    },
+    editorSyncBaseUpdated(
+      state,
+      action: PayloadAction<{ revisionNumber: number; timelineId?: string | null; syncedAt?: string | null }>,
+    ) {
+      state.serverRevisionNumber = action.payload.revisionNumber;
+      state.serverTimelineId = action.payload.timelineId ?? state.serverTimelineId;
+      state.lastSyncedAt = action.payload.syncedAt ?? state.lastSyncedAt;
     },
     editorServerChangedDetected(state, action: PayloadAction<EditorLoadConflict>) {
       state.syncStatus = "server-changed";
@@ -461,14 +566,18 @@ const editorSlice = createSlice({
     projectOpened(state, action: PayloadAction<ProjectOpenedPayload>) {
       const projectId = typeof action.payload === "string" ? action.payload : action.payload.projectId;
       const projectName = typeof action.payload === "string" ? undefined : action.payload.projectName;
-      const document = createMockVideoProjectDocument(projectId, projectName);
+      const document = createEmptyVideoProjectDocument({ id: projectId, name: projectName ?? "Untitled video" });
 
+      resetDocumentSessionState(state);
       state.projectId = projectId;
       state.document = document;
       state.documentStatus = "ready";
       state.syncStatus = "clean";
       state.loadSource = "empty";
       state.pendingSyncCount = 0;
+      state.localSaveStatus = "idle";
+      state.lastLocalSavedRevision = null;
+      state.localSaveError = null;
       state.conflict = null;
       state.serverTimelineId = null;
       state.serverRevisionNumber = null;
@@ -481,13 +590,6 @@ const editorSlice = createSlice({
       resetVideoHistoryState(state);
       resetAiCommandState(state);
       resetSemanticSearchState(state);
-      state.selection = {
-        ...initialSelection,
-        selectedItemIds: document.tracks[0]?.items[0]?.id ? [document.tracks[0].items[0].id] : [],
-        activeItemId: document.tracks[0]?.items[0]?.id,
-      };
-      state.playback = { ...initialPlayback, currentTime: clampTime(initialPlayback.currentTime, document) };
-      state.ui.selectedMediaId = firstMediaId(document);
     },
     documentLoaded(state, action: PayloadAction<VideoProjectDocument>) {
       const validation = validateVideoProjectDocument(action.payload);
@@ -504,6 +606,9 @@ const editorSlice = createSlice({
       state.syncStatus = "clean";
       state.loadSource = "draft";
       state.pendingSyncCount = 0;
+      state.localSaveStatus = "idle";
+      state.lastLocalSavedRevision = null;
+      state.localSaveError = null;
       state.conflict = null;
       state.serverTimelineId = null;
       state.serverRevisionNumber = null;
@@ -516,9 +621,7 @@ const editorSlice = createSlice({
       resetVideoHistoryState(state);
       resetAiCommandState(state);
       resetSemanticSearchState(state);
-      state.selection = sanitizeSelection(state.selection, state.document);
-      state.playback.currentTime = clampTime(state.playback.currentTime, state.document);
-      state.ui.selectedMediaId = state.ui.selectedMediaId ?? firstMediaId(state.document);
+      resetDocumentSessionState(state);
     },
     videoOperationApplied(
       state,
@@ -539,6 +642,10 @@ const editorSlice = createSlice({
 
       const beforeDocument = cloneJson(state.document);
       const batch = normalizeVideoOperationPayload(rawOperation);
+      if (batchTargetsPreparingMedia(state, batch)) {
+        state.ui.toastMessage = "Preparing media is locked";
+        return;
+      }
       const result = applyVideoOperationBatch(state.document, batch);
 
       if (!result.ok) {
@@ -610,6 +717,125 @@ const editorSlice = createSlice({
         }),
       });
       state.ui.selectedMediaId = media.id;
+    },
+    pendingTimelineInsertionAdded(state, action: PayloadAction<PendingTimelineInsertion>) {
+      if (action.payload.projectId !== state.projectId) return;
+      state.pendingTimelineInsertions.push(action.payload);
+      state.ui.selectedMediaId = action.payload.media.id;
+    },
+    pendingTimelineInsertionUpdated(
+      state,
+      action: PayloadAction<{ id: string; status: PendingTimelineInsertion["status"]; error?: string }>,
+    ) {
+      const pending = state.pendingTimelineInsertions.find((candidate) => candidate.id === action.payload.id);
+      if (!pending) return;
+      pending.status = action.payload.status;
+      pending.error = action.payload.error;
+    },
+    pendingTimelineInsertionRemoved(state, action: PayloadAction<string>) {
+      state.pendingTimelineInsertions = state.pendingTimelineInsertions.filter((candidate) => candidate.id !== action.payload);
+    },
+    mediaPreparationRequested(state, action: PayloadAction<MediaPreparationRequest>) {
+      const previous = state.mediaPreparationByKey[action.payload.key];
+      if (previous?.status === "ready" || previous?.status === "loading") return;
+      state.mediaPreparationByKey[action.payload.key] = {
+        ...previous,
+        ...action.payload,
+        status: "queued",
+        attempts: previous?.attempts ?? 0,
+        queuedAt: previous?.queuedAt ?? Date.now(),
+        error: undefined,
+      };
+    },
+    mediaPreparationCoordinatorMounted(state, action: PayloadAction<boolean>) {
+      state.mediaPreparationEnabled = action.payload;
+    },
+    mediaPreparationStarted(state, action: PayloadAction<{ key: string; startedAt: number }>) {
+      const resource = state.mediaPreparationByKey[action.payload.key];
+      if (!resource || resource.status !== "queued") return;
+      resource.status = "loading";
+      resource.startedAt = action.payload.startedAt;
+      resource.attempts += 1;
+      resource.error = undefined;
+    },
+    mediaPreparationSucceeded(
+      state,
+      action: PayloadAction<{ key: string; readyAt: number; metadata: PreparedMediaMetadata }>,
+    ) {
+      const resource = state.mediaPreparationByKey[action.payload.key];
+      if (!resource) return;
+      resource.status = "ready";
+      resource.readyAt = action.payload.readyAt;
+      resource.error = undefined;
+      Object.assign(resource, action.payload.metadata);
+      for (const pending of state.pendingTimelineInsertions) {
+        if (pending.resourceKey === resource.key && pending.status !== "committing") pending.status = "ready";
+      }
+    },
+    mediaPreparationFailed(state, action: PayloadAction<{ key: string; error: string; retry: boolean }>) {
+      const resource = state.mediaPreparationByKey[action.payload.key];
+      if (!resource) return;
+      resource.status = action.payload.retry ? "queued" : "failed";
+      resource.error = action.payload.error;
+      for (const pending of state.pendingTimelineInsertions) {
+        if (pending.resourceKey === resource.key) {
+          pending.status = action.payload.retry ? "queued" : "failed";
+          pending.error = action.payload.retry ? undefined : action.payload.error;
+        }
+      }
+      if (!action.payload.retry && state.previewBuffering.requiredResourceKeys.includes(resource.key)) {
+        state.previewBuffering.resumeIntent = false;
+        state.previewBuffering.failureResourceKey = resource.key;
+      }
+    },
+    mediaPreparationRetried(state, action: PayloadAction<string>) {
+      const resource = state.mediaPreparationByKey[action.payload];
+      if (!resource) return;
+      resource.status = "queued";
+      resource.attempts = 0;
+      resource.queuedAt = Date.now();
+      resource.error = undefined;
+      for (const pending of state.pendingTimelineInsertions) {
+        if (pending.resourceKey === resource.key) {
+          pending.status = "queued";
+          pending.error = undefined;
+        }
+      }
+      state.previewBuffering.failureResourceKey = undefined;
+    },
+    mediaPreparationResourcesPruned(state, action: PayloadAction<string[]>) {
+      const retained = new Set(action.payload);
+      for (const key of Object.keys(state.mediaPreparationByKey)) {
+        if (!retained.has(key)) delete state.mediaPreparationByKey[key];
+      }
+    },
+    previewBufferingStarted(
+      state,
+      action: PayloadAction<{ requestedTime: number; requiredResourceKeys: string[]; startedAt: number; failureResourceKey?: string }>,
+    ) {
+      const wasBuffering = state.previewBuffering.buffering;
+      state.previewBuffering = {
+        buffering: true,
+        requestedTime: action.payload.requestedTime,
+        requiredResourceKeys: action.payload.requiredResourceKeys,
+        resumeIntent: action.payload.failureResourceKey ? false : (wasBuffering ? state.previewBuffering.resumeIntent : state.playback.playing),
+        startedAt: wasBuffering ? state.previewBuffering.startedAt : action.payload.startedAt,
+        generation: state.previewBuffering.generation + 1,
+        failureResourceKey: action.payload.failureResourceKey,
+      };
+      state.playback.playing = false;
+    },
+    previewBufferingResolved(state) {
+      const resume = state.previewBuffering.resumeIntent && !state.previewBuffering.failureResourceKey;
+      state.previewBuffering = {
+        buffering: false,
+        requestedTime: null,
+        requiredResourceKeys: [],
+        resumeIntent: false,
+        startedAt: null,
+        generation: state.previewBuffering.generation + 1,
+      };
+      state.playback.playing = resume;
     },
     textItemCreated(state, action: PayloadAction<TextItemCreatedPayload | undefined>) {
       if (!state.document) {
@@ -720,6 +946,8 @@ const editorSlice = createSlice({
       state.document = document;
       state.documentStatus = "ready";
       state.syncStatus = "dirty";
+      state.localSaveStatus = "saving";
+      state.localSaveError = null;
       state.lastError = null;
       state.lastAppliedOperationIds = [`undo:${frame.id}`];
       state.undoStack = undoStack;
@@ -745,6 +973,8 @@ const editorSlice = createSlice({
       state.document = document;
       state.documentStatus = "ready";
       state.syncStatus = "dirty";
+      state.localSaveStatus = "saving";
+      state.localSaveError = null;
       state.lastError = null;
       state.lastAppliedOperationIds = [`redo:${frame.id}`];
       state.undoStack = undoStack;
@@ -852,26 +1082,42 @@ const editorSlice = createSlice({
       state.ui.toastMessage = state.ui.soloedAudioTrackIds.length > 0 ? "Audio solo enabled" : "Audio solo cleared";
     },
     playbackToggled(state) {
+      if (state.previewBuffering.buffering) {
+        state.previewBuffering.resumeIntent = !state.previewBuffering.resumeIntent;
+        state.ui.toastMessage = state.previewBuffering.resumeIntent ? "Playback will resume when media is ready" : "Playback paused";
+        return;
+      }
       state.playback.playing = !state.playback.playing;
       state.ui.toastMessage = state.playback.playing ? "Playback started" : "Playback paused";
     },
     playbackPaused(state) {
       state.playback.playing = false;
+      state.previewBuffering.resumeIntent = false;
     },
     playbackStepChanged(state, action: PayloadAction<number>) {
-      state.playback.currentTime = clampTime(state.playback.currentTime + action.payload, state.document);
+      const nextTime = clampTime(state.playback.currentTime + action.payload, state.document);
+      if (nextTime !== state.playback.currentTime) state.playbackSeekRevision += 1;
+      state.playback.currentTime = nextTime;
       state.playback.playing = false;
     },
     playbackFrameStepped(state, action: PayloadAction<-1 | 1>) {
-      state.playback.currentTime = stepPreviewTime({
+      const nextTime = stepPreviewTime({
         currentTime: state.playback.currentTime,
         direction: action.payload,
         frameRate: state.document?.settings.frameRate ?? 30,
         timelineDuration: state.document ? getTimelineDuration(state.document) : 300,
       });
+      if (nextTime !== state.playback.currentTime) state.playbackSeekRevision += 1;
+      state.playback.currentTime = nextTime;
       state.playback.playing = false;
     },
     currentTimeChanged(state, action: PayloadAction<number>) {
+      const nextTime = clampTime(action.payload, state.document);
+      if (nextTime !== state.playback.currentTime) state.playbackSeekRevision += 1;
+      state.playback.currentTime = nextTime;
+    },
+    playbackClockTimeChanged(state, action: PayloadAction<number>) {
+      if (state.previewBuffering.buffering) return;
       state.playback.currentTime = clampTime(action.payload, state.document);
     },
     muteToggled(state) {
@@ -903,6 +1149,9 @@ const editorSlice = createSlice({
     clipsLinkedToggled(state) {
       state.ui.clipsLinked = !state.ui.clipsLinked;
       state.ui.toastMessage = state.ui.clipsLinked ? "Clips linked" : "Clip linking disabled";
+    },
+    visualScalesLinkedChanged(state, action: PayloadAction<boolean>) {
+      state.ui.visualScalesLinked = action.payload;
     },
     modalOpened(state, action: PayloadAction<Exclude<ActiveModal, null>>) {
       state.ui.activeModal = action.payload;
@@ -1186,6 +1435,8 @@ const editorSlice = createSlice({
       });
       state.document.history.revision += 1;
       state.syncStatus = "dirty";
+      state.localSaveStatus = "saving";
+      state.localSaveError = null;
       state.ui.toastMessage = `Track "${action.payload.label}" added`;
     },
     trackDeleted(state, action: PayloadAction<string>) {
@@ -1197,6 +1448,8 @@ const editorSlice = createSlice({
         state.document.tracks.splice(trackIndex, 1);
         state.document.history.revision += 1;
         state.syncStatus = "dirty";
+        state.localSaveStatus = "saving";
+        state.localSaveError = null;
         state.ui.toastMessage = `Track "${track.label}" deleted`;
       }
     },
@@ -1209,8 +1462,11 @@ export const {
   editorLoadFailed,
   projectMediaAvailabilityLoaded,
   editorBackendSyncStarted,
+  editorLocalMutationPersisted,
+  editorLocalSaveFailed,
   editorBackendSyncSucceeded,
   editorBackendSyncFailed,
+  editorSyncBaseUpdated,
   editorServerChangedDetected,
   editorConflictResolved,
   projectOpened,
@@ -1219,6 +1475,18 @@ export const {
   videoUndoRequested,
   videoRedoRequested,
   mediaAssetAddedToTimeline,
+  pendingTimelineInsertionAdded,
+  pendingTimelineInsertionUpdated,
+  pendingTimelineInsertionRemoved,
+  mediaPreparationRequested,
+  mediaPreparationCoordinatorMounted,
+  mediaPreparationStarted,
+  mediaPreparationSucceeded,
+  mediaPreparationFailed,
+  mediaPreparationRetried,
+  mediaPreparationResourcesPruned,
+  previewBufferingStarted,
+  previewBufferingResolved,
   textItemCreated,
   selectedTextItemsDuplicated,
   mediaModeChanged,
@@ -1247,10 +1515,12 @@ export const {
   playbackStepChanged,
   playbackFrameStepped,
   currentTimeChanged,
+  playbackClockTimeChanged,
   muteToggled,
   activeToolChanged,
   snappingToggled,
   clipsLinkedToggled,
+  visualScalesLinkedChanged,
   modalOpened,
   modalClosed,
   popoverToggled,
@@ -1329,10 +1599,15 @@ export const selectEditorConflict = (state: RootEditorState) => state.editor.con
 export const selectEditorMode = (state: RootEditorState) => state.editor.ui.editorMode;
 export const selectTimelineZoom = (state: RootEditorState) => state.editor.ui.timelineZoom;
 export const selectPlaybackState = (state: RootEditorState) => state.editor.playback;
+export const selectPlaybackSeekRevision = (state: RootEditorState) => state.editor.playbackSeekRevision;
 export const selectCurrentTimeSeconds = (state: RootEditorState) => state.editor.playback.currentTime;
 export const selectSelectedItemIds = (state: RootEditorState) => state.editor.selection.selectedItemIds;
 export const selectVideoTracks = (state: RootEditorState) => state.editor.document?.tracks ?? [];
 export const selectVideoMediaReferences = (state: RootEditorState) => state.editor.document?.media ?? {};
+export const selectMediaPreparationState = (state: RootEditorState) => state.editor.mediaPreparationByKey;
+export const selectMediaPreparationEnabled = (state: RootEditorState) => state.editor.mediaPreparationEnabled;
+export const selectPendingTimelineInsertions = (state: RootEditorState) => state.editor.pendingTimelineInsertions;
+export const selectPreviewBufferingState = (state: RootEditorState) => state.editor.previewBuffering;
 export const selectProjectMediaAvailabilityById = (state: RootEditorState) => state.editor.projectMediaById;
 export const selectSemanticReadinessByMediaId = (state: RootEditorState) => state.editor.semanticReadinessByMediaId;
 export const selectSemanticSearchState = createSelector(
@@ -1365,6 +1640,22 @@ export const selectSemanticSearchState = createSelector(
 );
 export const selectCanUndo = (state: RootEditorState) => state.editor.undoStack.length > 0;
 export const selectCanRedo = (state: RootEditorState) => state.editor.redoStack.length > 0;
+export function hasUnsyncedEditorChanges(editor: EditorState): boolean {
+  const documentHasPendingRevision = editor.document !== null &&
+    editor.document.history.revision !== (editor.lastSavedRevision ?? editor.document.history.revision);
+
+  return editor.pendingSyncCount > 0 ||
+    editor.syncStatus === "dirty" ||
+    editor.syncStatus === "saved-local" ||
+    editor.syncStatus === "sync-failed" ||
+    editor.syncStatus === "server-changed" ||
+    editor.syncStatus === "failed" ||
+    (editor.syncStatus === "syncing" && documentHasPendingRevision);
+}
+export const selectHasUnsyncedChanges = createSelector(
+  [selectEditorState],
+  hasUnsyncedEditorChanges,
+);
 export const selectIsDirty = createSelector(
   [selectVideoDocument, selectLastSavedRevision],
   (document, lastSavedRevision) =>
@@ -1402,6 +1693,8 @@ export const selectEditorSyncChromeState = createSelector([selectEditorState], (
   syncStatus: editor.syncStatus,
   loadSource: editor.loadSource,
   pendingSyncCount: editor.pendingSyncCount,
+  localSaveStatus: editor.localSaveStatus,
+  localSaveError: editor.localSaveError,
   conflict: editor.conflict,
   syncError: editor.syncError,
   serverRevisionNumber: editor.serverRevisionNumber,
@@ -1454,13 +1747,14 @@ export const selectAssistantState = createSelector(
   }),
 );
 export const selectActiveToolId = (state: RootEditorState) => state.editor.ui.activeToolId;
+export const selectVisualScalesLinked = (state: RootEditorState) => state.editor.ui.visualScalesLinked;
 export const selectToolRailState = createSelector([selectEditorUi], (ui) => ({
   activeToolId: ui.activeToolId,
   editorMode: ui.editorMode,
   tools: editorToolDefinitions.map((tool) => ({
     ...tool,
     active: tool.id === "ai" ? ui.editorMode === "ai" : ui.editorMode === "manual" && ui.activeToolId === tool.id,
-    disabled: tool.availability === "disabled",
+    disabled: !isEnabledEditorToolId(tool.id),
   })),
 }));
 export const selectSelectedMediaReference = createSelector(
@@ -1514,10 +1808,11 @@ export const selectTimelineDuration = createSelector(
   (document) => (document ? getTimelineDuration(document) : 0),
 );
 export const selectProgramMonitorState = createSelector(
-  [selectVideoDocument, selectPlaybackState, selectTimelineDuration, selectEditorUi],
-  (document, playback, timelineDuration, ui) => ({
+  [selectVideoDocument, selectPlaybackState, selectPlaybackSeekRevision, selectTimelineDuration, selectEditorUi],
+  (document, playback, playbackSeekRevision, timelineDuration, ui) => ({
     document,
     playback,
+    playbackSeekRevision,
     timelineDuration,
     soloedAudioTrackIds: ui.soloedAudioTrackIds,
   }),
@@ -1537,6 +1832,50 @@ function resetVideoHistoryState(state: EditorState): void {
   state.lastHistoryFrame = null;
   state.lastHistoryAction = null;
   state.historyMutationCount = 0;
+}
+
+function resetDocumentSessionState(state: EditorState): void {
+  state.selection = cloneJson(initialSelection);
+  state.playback.playing = false;
+  state.playback.currentTime = 0;
+  state.playbackSeekRevision += 1;
+  state.ui.selectedMediaId = null;
+  state.ui.timelineScrollLeft = 0;
+  state.ui.timelineScrollTop = 0;
+  state.ui.soloedAudioTrackIds = [];
+  state.ui.activeModal = null;
+  state.ui.activePopover = null;
+  state.ui.toastMessage = null;
+  state.ui.searchQuery = "";
+  state.ui.commandInput = "";
+  state.mediaPreparationByKey = {};
+  state.pendingTimelineInsertions = [];
+  state.previewBuffering = {
+    buffering: false,
+    requestedTime: null,
+    requiredResourceKeys: [],
+    resumeIntent: false,
+    startedAt: null,
+    generation: state.previewBuffering.generation + 1,
+  };
+  resetVideoHistoryState(state);
+  resetAiCommandState(state);
+  resetSemanticSearchState(state);
+}
+
+function batchTargetsPreparingMedia(state: EditorState, batch: VideoOperationBatch): boolean {
+  if (!state.document) return false;
+  for (const operation of batch.operations) {
+    if (operation.type === "deleteItem") continue;
+    for (const itemId of operation.affectedEntityIds) {
+      const location = findTimelineItemLocation(state.document, itemId);
+      if (!location || !("mediaId" in location.item)) continue;
+      const mediaId = location.item.mediaId;
+      const resources = Object.values(state.mediaPreparationByKey).filter((resource) => resource.mediaId === mediaId);
+      if (resources.length > 0 && !resources.some((resource) => resource.status === "ready")) return true;
+    }
+  }
+  return false;
 }
 
 function resetAiCommandState(state: EditorState): void {
@@ -1644,6 +1983,8 @@ function applySuccessfulVideoEdit(
   state.document = afterDocument;
   state.documentStatus = "ready";
   state.syncStatus = "dirty";
+  state.localSaveStatus = "saving";
+  state.localSaveError = null;
   state.lastError = input.result.warnings[0] ?? null;
   state.lastAppliedOperationIds = input.result.appliedOperationIds;
   state.undoStack = undoStack;

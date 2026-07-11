@@ -4655,14 +4655,13 @@ export interface components {
             /** Format: int32 */
             revisionNumber: null | number | string;
             status: string;
-            outputBucketName: null | string;
-            outputStorageKey: null | string;
+            outputAvailable: boolean;
             outputContentType: null | string;
             /** Format: int64 */
             outputSizeBytes: null | number | string;
-            outputUrl: null | string;
             errorCode: null | string;
             errorMessage: null | string;
+            message: string;
             /** Format: date-time */
             startedAt: null | string;
             /** Format: date-time */

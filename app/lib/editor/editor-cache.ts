@@ -1,7 +1,7 @@
 import type Dexie from "dexie";
 import type { Table } from "dexie";
 
-import type { MediaDto, ProjectDto } from "../api";
+import type { MediaDto, ProjectDto, ProjectMediaDto } from "../api";
 import {
   VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION,
   type JsonValue,
@@ -17,7 +17,7 @@ import type {
 } from "./video-operations";
 
 export const EDITOR_CACHE_DATABASE_NAME = "kuvox-editor-cache";
-export const EDITOR_CACHE_DATABASE_VERSION = 1;
+export const EDITOR_CACHE_DATABASE_VERSION = 2;
 
 const hourMs = 60 * 60 * 1000;
 
@@ -70,6 +70,31 @@ export interface CachedProjectSnapshotRecord extends EditorCacheFreshness {
   projectUpdatedAt?: string;
   revision?: number;
   snapshot?: JsonValue;
+}
+
+export interface CachedEditorBootstrapRecord extends EditorCacheFreshness {
+  key: string;
+  userProjectKey: string;
+  scopeKey: string;
+  scope: EditorCacheScope;
+  userId: string;
+  projectId: string;
+  project: ProjectDto;
+  canWrite: boolean;
+  media: MediaDto[];
+  projectMedia: ProjectMediaDto[];
+  serverRevisionNumber: number | null;
+}
+
+export interface LocalEditorBootstrapResult {
+  project: ProjectDto;
+  scope: EditorCacheScope;
+  canWrite: boolean;
+  media: MediaDto[];
+  projectMedia: ProjectMediaDto[];
+  draft: CachedVideoTimelineDraftRecord | null;
+  serverRevisionNumber: number | null;
+  warnings: string[];
 }
 
 export interface CachedVideoTimelineDraftRecord extends EditorCacheFreshness {
@@ -196,6 +221,20 @@ export interface SaveVideoTimelineDraftOptions {
   syncError?: string | null;
 }
 
+export interface PersistVideoTimelineMutationInput {
+  document: VideoProjectDocument;
+  scope: EditorCacheScope;
+  draftOptions?: SaveVideoTimelineDraftOptions;
+  operation: {
+    entityId: string;
+    operationBatchId?: string;
+    metadata?: JsonValue;
+    queuedAt?: string;
+    now?: number;
+  };
+  projectMediaIds?: string[];
+}
+
 export interface EditorCacheCleanupPolicy {
   now?: number;
   undoCheckpointLimit?: number;
@@ -239,7 +278,10 @@ export interface EditorCache {
   getProjectMetadata(scope: EditorCacheScope, projectId: string, options?: { expectedUpdatedAt?: string; now?: number }): Promise<EditorCacheResult<ProjectDto>>;
   saveProjectSnapshot(input: SaveProjectSnapshotInput): Promise<EditorCacheResult<CachedProjectSnapshotRecord>>;
   getProjectSnapshot(scope: EditorCacheScope, projectId: string, options?: { now?: number }): Promise<EditorCacheResult<CachedProjectSnapshotRecord>>;
+  saveEditorBootstrap(input: Omit<CachedEditorBootstrapRecord, "key" | "userProjectKey" | "scopeKey" | "userId" | "cachedAt"> & { now?: number }): Promise<EditorCacheResult<CachedEditorBootstrapRecord>>;
+  getEditorBootstrap(userId: string, projectId: string, options?: { now?: number }): Promise<EditorCacheResult<LocalEditorBootstrapResult>>;
   saveVideoTimelineDraft(document: VideoProjectDocument, scope: EditorCacheScope, options?: SaveVideoTimelineDraftOptions): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>>;
+  persistVideoTimelineMutation(input: PersistVideoTimelineMutationInput): Promise<EditorCacheResult<{ draft: CachedVideoTimelineDraftRecord; pending: CachedPendingSyncRecord[] }>>;
   getVideoTimelineDraft(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<VideoProjectDocument>>;
   getVideoTimelineDraftRecord(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>>;
   deleteVideoTimelineDraft(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<void>>;
@@ -264,6 +306,7 @@ type EditorDexie = Dexie & {
 };
 
 let cacheSingleton: Promise<EditorCacheResult<EditorCache>> | null = null;
+const timelineMutationQueues = new Map<string, Promise<EditorCacheResult<unknown>>>();
 
 export function isEditorCacheAvailable(): boolean {
   return typeof window !== "undefined" && typeof indexedDB !== "undefined";
@@ -276,6 +319,23 @@ export async function getEditorCache(): Promise<EditorCacheResult<EditorCache>> 
 
   cacheSingleton ??= createEditorCache();
   return cacheSingleton;
+}
+
+export async function createEditorCacheForTests(databaseName: string): Promise<EditorCacheResult<EditorCache>> {
+  return createEditorCache(databaseName);
+}
+
+export async function resetEditorCacheForTests(databaseName?: string): Promise<void> {
+  timelineMutationQueues.clear();
+  cacheSingleton = null;
+  if (typeof indexedDB === "undefined") return;
+  const name = databaseName ?? EDITOR_CACHE_DATABASE_NAME;
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => resolve();
+  });
 }
 
 export function buildEditorCacheScope(input: {
@@ -334,12 +394,41 @@ export async function getProjectSnapshot(
   return withEditorCache((cache) => cache.getProjectSnapshot(scope, projectId, options));
 }
 
+export async function saveEditorBootstrap(
+  input: Omit<CachedEditorBootstrapRecord, "key" | "userProjectKey" | "scopeKey" | "userId" | "cachedAt"> & { now?: number },
+): Promise<EditorCacheResult<CachedEditorBootstrapRecord>> {
+  return withEditorCache((cache) => cache.saveEditorBootstrap(input));
+}
+
+export async function getEditorBootstrap(
+  userId: string,
+  projectId: string,
+  options?: { now?: number },
+): Promise<EditorCacheResult<LocalEditorBootstrapResult>> {
+  return withEditorCache((cache) => cache.getEditorBootstrap(userId, projectId, options));
+}
+
 export async function saveVideoTimelineDraft(
   document: VideoProjectDocument,
   scope: EditorCacheScope,
   options?: SaveVideoTimelineDraftOptions,
 ): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>> {
   return withEditorCache((cache) => cache.saveVideoTimelineDraft(document, scope, options));
+}
+
+export function persistVideoTimelineMutation(
+  input: PersistVideoTimelineMutationInput,
+): Promise<EditorCacheResult<{ draft: CachedVideoTimelineDraftRecord; pending: CachedPendingSyncRecord[] }>> {
+  const queueKey = projectScopeKey(input.scope, input.document.projectId);
+  const previous = timelineMutationQueues.get(queueKey) ?? Promise.resolve({ ok: true, value: undefined });
+  const operation = previous.catch(() => ({ ok: false as const, reason: "error" as const })).then(() =>
+    withEditorCache((cache) => cache.persistVideoTimelineMutation(input)),
+  );
+  timelineMutationQueues.set(queueKey, operation);
+  void operation.finally(() => {
+    if (timelineMutationQueues.get(queueKey) === operation) timelineMutationQueues.delete(queueKey);
+  });
+  return operation;
 }
 
 export async function getVideoTimelineDraft(
@@ -608,14 +697,15 @@ export function planEditorCacheCleanup(
   };
 }
 
-async function createEditorCache(): Promise<EditorCacheResult<EditorCache>> {
+async function createEditorCache(databaseName = EDITOR_CACHE_DATABASE_NAME): Promise<EditorCacheResult<EditorCache>> {
   try {
     const { default: DexieClass } = await import("dexie");
-    const db = new DexieClass(EDITOR_CACHE_DATABASE_NAME) as EditorDexie;
+    const db = new DexieClass(databaseName) as EditorDexie;
 
     db.version(EDITOR_CACHE_DATABASE_VERSION).stores({
       projects: "key, scopeKey, projectId, cachedAt, expiresAt, projectUpdatedAt",
       projectSnapshots: "key, scopeKey, projectId, documentSchemaVersion, cachedAt, expiresAt",
+      editorBootstraps: "key, userProjectKey, scopeKey, userId, projectId, cachedAt, expiresAt",
       videoTimelineDrafts: "key, scopeKey, projectId, documentSchemaVersion, cachedAt, documentUpdatedAt, revision",
       mediaAssets: "key, scopeKey, mediaId, cachedAt, expiresAt, storageSignature",
       mediaObjectCache: "key, scopeKey, mediaId, variant, cachedAt, expiresAt, storageKey",
@@ -709,6 +799,73 @@ class DexieEditorCache implements EditorCache {
     });
   }
 
+  async saveEditorBootstrap(
+    input: Omit<CachedEditorBootstrapRecord, "key" | "userProjectKey" | "scopeKey" | "userId" | "cachedAt"> & { now?: number },
+  ): Promise<EditorCacheResult<CachedEditorBootstrapRecord>> {
+    return this.run(async () => {
+      const cachedAt = input.now ?? Date.now();
+      const record: CachedEditorBootstrapRecord = {
+        key: buildEditorCacheKey(input.scope, "editorBootstrap", input.projectId),
+        userProjectKey: userProjectKey(input.scope.userId, input.projectId),
+        scopeKey: scopeKey(input.scope),
+        scope: input.scope,
+        userId: input.scope.userId,
+        projectId: input.projectId,
+        project: input.project,
+        canWrite: input.canWrite,
+        media: input.media,
+        projectMedia: input.projectMedia,
+        serverRevisionNumber: input.serverRevisionNumber,
+        cachedAt,
+        expiresAt: input.expiresAt,
+      };
+      await this.editorBootstraps.put(record);
+      return record;
+    });
+  }
+
+  async getEditorBootstrap(
+    userId: string,
+    projectId: string,
+    options: { now?: number } = {},
+  ): Promise<EditorCacheResult<LocalEditorBootstrapResult>> {
+    return this.read(async () => {
+      const record = await this.editorBootstraps.where("userProjectKey").equals(userProjectKey(userId, projectId)).first();
+      if (!record) return { ok: false, reason: "miss" };
+      const draftResult = await this.getVideoTimelineDraftRecord(record.scope, projectId);
+      let draft: CachedVideoTimelineDraftRecord | null = null;
+      const warnings: string[] = [];
+      if (draftResult.ok) {
+        draft = draftResult.value;
+      } else if (draftResult.reason !== "miss") {
+        warnings.push(`Draft cache ${draftResult.reason}.`);
+      }
+      const unsynced = draft?.hasUnsyncedChanges === true || (await this.pendingSync
+        .where("scopeProjectKey")
+        .equals(projectScopeKey(record.scope, projectId))
+        .count()) > 0;
+      if (isEditorCacheRecordExpired(record, options.now) && !unsynced) {
+        return { ok: false, reason: "expired" };
+      }
+      if (isEditorCacheRecordExpired(record, options.now)) {
+        warnings.unshift("Project metadata is expired; reopening because an unsynchronized local draft exists.");
+      }
+      return {
+        ok: true,
+        value: {
+          project: record.project,
+          scope: record.scope,
+          canWrite: record.canWrite,
+          media: record.media,
+          projectMedia: record.projectMedia,
+          draft,
+          serverRevisionNumber: record.serverRevisionNumber,
+          warnings,
+        },
+      };
+    });
+  }
+
   async saveVideoTimelineDraft(
     document: VideoProjectDocument,
     scope: EditorCacheScope,
@@ -740,11 +897,71 @@ class DexieEditorCache implements EditorCache {
     });
   }
 
+  async persistVideoTimelineMutation(
+    input: PersistVideoTimelineMutationInput,
+  ): Promise<EditorCacheResult<{ draft: CachedVideoTimelineDraftRecord; pending: CachedPendingSyncRecord[] }>> {
+    const serialized = serializeVideoTimelineDraft(input.document);
+    if (!serialized.ok) return serialized;
+    const db = this.db as unknown as {
+      transaction<T>(mode: "rw", tables: string[], operation: () => Promise<T>): Promise<T>;
+    };
+
+    return this.run(async () => db.transaction(
+      "rw",
+      ["videoTimelineDrafts", "pendingSync"],
+      async () => {
+        const now = input.operation.now ?? input.draftOptions?.now ?? Date.now();
+        const queuedAt = input.operation.queuedAt ?? new Date(now).toISOString();
+        const draft: CachedVideoTimelineDraftRecord = omitUndefined({
+          key: draftKey(input.scope, input.document.projectId),
+          scopeKey: scopeKey(input.scope),
+          scope: input.scope,
+          projectId: input.document.projectId,
+          documentSchemaVersion: VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION,
+          documentUpdatedAt: input.document.updatedAt,
+          revision: input.document.history.revision,
+          document: serialized.value,
+          serverRevisionNumber: input.draftOptions?.serverRevisionNumber,
+          lastSyncedAt: input.draftOptions?.lastSyncedAt,
+          hasUnsyncedChanges: true,
+          syncError: input.draftOptions?.syncError ?? null,
+          cachedAt: now,
+        }) as CachedVideoTimelineDraftRecord;
+        const pending = [
+          createPendingSyncRecord({
+            scope: input.scope,
+            projectId: input.document.projectId,
+            kind: "timelineDraft",
+            entityId: input.operation.entityId,
+            operationBatchId: input.operation.operationBatchId,
+            metadata: input.operation.metadata,
+            queuedAt,
+            now,
+          }),
+          ...Array.from(new Set(input.projectMediaIds ?? [])).map((mediaId) => createPendingSyncRecord({
+            scope: input.scope,
+            projectId: input.document.projectId,
+            kind: "projectMediaAttach",
+            entityId: mediaId,
+            metadata: { mediaId },
+            queuedAt,
+            now,
+          })),
+        ];
+
+        await this.videoTimelineDrafts.put(draft);
+        await this.pendingSync.bulkPut(pending);
+        return { draft, pending };
+      },
+    ));
+  }
+
   async getVideoTimelineDraft(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<VideoProjectDocument>> {
     return this.read(async () => {
-      const record = await this.videoTimelineDrafts.get(draftKey(scope, projectId));
+      const record = await this.videoTimelineDrafts.get(draftKey(scope, projectId))
+        ?? await this.videoTimelineDrafts.get(legacyDraftKey(scope, projectId));
       if (!record) return { ok: false, reason: "miss" };
-      if (record.documentSchemaVersion !== VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION) {
+      if (![1, 2, VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION].includes(record.documentSchemaVersion)) {
         return { ok: false, reason: "schema-mismatch" };
       }
       return coerceVideoTimelineDraft(record.document, projectId);
@@ -756,9 +973,10 @@ class DexieEditorCache implements EditorCache {
     projectId: string,
   ): Promise<EditorCacheResult<CachedVideoTimelineDraftRecord>> {
     return this.read(async () => {
-      const record = await this.videoTimelineDrafts.get(draftKey(scope, projectId));
+      const record = await this.videoTimelineDrafts.get(draftKey(scope, projectId))
+        ?? await this.videoTimelineDrafts.get(legacyDraftKey(scope, projectId));
       if (!record) return { ok: false, reason: "miss" };
-      if (record.documentSchemaVersion !== VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION) {
+      if (![1, 2, VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION].includes(record.documentSchemaVersion)) {
         return { ok: false, reason: "schema-mismatch" };
       }
 
@@ -768,6 +986,7 @@ class DexieEditorCache implements EditorCache {
         ok: true,
         value: {
           ...record,
+          documentSchemaVersion: VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION,
           document: draft.value,
         },
       };
@@ -777,6 +996,7 @@ class DexieEditorCache implements EditorCache {
   async deleteVideoTimelineDraft(scope: EditorCacheScope, projectId: string): Promise<EditorCacheResult<void>> {
     return this.run(async () => {
       await this.videoTimelineDrafts.delete(draftKey(scope, projectId));
+      await this.videoTimelineDrafts.delete(legacyDraftKey(scope, projectId));
     });
   }
 
@@ -940,28 +1160,7 @@ class DexieEditorCache implements EditorCache {
     now?: number;
   }): Promise<EditorCacheResult<CachedPendingSyncRecord>> {
     return this.run(async () => {
-      const queuedAt = input.queuedAt ?? new Date(input.now ?? Date.now()).toISOString();
-      const id = buildEditorCacheKey(
-        input.scope,
-        "pendingSync",
-        input.projectId,
-        input.kind,
-        input.entityId ?? input.operationBatchId ?? queuedAt,
-      );
-      const record = omitUndefined({
-        id,
-        scopeProjectKey: projectScopeKey(input.scope, input.projectId),
-        scopeKey: scopeKey(input.scope),
-        scope: input.scope,
-        projectId: input.projectId,
-        kind: input.kind,
-        queuedAt,
-        entityId: input.entityId,
-        operationBatchId: input.operationBatchId,
-        metadata: input.metadata,
-        retryCount: 0,
-        cachedAt: input.now ?? Date.now(),
-      }) as CachedPendingSyncRecord;
+      const record = createPendingSyncRecord(input);
 
       await this.pendingSync.put(record);
       return record;
@@ -1023,6 +1222,10 @@ class DexieEditorCache implements EditorCache {
     return this.db.table<CachedProjectSnapshotRecord>("projectSnapshots");
   }
 
+  private get editorBootstraps() {
+    return this.db.table<CachedEditorBootstrapRecord>("editorBootstraps");
+  }
+
   private get videoTimelineDrafts() {
     return this.db.table<CachedVideoTimelineDraftRecord>("videoTimelineDrafts");
   }
@@ -1068,6 +1271,40 @@ class DexieEditorCache implements EditorCache {
   }
 }
 
+function createPendingSyncRecord(input: {
+  scope: EditorCacheScope;
+  projectId: string;
+  kind: CachedPendingSyncRecord["kind"];
+  entityId?: string;
+  operationBatchId?: string;
+  metadata?: JsonValue;
+  queuedAt?: string;
+  now?: number;
+}): CachedPendingSyncRecord {
+  const now = input.now ?? Date.now();
+  const queuedAt = input.queuedAt ?? new Date(now).toISOString();
+  return omitUndefined({
+    id: buildEditorCacheKey(
+      input.scope,
+      "pendingSync",
+      input.projectId,
+      input.kind,
+      input.entityId ?? input.operationBatchId ?? queuedAt,
+    ),
+    scopeProjectKey: projectScopeKey(input.scope, input.projectId),
+    scopeKey: scopeKey(input.scope),
+    scope: input.scope,
+    projectId: input.projectId,
+    kind: input.kind,
+    queuedAt,
+    entityId: input.entityId,
+    operationBatchId: input.operationBatchId,
+    metadata: input.metadata,
+    retryCount: 0,
+    cachedAt: now,
+  }) as CachedPendingSyncRecord;
+}
+
 async function withEditorCache<T>(
   operation: (cache: EditorCache) => Promise<EditorCacheResult<T>>,
 ): Promise<EditorCacheResult<T>> {
@@ -1083,6 +1320,14 @@ function draftKey(scope: EditorCacheScope, projectId: string): string {
     projectId,
     VIDEO_PROJECT_DOCUMENT_SCHEMA_VERSION,
   );
+}
+
+function legacyDraftKey(scope: EditorCacheScope, projectId: string): string {
+  return buildEditorCacheKey(scope, "videoTimelineDraft", projectId, 1);
+}
+
+function userProjectKey(userId: string, projectId: string): string {
+  return `${encodeURIComponent(userId)}:${encodeURIComponent(projectId)}`;
 }
 
 function hasSchemaMismatch(value: unknown): boolean {
