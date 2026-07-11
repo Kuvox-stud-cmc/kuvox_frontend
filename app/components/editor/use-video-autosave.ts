@@ -49,6 +49,7 @@ interface UseVideoAutosaveInput {
   projectName: string;
   cacheScope: EditorCacheScope;
   editor: EditorState;
+  attachedProjectMediaIds?: readonly string[];
   onProjectMediaAttached?: (media: ProjectMediaDto[]) => void;
 }
 
@@ -61,7 +62,14 @@ export type VideoExportFlushResult = VideoSyncResult;
 
 const videoTimelineAutosaveIntervalMs = 15 * 60 * 1000;
 
-export function useVideoAutosave({ projectId, projectName, cacheScope, editor, onProjectMediaAttached }: UseVideoAutosaveInput) {
+export function useVideoAutosave({
+  projectId,
+  projectName,
+  cacheScope,
+  editor,
+  attachedProjectMediaIds = [],
+  onProjectMediaAttached,
+}: UseVideoAutosaveInput) {
   const dispatch = useAppDispatch();
   const latestEditor = useRef(editor);
   const persistedDocumentRevision = useRef<number | null>(null);
@@ -74,6 +82,7 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor, o
     status: "failure",
     message: "Video document is not loaded.",
   }));
+  const attachedProjectMediaIdsRef = useRef(new Set(attachedProjectMediaIds));
 
   const flushLocalDraft = useCallback(async () => {
     await localWriteQueue.current.catch(() => undefined);
@@ -136,10 +145,18 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor, o
 
     dispatch(editorBackendSyncStarted());
     try {
-      const mediaIds = Array.from(new Set(attachmentPending.flatMap(mediaIdFromPending)));
+      const confirmedAttachmentRecords = attachmentPending.filter((entry) =>
+        mediaIdFromPending(entry).some((mediaId) => attachedProjectMediaIdsRef.current.has(mediaId))
+      );
+      if (confirmedAttachmentRecords.length > 0) {
+        await Promise.all(confirmedAttachmentRecords.map((entry) => deletePendingSync(entry.id)));
+      }
+      const pendingAttachmentRecords = attachmentPending.filter((entry) => !confirmedAttachmentRecords.includes(entry));
+      const mediaIds = Array.from(new Set(pendingAttachmentRecords.flatMap(mediaIdFromPending)));
       if (mediaIds.length > 0) {
         const attached = await attachProjectMediaFromBff(projectId, mediaIds, { correlationId });
-        await Promise.all(attachmentPending.map((entry) => deletePendingSync(entry.id)));
+        mediaIds.forEach((mediaId) => attachedProjectMediaIdsRef.current.add(mediaId));
+        await Promise.all(pendingAttachmentRecords.map((entry) => deletePendingSync(entry.id)));
         onProjectMediaAttached?.(attached);
       }
 
@@ -261,6 +278,10 @@ export function useVideoAutosave({ projectId, projectName, cacheScope, editor, o
   useEffect(() => {
     latestEditor.current = editor;
   }, [editor]);
+
+  useEffect(() => {
+    attachedProjectMediaIdsRef.current = new Set(attachedProjectMediaIds);
+  }, [attachedProjectMediaIds]);
 
   const syncNow = useCallback(async (): Promise<VideoSyncResult> => {
     if (syncInFlight.current) return syncInFlight.current;

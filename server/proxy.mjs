@@ -87,15 +87,16 @@ export function installProxyHandlers(appOrServer, maybeServer) {
   app.use("/bff/timelines", async (req, res, next) => {
     const pathname = incomingPathname(req, "/bff/timelines");
     const renderRoute = parseTimelineRenderRoute(pathname);
+    const renderJobRoute = parseTimelineRenderJobRoute(pathname);
     const performanceRoute = parseTimelinePerformanceRoute(pathname);
-    const route = renderRoute ?? performanceRoute;
+    const route = renderRoute ?? renderJobRoute ?? performanceRoute;
     if (!route) {
       next();
       return;
     }
 
-    if (req.method !== "POST") {
-      res.setHeader("Allow", "POST");
+    if (!route.methods.includes(req.method)) {
+      res.setHeader("Allow", route.methods.join(", "));
       sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
       return;
     }
@@ -511,6 +512,27 @@ function parseTimelineRenderRoute(pathname) {
 
   return {
     targetPath: `/api/timelines/${match[1]}/render`,
+    methods: ["POST"],
+  };
+}
+
+export function parseTimelineRenderJobRoute(pathname) {
+  const outputMatch = /^\/bff\/timelines\/render-jobs\/([^/]+)\/output$/.exec(pathname);
+  if (outputMatch) {
+    return {
+      targetPath: `/api/timelines/render-jobs/${outputMatch[1]}/output`,
+      methods: ["GET", "HEAD"],
+    };
+  }
+
+  const jobMatch = /^\/bff\/timelines\/render-jobs\/([^/]+)$/.exec(pathname);
+  if (!jobMatch) {
+    return null;
+  }
+
+  return {
+    targetPath: `/api/timelines/render-jobs/${jobMatch[1]}`,
+    methods: ["GET"],
   };
 }
 
@@ -522,6 +544,7 @@ function parseTimelinePerformanceRoute(pathname) {
 
   return {
     targetPath: `/api/timelines/projects/${match[1]}/performance`,
+    methods: ["POST"],
   };
 }
 

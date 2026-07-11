@@ -128,6 +128,7 @@ export function VideoEditorWorkspace({
   const editorOpenedAt = useRef(typeof performance !== "undefined" ? performance.now() : 0);
   const firstUsableRecorded = useRef(false);
   const [projectMediaRows, setProjectMediaRows] = useState(projectMedia);
+  const [attachedProjectMediaIds, setAttachedProjectMediaIds] = useState(() => projectMedia.map((item) => item.mediaId));
   const [draftRecovery, setDraftRecovery] = useState<DraftRecoveryState>({ state: "none" });
   const [narrowManualPane, setNarrowManualPane] = useState<NarrowManualPane>("preview");
   const [responsiveDrawer, setResponsiveDrawer] = useState<ResponsiveManualDrawer>(null);
@@ -155,8 +156,10 @@ export function VideoEditorWorkspace({
     projectName: project.name,
     cacheScope,
     editor,
+    attachedProjectMediaIds,
     onProjectMediaAttached: (attached) => {
       setProjectMediaRows((current) => mergeProjectMediaRows(current, attached));
+      setAttachedProjectMediaIds((current) => Array.from(new Set([...current, ...attached.map((item) => item.mediaId)])));
       dispatch(projectMediaAvailabilityLoaded(attached));
     },
   });
@@ -165,6 +168,7 @@ export function VideoEditorWorkspace({
 
   useEffect(() => {
     setProjectMediaRows(projectMedia);
+    setAttachedProjectMediaIds(projectMedia.map((item) => item.mediaId));
     dispatch(projectMediaAvailabilityLoaded(projectMedia));
   }, [dispatch, projectMedia]);
 

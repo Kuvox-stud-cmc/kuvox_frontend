@@ -242,6 +242,35 @@ describe("useVideoAutosave export synchronization", () => {
     expect(order).toEqual(["attach", "timeline"]);
   });
 
+  it("clears stale attachment records for media already confirmed on the project", async () => {
+    const document = createMockVideoProjectDocument("project-1", "Project 1");
+    const attachment = pending("projectMediaAttach", "media-1");
+    const timeline = pending("timelineDraft", "revision-1");
+    const queued = { ok: true, value: [attachment, timeline] };
+    cache.listPendingSync
+      .mockResolvedValueOnce(queued)
+      .mockResolvedValueOnce(queued)
+      .mockResolvedValue({ ok: true, value: [] });
+    timelineApi.save.mockResolvedValue({
+      ok: true,
+      timeline: { timelineId: "timeline-1", revisionNumber: 4, updatedAt: "2026-07-11T00:00:00.000Z" },
+    });
+    const { result } = renderAutosave(editorState({
+      projectId: document.projectId,
+      document,
+      documentStatus: "ready",
+      syncStatus: "dirty",
+      lastSavedRevision: document.history.revision - 1,
+      serverTimelineId: "timeline-1",
+      serverRevisionNumber: 3,
+    }), makeStore(), ["media-1"]);
+
+    expect((await result.current.flushForExport()).status).toBe("success");
+    expect(projectMediaApi.attach).not.toHaveBeenCalled();
+    expect(cache.deletePendingSync).toHaveBeenCalledWith(attachment.id);
+    expect(timelineApi.save).toHaveBeenCalledTimes(1);
+  });
+
   it("retains backend progress and remains unsynced when the document changes during save", async () => {
     const document = createMockVideoProjectDocument("project-1", "Project 1");
     let resolveSave!: (value: unknown) => void;
@@ -269,12 +298,13 @@ describe("useVideoAutosave export synchronization", () => {
   });
 });
 
-function renderAutosave(editor: EditorState, store = makeStore()) {
+function renderAutosave(editor: EditorState, store = makeStore(), attachedProjectMediaIds: string[] = []) {
   return renderHook((currentEditor: EditorState) => useVideoAutosave({
     projectId: "project-1",
     projectName: "Project 1",
     cacheScope: { userId: "user-1", ownerKind: "user", ownerId: "user-1" },
     editor: currentEditor,
+    attachedProjectMediaIds,
   }), {
     initialProps: editor,
     wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
