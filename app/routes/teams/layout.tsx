@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, redirect } from "react-router";
 
 import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
@@ -19,8 +19,12 @@ import { getSession } from "~/lib/session.server";
 import { requireStudioAccess } from "./access.server";
 import type { Route } from "./+types/layout";
 
+const SIDEBAR_WIDTH_KEY = "kuvox_team_sidebar_width";
 const DEFAULT_SIDEBAR_WIDTH = 256;
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 400;
 const COLLAPSED_SIDEBAR_WIDTH = 72;
+const COLLAPSE_SNAP = 120;
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const log = createRequestLogger(request);
@@ -131,11 +135,9 @@ const studioNavSections = (studioId: string, canManageAccess: boolean): StudioNa
     {
       label: "Team & Access",
       items: [
-        { to: `/teams/${studioId}/members`, label: "Members", icon: "group" },
+        { to: `/teams/${studioId}/access-management`, label: "Access Management", icon: "admin_panel_settings" },
         ...(canManageAccess
           ? [
-              { to: `/teams/${studioId}/roles`, label: "Roles", icon: "admin_panel_settings" },
-              { to: `/teams/${studioId}/permissions`, label: "Permissions", icon: "lock" },
               { to: `/teams/${studioId}/invitations`, label: "Invitations", icon: "mail" },
               { to: `/teams/${studioId}/audit-log`, label: "Audit Log", icon: "fact_check" },
             ]
@@ -173,17 +175,90 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
   } = loaderData;
   const studioList: StudioDto[] = studios;
   const storagePercent = usage ? percent(usage.storageBytesUsed, usage.storageBytesQuota) : 0;
-  const [collapsed, setCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [isDragging, setIsDragging] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed((value) => !value);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const collapsed = sidebarWidth <= COLLAPSED_SIDEBAR_WIDTH;
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      if (saved) {
+        const width = parseInt(saved, 10);
+        if (!Number.isNaN(width)) setSidebarWidth(width);
+      }
+    } catch {
+      /* noop */
+    }
   }, []);
+
+  const persistWidth = useCallback((width: number) => {
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  const handleMouseDown = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      setIsDragging(true);
+
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const width = startWidth + moveEvent.clientX - startX;
+        setSidebarWidth(
+          width < COLLAPSE_SNAP
+            ? COLLAPSED_SIDEBAR_WIDTH
+            : Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, width)),
+        );
+      };
+
+      const onMouseUp = () => {
+        setIsDragging(false);
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+
+        setSidebarWidth((current) => {
+          persistWidth(current);
+          return current;
+        });
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [persistWidth, sidebarWidth],
+  );
+
+  const handleDoubleClick = useCallback(() => {
+    const next = collapsed ? DEFAULT_SIDEBAR_WIDTH : COLLAPSED_SIDEBAR_WIDTH;
+    setSidebarWidth(next);
+    persistWidth(next);
+  }, [collapsed, persistWidth]);
+
+  const toggleCollapsed = useCallback(() => {
+    const next = collapsed ? DEFAULT_SIDEBAR_WIDTH : COLLAPSED_SIDEBAR_WIDTH;
+    setSidebarWidth(next);
+    persistWidth(next);
+  }, [collapsed, persistWidth]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
       <aside
-        className="flex flex-shrink-0 flex-col bg-surface-container-lowest transition-[width] duration-300 ease-in-out"
-        style={{ width: collapsed ? COLLAPSED_SIDEBAR_WIDTH : DEFAULT_SIDEBAR_WIDTH }}
+        ref={sidebarRef}
+        className={`relative flex flex-shrink-0 flex-col bg-surface-container-lowest ${
+          isDragging ? "" : "transition-[width] duration-300 ease-in-out"
+        }`}
+        style={{ width: sidebarWidth }}
       >
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-5">
           <div className={`mb-5 flex items-center ${collapsed ? "justify-center" : "justify-between"}`}>
@@ -304,6 +379,17 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
             )}
           </div>
         )}
+
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClick}
+          className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none transition-colors hover:bg-primary/40 active:bg-primary/60 ${
+            isDragging ? "bg-primary/60" : "bg-transparent"
+          }`}
+        />
       </aside>
       <CreateProjectModal
         open={createOpen && canWriteContent}
@@ -319,6 +405,7 @@ export default function TeamLayout({ loaderData }: Route.ComponentProps) {
           <Outlet />
         </main>
       </div>
+      {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
     </div>
   );
 }

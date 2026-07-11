@@ -329,7 +329,7 @@ export default function TeamHome({ loaderData, actionData }: Route.ComponentProp
           </p>
         </div>
         <Link
-          to={canManageAccess ? `/teams/${studioId}/settings/workspace` : `/teams/${studioId}/members`}
+          to={canManageAccess ? `/teams/${studioId}/settings/workspace` : `/teams/${studioId}/access-management`}
           className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-body-sm font-medium text-on-surface transition-colors hover:bg-surface-container"
         >
           <span className="material-symbols-outlined text-[18px]">
