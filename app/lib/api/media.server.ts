@@ -5,6 +5,10 @@ import type { RequestLogger } from "../logger.server";
 import { apiClient } from "./api-client.server";
 
 export class MediaApi extends BaseApiModule {
+  getMedia(token: string, id: string, log?: RequestLogger): Promise<MediaDto> {
+    return this.get<MediaDto>(token, `${API_ROUTES.MEDIA}/${id}`, log);
+  }
+
   listMedia(token: string, ws: Workspace, log?: RequestLogger): Promise<PagedResult<MediaDto>> {
     return this.listMediaPage(token, ws, { pageSize: 100 }, log);
   }
@@ -75,6 +79,7 @@ export class MediaApi extends BaseApiModule {
 
 export const mediaApi = new MediaApi(apiClient);
 
+export const getMedia = (t: string, id: string, l?: RequestLogger) => mediaApi.getMedia(t, id, l);
 export const listMedia = (t: string, w: Workspace, l?: RequestLogger) => mediaApi.listMedia(t, w, l);
 export const listAllMedia = (t: string, w: Workspace, l?: RequestLogger) => mediaApi.listAllMedia(t, w, l);
 export const listSharedMedia = (t: string, l?: RequestLogger) => mediaApi.listSharedMedia(t, l);

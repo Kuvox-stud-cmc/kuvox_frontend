@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Form, useFetcher, useLocation } from "react-router";
+import { Form, useFetcher, useLocation, useNavigate } from "react-router";
 
 import { Modal, primaryButtonClass } from "~/components/dashboard/section";
 import { mediaObjectUrl, type MediaObjectVariant } from "~/components/dashboard/workspace/media-thumbnail";
-import { MediaKind, Permission, mediaKindLabel, sharedRoleLabel, type ItemAccessMemberDto, type MediaDto } from "~/lib/api";
+import { MediaKind, Permission, ProjectKind, mediaKindLabel, sharedRoleLabel, type ItemAccessMemberDto, type MediaDto } from "~/lib/api";
 
 interface AssetCardContextMenuProps {
   media: MediaDto;
@@ -28,6 +28,8 @@ type ResourceActionData = {
   resourceType?: "media" | "project" | "album" | "projects" | "albums";
   id?: string;
   access?: ItemAccessMemberDto[];
+  projectId?: string;
+  projectHref?: string;
   error?: string;
 };
 
@@ -63,6 +65,8 @@ export function AssetCardContextMenu({
   copyUrl,
 }: AssetCardContextMenuProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const projectFetcher = useFetcher<ResourceActionData>();
   const [open, setOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(defaultDetailsOpen);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -74,6 +78,20 @@ export function AssetCardContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const download = useMemo(() => bestDownloadSource(media), [media]);
   const pageLink = useMemo(() => buildAssetDeepLink(location.pathname, location.search, media.id), [location.pathname, location.search, media.id]);
+  const projectAction = useMemo(() => projectActionForPath(location.pathname, workspaceKind), [location.pathname, workspaceKind]);
+  const studioId = workspaceKind === "studio" ? studioIdFromPath(location.pathname) : null;
+  const isCreatingProject = projectFetcher.state !== "idle";
+
+  useEffect(() => {
+    if (
+      projectFetcher.data?.ok &&
+      projectFetcher.data.intent === "create-project-from-media" &&
+      projectFetcher.data.projectHref
+    ) {
+      setOpen(false);
+      void navigate(projectFetcher.data.projectHref);
+    }
+  }, [navigate, projectFetcher.data]);
 
   const updateMenuPosition = () => {
     const rect = ref.current?.getBoundingClientRect();
@@ -161,6 +179,17 @@ export function AssetCardContextMenu({
 
   const closeMenu = () => setOpen(false);
 
+  const openInNewProject = (projectKind: number) => {
+    if (!projectAction || isCreatingProject) return;
+    const formData = new FormData();
+    formData.set("intent", "create-project-from-media");
+    formData.set("resourceType", "media");
+    formData.set("id", media.id);
+    formData.set("projectKind", String(projectKind));
+    if (studioId) formData.set("studioId", studioId);
+    void projectFetcher.submit(formData, { method: "post", action: projectAction });
+  };
+
   return (
     <>
       <div ref={ref} className="relative inline-flex" onClick={(event) => event.stopPropagation()}>
@@ -191,12 +220,37 @@ export function AssetCardContextMenu({
             }}
             className={`z-[80] min-w-56 overflow-y-auto overflow-x-hidden rounded-xl border border-outline-variant bg-surface-container-low py-1 shadow-xl ${menuClassName}`}
           >
-            {/* Open in New Tab */}
+            {/* Open in New Project */}
             {resourceType === "media" ? (
-              <button type="button" role="menuitem" disabled className={menuItemClass} title="Requires backend support to resolve the project that contains this asset.">
-                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
-                Open in New Tab
-              </button>
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!projectAction || isCreatingProject}
+                  onClick={() => openInNewProject(ProjectKind.Video)}
+                  className={menuItemClass}
+                >
+                  <span className="material-symbols-outlined text-[18px]">video_call</span>
+                  {isCreatingProject ? "Creating Project..." : "Open in New Video Project"}
+                </button>
+                {media.kind === MediaKind.Image ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!projectAction || isCreatingProject}
+                    onClick={() => openInNewProject(ProjectKind.Image)}
+                    className={menuItemClass}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">add_photo_alternate</span>
+                    Open in New Image Project
+                  </button>
+                ) : null}
+                {projectFetcher.data?.error ? (
+                  <p className="px-3 py-2 text-label-sm text-error" role="alert">
+                    {projectFetcher.data.error}
+                  </p>
+                ) : null}
+              </>
             ) : (copyUrl ? (
               <a
                 role="menuitem"
@@ -224,14 +278,6 @@ export function AssetCardContextMenu({
               >
                 <span className="material-symbols-outlined text-[18px]">info</span>
                 Asset Details
-              </button>
-            )}
-
-            {/* Duplicate */}
-            {resourceType === "media" && (
-              <button type="button" role="menuitem" disabled className={menuItemClass} title="Duplicate asset API is not available yet.">
-                <span className="material-symbols-outlined text-[18px]">content_copy</span>
-                Duplicate
               </button>
             )}
 
@@ -610,11 +656,6 @@ function ShareModal({
     return true;
   };
 
-  const mergeEmails = (a: string[], b: string[]) => {
-    const set = new Set([...a, ...b]);
-    return Array.from(set);
-  };
-
   return (
     <Modal open={open} onClose={onClose} title="Share item">
       <fetcher.Form
@@ -743,6 +784,10 @@ function parseEmailTokens(value: string): { valid: string[]; invalid: string[] }
   return { valid, invalid };
 }
 
+function mergeEmails(current: string[], incoming: string[]): string[] {
+  return Array.from(new Set([...current, ...incoming]));
+}
+
 function bestDownloadSource(media: MediaDto): { href: string; variant: MediaObjectVariant } | null {
   const candidates: MediaObjectVariant[] = media.kind === MediaKind.Video ? ["canonical", "proxy", "raw"] : ["canonical", "raw", "thumbnail"];
   for (const variant of candidates) {
@@ -764,6 +809,17 @@ function buildAssetDeepLink(pathname: string, search: string, mediaId: string) {
   params.set("asset", mediaId);
   const query = params.toString();
   return `${pathname}${query ? `?${query}` : ""}`;
+}
+
+function projectActionForPath(pathname: string, workspaceKind: "personal" | "studio"): string | null {
+  if (workspaceKind === "personal") return "/dashboard/projects";
+  const studioId = studioIdFromPath(pathname);
+  return studioId ? `/teams/${encodeURIComponent(studioId)}/projects` : null;
+}
+
+function studioIdFromPath(pathname: string): string | null {
+  const match = /^\/teams\/([^/]+)/.exec(pathname);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function formatSize(value: MediaDto["sizeBytes"]): string {
