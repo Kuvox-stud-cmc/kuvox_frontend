@@ -20,10 +20,13 @@ import {
   type EditorMode,
   videoRedoRequested,
   videoUndoRequested,
+  selectVideoDocument,
+  videoOperationApplied,
 } from "~/store/slices/editor-slice";
 
 import type { EditorProjectMock } from "./mock-editor-data";
 import { EditorIcon, EditorIconButton } from "./editor-ui";
+import { setProjectSettingsOperation } from "~/lib/editor/video-operations";
 
 interface EditorTopBarProps {
   project: EditorProjectMock;
@@ -34,6 +37,14 @@ interface EditorTopBarProps {
   onKeepLocal?: () => void | Promise<void>;
   onReloadServer?: () => void | Promise<void>;
 }
+
+const ASPECT_RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  "16:9": { width: 1920, height: 1080 },
+  "9:16": { width: 1080, height: 1920 },
+  "1:1": { width: 1080, height: 1080 },
+  "4:3": { width: 1440, height: 1080 },
+  "21:9": { width: 2560, height: 1080 },
+};
 
 const modes: Array<{ value: EditorMode; label: string; icon?: string }> = [
   { value: "manual", label: "Manual", icon: "edit" },
@@ -67,7 +78,9 @@ export function EditorTopBar({
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [aspectRatioOpen, setAspectRatioOpen] = useState(false);
-  const [selectedRatio, setSelectedRatio] = useState("16:9");
+
+  const document = useAppSelector(selectVideoDocument);
+  const selectedRatio = document?.settings.aspectRatio ?? "16:9";
   const { editorMode } = useAppSelector(selectChromeState);
   const { syncStatus, pendingSyncCount } = useAppSelector(selectEditorSyncChromeState);
   const canUndo = useAppSelector(selectCanUndo);
@@ -198,7 +211,19 @@ export function EditorTopBar({
                     key={ratio.value}
                     type="button"
                     onClick={() => {
-                      setSelectedRatio(ratio.value);
+                      const dimensions = ASPECT_RATIO_DIMENSIONS[ratio.value] || { width: 1920, height: 1080 };
+                      dispatch(
+                        videoOperationApplied(
+                          setProjectSettingsOperation(
+                            {
+                              aspectRatio: ratio.value,
+                              width: dimensions.width,
+                              height: dimensions.height,
+                            },
+                            `Change aspect ratio to ${ratio.label}`
+                          )
+                        )
+                      );
                       setAspectRatioOpen(false);
                       dispatch(toastShown(`Aspect ratio changed to ${ratio.label}`));
                     }}

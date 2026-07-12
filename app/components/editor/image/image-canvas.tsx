@@ -154,7 +154,7 @@ export function ImageCanvas({
   };
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-[#0d0f12]">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-background">
       <Stage
         width={viewport.width}
         height={viewport.height}

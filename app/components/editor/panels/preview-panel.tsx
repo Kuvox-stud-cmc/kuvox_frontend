@@ -8,7 +8,6 @@ import {
   computeSafeGuides,
   computeTextOverlayBounds,
   createProgramMonitorPlan,
-  mediaSourceTimeToTimelineTime,
   type PreviewAudioPlan,
   type PreviewMediaOverlayPlan,
   type PreviewOverlayPlan,
@@ -22,6 +21,7 @@ import {
   queueVideoEditorPerformanceMetric,
 } from "~/lib/editor/video-performance.client";
 import { createEditorCorrelationId, logVideoEditorEvent } from "~/lib/editor/editor-observability.client";
+import { resolveItemOpacity, resolveItemTransform } from "~/lib/editor/video-document";
 import type { VideoProjectSettings, VideoTextStyle, VideoTransform } from "~/lib/editor/video-document";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
@@ -39,7 +39,7 @@ import {
   timelineItemsSelected,
   videoOperationApplied,
 } from "~/store/slices/editor-slice";
-import type { UpdateTextOperation } from "~/lib/editor/video-operations";
+import { updateTextOperation, updateTransformCropOperation } from "~/lib/editor/video-operations";
 
 import { editorProject, type EditorProjectMock } from "../mock-editor-data";
 import { EditorIcon, EditorIconButton } from "../editor-ui";
@@ -58,21 +58,25 @@ interface StageSize {
 
 type MediaErrorMap = Record<string, string>;
 type ResizeCorner = "nw" | "ne" | "sw" | "se";
-type TextTransformPreview = Record<string, VideoTransform>;
+type PreviewVideoElementMap = Record<string, HTMLVideoElement | null>;
 type HTMLVideoElementWithFrameCallback = HTMLVideoElement & {
   requestVideoFrameCallback: (callback: () => void) => number;
   cancelVideoFrameCallback?: (handle: number) => void;
 };
-type TextGesture = {
-  kind: "move" | "resize";
+type VisualGesture = {
+  kind: "move" | "resize" | "rotate";
+  itemType: "text" | "media";
   itemId: string;
   startPointer: { x: number; y: number };
   startTransform: VideoTransform;
   corner?: ResizeCorner;
+  baseWidth?: number;
+  baseHeight?: number;
+  center?: { x: number; y: number };
+  startAngle?: number;
 };
 
 const defaultStageSize: StageSize = { width: 960, height: 540 };
-const mediaClockEndEpsilon = 0.01;
 const decodedImageCache = new Map<string, HTMLImageElement>();
 
 export function PreviewPanel({
@@ -91,7 +95,6 @@ export function PreviewPanel({
   const [previewAreaSize, setPreviewAreaSize] = useElementSize(defaultStageSize);
   const [fullscreenStageSize, setFullscreenStageSize] = useElementSize(defaultStageSize);
   const mediaLayerRef = useRef<Konva.Layer>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   const [activeEffect, setActiveEffect] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
@@ -153,13 +156,9 @@ export function PreviewPanel({
     [document, playback.currentTime, playback.muted, playback.volume, qualityPreference, soloedAudioTrackIds],
   );
   const frameRate = document?.settings.frameRate ?? 30;
-  const activeVideo =
-    plan?.activeVisual?.item.type === "video" && plan.activeVisual.objectUrl
-      ? plan.activeVisual
-      : null;
+  const activeVideos = plan?.activeVisuals.filter((visual) => visual.item.type === "video" && visual.objectUrl) ?? [];
   const activeAudio = plan?.activeAudio.filter((audio) => audio.objectUrl) ?? [];
-  const primaryClockAudio = activeVideo ? null : activeAudio[0] ?? null;
-  const mediaClockActive = Boolean(activeVideo || primaryClockAudio);
+  const [videoElements, setVideoElements] = useState<PreviewVideoElementMap>({});
   const stageSize = useMemo(
     () => fitStageToArea(previewAreaSize, document?.settings),
     [document?.settings, previewAreaSize],
@@ -180,7 +179,6 @@ export function PreviewPanel({
 
   usePlaybackClock({
     playing: playback.playing,
-    mediaClockActive,
     currentTime: playback.currentTime,
     timelineDuration,
     frameRate,
@@ -188,26 +186,13 @@ export function PreviewPanel({
     onEnd: () => dispatch(playbackPaused()),
   });
 
-  useVideoElementSync({
-    ref: videoRef,
-    activeVideo,
-    playing: playback.playing,
-    muted: playback.muted,
-    volume: playback.volume,
-    timelineDuration,
-    onTimeChange: (time) => dispatch(currentTimeChanged(time)),
-    onEnd: () => dispatch(playbackPaused()),
-    onError: (message) => {
-      logMediaObjectFailure(document?.projectId, activeVideo?.media.id, activeVideo?.item.id, activeVideo?.objectVariant, "video", message);
-      setMediaErrors((errors) => ({ ...errors, video: message }));
-      dispatch(playbackPaused());
-    },
-    onDrawNeeded: () => mediaLayerRef.current?.batchDraw(),
-  });
-
   useEffect(() => {
     setMediaErrors({});
-  }, [activeVideo?.objectUrl, activeAudioSignature(activeAudio)]);
+  }, [activeVideoSignature(activeVideos), activeAudioSignature(activeAudio)]);
+
+  const setPreviewVideoElement = useCallback((itemId: string, element: HTMLVideoElement | null) => {
+    setVideoElements((current) => (current[itemId] === element ? current : { ...current, [itemId]: element }));
+  }, []);
 
   const seekToTimecode = useCallback(() => {
     if (timecodeDraft === null) {
@@ -254,37 +239,47 @@ export function PreviewPanel({
     recordPlaybackSeek(startedAt);
   }, [dispatch, recordPlaybackSeek]);
 
-  const selectTextOverlay = useCallback((itemId: string) => {
+  const selectPreviewItem = useCallback((itemId: string) => {
     dispatch(timelineItemsSelected({ itemIds: [itemId], activeItemId: itemId }));
   }, [dispatch]);
 
-  const commitTextTransform = useCallback((itemId: string, transform: VideoTransform) => {
-    const timestamp = new Date().toISOString();
-    const operation: UpdateTextOperation = {
-      id: `preview-text-transform-${itemId}-${timestamp.replace(/[-:.TZ]/g, "")}`,
-      source: "manual",
-      timestamp,
-      label: "Update text transform",
-      affectedEntityIds: [itemId],
-      type: "updateText",
-      itemId,
-      transform,
-    };
-    dispatch(videoOperationApplied(operation));
+  const commitPreviewTransform = useCallback((
+    itemId: string,
+    itemType: "text" | "media",
+    transform: VideoTransform,
+    squash = true,
+  ) => {
+    const operation = itemType === "text"
+      ? updateTextOperation(itemId, { transform }, "Update text transform")
+      : updateTransformCropOperation(itemId, { transform }, "Update transform");
+    dispatch(videoOperationApplied({ operation, squash }));
   }, [dispatch]);
 
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest">
-      <video ref={videoRef} className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
+
+      {activeVideos.map((activeVideo) => (
+        <PreviewVideoElement
+          key={activeVideo.item.id}
+          activeVideo={activeVideo}
+          playing={playback.playing}
+          muted={playback.muted}
+          volume={playback.volume}
+          onElementChange={setPreviewVideoElement}
+          onError={(message) => {
+            logMediaObjectFailure(document?.projectId, activeVideo.media.id, activeVideo.item.id, activeVideo.objectVariant, "video", message);
+            setMediaErrors((errors) => ({ ...errors, [`video:${activeVideo.item.id}`]: message }));
+            dispatch(playbackPaused());
+          }}
+          onDrawNeeded={() => mediaLayerRef.current?.batchDraw()}
+        />
+      ))}
+
       {activeAudio.map((audioPlan) => (
         <PreviewAudioElement
           key={audioPlan.item.id}
           activeAudio={audioPlan}
           playing={playback.playing}
-          primaryClock={primaryClockAudio?.item.id === audioPlan.item.id}
-          timelineDuration={timelineDuration}
-          onTimeChange={(time) => dispatch(currentTimeChanged(time))}
-          onEnd={() => dispatch(playbackPaused())}
           onError={(message) => {
             logMediaObjectFailure(document?.projectId, audioPlan.media.id, audioPlan.item.id, audioPlan.objectVariant, "audio", message);
             setMediaErrors((errors) => ({ ...errors, [`audio:${audioPlan.item.id}`]: message }));
@@ -332,13 +327,13 @@ export function PreviewPanel({
             <ProgramMonitorStage
               plan={plan}
               stageSize={stageSize}
-              videoElement={videoRef.current}
+              videoElements={videoElements}
               mediaLayerRef={mediaLayerRef}
               messages={monitorMessages}
               fallbackTitle={project.previewTitle}
               selectedItemIds={selectedItemIds}
-              onSelectTextOverlay={selectTextOverlay}
-              onCommitTextTransform={commitTextTransform}
+              onSelectPreviewItem={selectPreviewItem}
+              onCommitPreviewTransform={commitPreviewTransform}
             />
             {activeEffect === "Vignette" && (
               <div className="pointer-events-none absolute inset-0 z-30 bg-[radial-gradient(circle,transparent_40%,rgba(0,0,0,0.65)_100%)]" />
@@ -503,13 +498,13 @@ export function PreviewPanel({
             <ProgramMonitorStage
               plan={plan}
               stageSize={fullscreenStageSize}
-              videoElement={videoRef.current}
+              videoElements={videoElements}
               mediaLayerRef={mediaLayerRef}
               messages={monitorMessages}
               fallbackTitle={project.previewTitle}
               selectedItemIds={selectedItemIds}
-              onSelectTextOverlay={selectTextOverlay}
-              onCommitTextTransform={commitTextTransform}
+              onSelectPreviewItem={selectPreviewItem}
+              onCommitPreviewTransform={commitPreviewTransform}
             />
           </div>
         </div>
@@ -521,23 +516,23 @@ export function PreviewPanel({
 function ProgramMonitorStage({
   plan,
   stageSize,
-  videoElement,
+  videoElements,
   mediaLayerRef,
   messages,
   fallbackTitle,
   selectedItemIds,
-  onSelectTextOverlay,
-  onCommitTextTransform,
+  onSelectPreviewItem,
+  onCommitPreviewTransform,
 }: {
   plan: ReturnType<typeof createProgramMonitorPlan> | null;
   stageSize: StageSize;
-  videoElement: HTMLVideoElement | null;
+  videoElements: PreviewVideoElementMap;
   mediaLayerRef: RefObject<Konva.Layer | null>;
   messages: string[];
   fallbackTitle: string;
   selectedItemIds: string[];
-  onSelectTextOverlay: (itemId: string) => void;
-  onCommitTextTransform: (itemId: string, transform: VideoTransform) => void;
+  onSelectPreviewItem: (itemId: string) => void;
+  onCommitPreviewTransform: (itemId: string, itemType: "text" | "media", transform: VideoTransform, squash?: boolean) => void;
 }) {
   const settings = plan?.settings ?? {
     width: 1920,
@@ -550,65 +545,61 @@ function ProgramMonitorStage({
   };
   const frameBounds = computeFrameBounds(stageSize.width, stageSize.height, settings.width, settings.height);
   const safeGuides = computeSafeGuides(frameBounds);
-  const selectedTextIds = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
-  const [textPreview, setTextPreview] = useState<TextTransformPreview>({});
-  const textGestureRef = useRef<TextGesture | null>(null);
+  const selectedIds = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+  const gestureRef = useRef<VisualGesture | null>(null);
 
-  const handleTextGestureStart = useCallback((
+  const handleGestureStart = useCallback((
     event: Konva.KonvaEventObject<PointerEvent>,
     itemId: string,
+    itemType: "text" | "media",
     transform: VideoTransform,
-    kind: "move" | "resize",
+    kind: "move" | "resize" | "rotate",
+    bounds: PreviewRect,
     corner?: ResizeCorner,
   ) => {
     const pointer = event.target.getStage()?.getPointerPosition();
     if (!pointer) return;
     event.cancelBubble = true;
-    onSelectTextOverlay(itemId);
-    textGestureRef.current = {
+    onSelectPreviewItem(itemId);
+    const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    const frameScale = frameBounds.width / settings.width;
+    gestureRef.current = {
       kind,
+      itemType,
       itemId,
       startPointer: pointer,
       startTransform: { ...transform },
       corner,
+      baseWidth: frameScale > 0 ? bounds.width / Math.max(0.001, Math.abs(transform.scaleX)) / frameScale : settings.width,
+      baseHeight: frameScale > 0 ? bounds.height / Math.max(0.001, Math.abs(transform.scaleY)) / frameScale : settings.height,
+      center,
+      startAngle: pointerAngle(center, pointer) - transform.rotation,
     };
-  }, [onSelectTextOverlay]);
+  }, [frameBounds, onSelectPreviewItem, settings]);
 
-  const updateTextGesturePreview = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
-    const gesture = textGestureRef.current;
-    if (!gesture) return;
-    const pointer = event.target.getStage()?.getPointerPosition();
-    if (!pointer) return;
-    const nextTransform = transformForTextGesture(gesture, pointer, frameBounds, settings);
-    setTextPreview((current) => ({ ...current, [gesture.itemId]: nextTransform }));
-  }, [frameBounds, settings]);
-
-  const commitTextGesture = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
-    const gesture = textGestureRef.current;
+  const updateGesture = useCallback((event: Konva.KonvaEventObject<PointerEvent>, final = false) => {
+    const gesture = gestureRef.current;
     if (!gesture) return;
     const pointer = event.target.getStage()?.getPointerPosition() ?? gesture.startPointer;
-    const nextTransform = transformForTextGesture(gesture, pointer, frameBounds, settings);
-    textGestureRef.current = null;
-    setTextPreview((current) => {
-      const next = { ...current };
-      delete next[gesture.itemId];
-      return next;
-    });
+    const nextTransform = transformForVisualGesture(gesture, pointer, frameBounds, settings);
     if (!sameTransform(nextTransform, gesture.startTransform)) {
-      onCommitTextTransform(gesture.itemId, nextTransform);
+      onCommitPreviewTransform(gesture.itemId, gesture.itemType, nextTransform, true);
     }
-  }, [frameBounds, onCommitTextTransform, settings]);
+    if (final) {
+      gestureRef.current = null;
+    }
+  }, [frameBounds, onCommitPreviewTransform, settings]);
 
-  const hasActiveVisual = Boolean(plan?.activeVisual);
+  const hasActiveVisual = Boolean(plan?.activeVisuals.length);
 
   return (
     <Stage
       width={stageSize.width}
       height={stageSize.height}
       className="h-full w-full bg-black"
-      onPointerMove={updateTextGesturePreview}
-      onPointerUp={commitTextGesture}
-      onPointerCancel={commitTextGesture}
+      onPointerMove={(event) => updateGesture(event)}
+      onPointerUp={(event) => updateGesture(event, true)}
+      onPointerCancel={(event) => updateGesture(event, true)}
     >
       <Layer>
         <Rect x={0} y={0} width={stageSize.width} height={stageSize.height} fill="#050505" />
@@ -622,14 +613,19 @@ function ProgramMonitorStage({
 
       <Layer ref={mediaLayerRef}>
         <Group clip={frameBounds}>
-          {plan?.activeVisual ? (
-            <VisualNode
-              visual={plan.activeVisual}
-              projectId={plan.document.projectId}
-              videoElement={videoElement}
-              frameBounds={frameBounds}
-              settings={settings}
-            />
+          {hasActiveVisual ? (
+            plan?.activeVisuals.map((visual) => (
+              <VisualNode
+                key={visual.item.id}
+                visual={visual}
+                projectId={plan.document.projectId}
+                videoElement={visual.item.type === "video" ? videoElements[visual.item.id] ?? null : null}
+                frameBounds={frameBounds}
+                settings={settings}
+                selected={selectedIds.has(visual.item.id)}
+                onGestureStart={handleGestureStart}
+              />
+            ))
           ) : (
             <EmptyFrame frameBounds={frameBounds} />
           )}
@@ -640,9 +636,8 @@ function ProgramMonitorStage({
               projectId={plan.document.projectId}
               frameBounds={frameBounds}
               settings={settings}
-              selected={selectedTextIds.has(overlay.item.id)}
-              previewTransform={textPreview[overlay.item.id]}
-              onTextGestureStart={handleTextGestureStart}
+              selected={selectedIds.has(overlay.item.id)}
+              onGestureStart={handleGestureStart}
             />
           ))}
         </Group>
@@ -670,12 +665,24 @@ function VisualNode({
   videoElement,
   frameBounds,
   settings,
+  selected,
+  onGestureStart,
 }: {
   visual: PreviewVisualPlan;
   projectId: string;
   videoElement: HTMLVideoElement | null;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
+  selected: boolean;
+  onGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    itemId: string,
+    itemType: "text" | "media",
+    transform: VideoTransform,
+    kind: "move" | "resize" | "rotate",
+    bounds: PreviewRect,
+    corner?: ResizeCorner,
+  ) => void;
 }) {
   const image = useLoadedImage(visual.item.type === "video" ? null : visual.objectUrl, () => {
     logMediaObjectFailure(
@@ -687,15 +694,16 @@ function VisualNode({
       "Preview image could not be decoded.",
     );
   });
+  const transform = resolveItemTransform(visual.item);
   const bounds = computeMediaBounds({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
     mediaWidth: visual.media.width,
     mediaHeight: visual.media.height,
-    transform: visual.item.transform,
+    transform,
   });
-  const opacity = "opacity" in visual.item ? visual.item.opacity : 1;
+  const opacity = resolveItemOpacity(visual.item);
   const sourceImage = visual.item.type === "video" ? videoElement : image;
 
   if (!visual.objectUrl || !sourceImage) {
@@ -703,15 +711,26 @@ function VisualNode({
   }
 
   return (
-    <KonvaImage
-      image={sourceImage}
-      x={bounds.x}
-      y={bounds.y}
-      width={bounds.width}
-      height={bounds.height}
-      rotation={visual.item.transform.rotation}
-      opacity={opacity}
-    />
+    <>
+      <KonvaImage
+        image={sourceImage}
+        x={bounds.x}
+        y={bounds.y}
+        width={bounds.width}
+        height={bounds.height}
+        rotation={transform.rotation}
+        opacity={opacity}
+        onPointerDown={(event) => onGestureStart(event, visual.item.id, "media", transform, "move", bounds)}
+      />
+      {selected ? (
+        <TransformHandles
+          bounds={bounds}
+          frameBounds={frameBounds}
+          transform={transform}
+          onGestureStart={(event, kind, corner) => onGestureStart(event, visual.item.id, "media", transform, kind, bounds, corner)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -721,20 +740,20 @@ function OverlayNode({
   frameBounds,
   settings,
   selected,
-  previewTransform,
-  onTextGestureStart,
+  onGestureStart,
 }: {
   overlay: PreviewOverlayPlan;
   projectId: string;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
   selected: boolean;
-  previewTransform?: VideoTransform;
-  onTextGestureStart: (
+  onGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     itemId: string,
+    itemType: "text" | "media",
     transform: VideoTransform,
-    kind: "move" | "resize",
+    kind: "move" | "resize" | "rotate",
+    bounds: PreviewRect,
     corner?: ResizeCorner,
   ) => void;
 }) {
@@ -745,13 +764,21 @@ function OverlayNode({
         frameBounds={frameBounds}
         settings={settings}
         selected={selected}
-        previewTransform={previewTransform}
-        onGestureStart={onTextGestureStart}
+        onGestureStart={onGestureStart}
       />
     );
   }
 
-  return <MediaOverlayNode overlay={overlay} projectId={projectId} frameBounds={frameBounds} settings={settings} />;
+  return (
+    <MediaOverlayNode
+      overlay={overlay}
+      projectId={projectId}
+      frameBounds={frameBounds}
+      settings={settings}
+      selected={selected}
+      onGestureStart={onGestureStart}
+    />
+  );
 }
 
 function TextOverlayNode({
@@ -759,23 +786,23 @@ function TextOverlayNode({
   frameBounds,
   settings,
   selected,
-  previewTransform,
   onGestureStart,
 }: {
   overlay: Extract<PreviewOverlayPlan, { kind: "text" }>;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
   selected: boolean;
-  previewTransform?: VideoTransform;
   onGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     itemId: string,
+    itemType: "text" | "media",
     transform: VideoTransform,
-    kind: "move" | "resize",
+    kind: "move" | "resize" | "rotate",
+    bounds: PreviewRect,
     corner?: ResizeCorner,
   ) => void;
 }) {
-  const transform = previewTransform ?? overlay.item.transform;
+  const transform = resolveItemTransform(overlay.item);
   const bounds = computeTextOverlayBounds({
     frameBounds,
     frameWidth: settings.width,
@@ -783,15 +810,14 @@ function TextOverlayNode({
     transform,
   });
   const frameScale = frameBounds.width / settings.width;
-  const handleSize = Math.max(8, 10 * frameScale);
-  const handleOffset = handleSize / 2;
+  const designScale = settings.width / 1920;
 
   return (
     <Group
       x={bounds.x}
       y={bounds.y}
       rotation={transform.rotation}
-      onPointerDown={(event) => onGestureStart(event, overlay.item.id, transform, "move")}
+      onPointerDown={(event) => onGestureStart(event, overlay.item.id, "text", transform, "move", bounds)}
     >
       {overlay.item.style.backgroundColor ? (
         <Rect
@@ -811,46 +837,22 @@ function TextOverlayNode({
         width={bounds.width}
         height={bounds.height}
         fontFamily={overlay.item.style.fontFamily}
-        fontSize={overlay.item.style.fontSize * frameScale * Math.max(0.1, transform.scaleY)}
+        fontSize={overlay.item.style.fontSize * frameScale * Math.max(0.1, transform.scaleY) * designScale}
         fill={overlay.item.style.color}
         fontStyle={fontStyleForText(overlay.item.style)}
         align={overlay.item.style.textAlign ?? "center"}
         verticalAlign="middle"
         shadowColor="black"
-        shadowBlur={10}
+        shadowBlur={10 * designScale}
         shadowOpacity={0.55}
       />
       {selected ? (
-        <>
-          <Rect
-            x={0}
-            y={0}
-            width={bounds.width}
-            height={bounds.height}
-            stroke="rgba(192,193,255,0.9)"
-            strokeWidth={1}
-            dash={[5, 4]}
-          />
-          {([
-            ["nw", 0, 0],
-            ["ne", bounds.width, 0],
-            ["sw", 0, bounds.height],
-            ["se", bounds.width, bounds.height],
-          ] as const).map(([corner, x, y]) => (
-            <Rect
-              key={corner}
-              x={x - handleOffset}
-              y={y - handleOffset}
-              width={handleSize}
-              height={handleSize}
-              fill="#c0c1ff"
-              stroke="#050505"
-              strokeWidth={1}
-              cornerRadius={2}
-              onPointerDown={(event) => onGestureStart(event, overlay.item.id, transform, "resize", corner)}
-            />
-          ))}
-        </>
+        <TransformHandles
+          bounds={{ x: 0, y: 0, width: bounds.width, height: bounds.height }}
+          frameBounds={frameBounds}
+          transform={transform}
+          onGestureStart={(event, kind, corner) => onGestureStart(event, overlay.item.id, "text", transform, kind, bounds, corner)}
+        />
       ) : null}
     </Group>
   );
@@ -861,11 +863,23 @@ function MediaOverlayNode({
   projectId,
   frameBounds,
   settings,
+  selected,
+  onGestureStart,
 }: {
   overlay: PreviewMediaOverlayPlan;
   projectId: string;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
+  selected: boolean;
+  onGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    itemId: string,
+    itemType: "text" | "media",
+    transform: VideoTransform,
+    kind: "move" | "resize" | "rotate",
+    bounds: PreviewRect,
+    corner?: ResizeCorner,
+  ) => void;
 }) {
   const image = useLoadedImage(overlay.objectUrl, () => {
     logMediaObjectFailure(
@@ -877,34 +891,153 @@ function MediaOverlayNode({
       "Preview overlay image could not be decoded.",
     );
   });
+  const transform = resolveItemTransform(overlay.item);
   const bounds = computeMediaBounds({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
     mediaWidth: overlay.media.width,
     mediaHeight: overlay.media.height,
-    transform: overlay.item.transform,
+    transform,
   });
+  const opacity = resolveItemOpacity(overlay.item);
 
   if (!image) {
     return <MediaPlaceholder bounds={bounds} label={overlay.media.name} />;
   }
 
   return (
-    <KonvaImage
-      image={image}
-      x={bounds.x}
-      y={bounds.y}
-      width={bounds.width}
-      height={bounds.height}
-      rotation={overlay.item.transform.rotation}
-      opacity={overlay.item.opacity}
-    />
+    <>
+      <KonvaImage
+        image={image}
+        x={bounds.x}
+        y={bounds.y}
+        width={bounds.width}
+        height={bounds.height}
+        rotation={transform.rotation}
+        opacity={opacity}
+        onPointerDown={(event) => onGestureStart(event, overlay.item.id, "media", transform, "move", bounds)}
+      />
+      {selected ? (
+        <TransformHandles
+          bounds={bounds}
+          frameBounds={frameBounds}
+          transform={transform}
+          onGestureStart={(event, kind, corner) => onGestureStart(event, overlay.item.id, "media", transform, kind, bounds, corner)}
+        />
+      ) : null}
+    </>
   );
 }
 
+function TransformHandles({
+  bounds,
+  frameBounds,
+  transform,
+  onGestureStart,
+}: {
+  bounds: PreviewRect;
+  frameBounds: PreviewRect;
+  transform: VideoTransform;
+  onGestureStart: (
+    event: Konva.KonvaEventObject<PointerEvent>,
+    kind: "move" | "resize" | "rotate",
+    corner?: ResizeCorner,
+  ) => void;
+}) {
+  const frameScale = frameBounds.width / Math.max(1, frameBounds.width);
+  const handleSize = Math.max(8, 10 * frameScale);
+  const handleOffset = handleSize / 2;
+  const moveHandleSize = Math.max(18, handleSize * 2.1);
+  const moveHandleOffset = moveHandleSize / 2;
+  const rotateY = bounds.y - Math.max(24, handleSize * 2.4);
+  const [moveHandleActive, setMoveHandleActive] = useState(false);
+  const moveHandleOpacity = moveHandleActive ? 0.95 : 0.32;
+
+  return (
+    <>
+      <Rect
+        x={bounds.x}
+        y={bounds.y}
+        width={bounds.width}
+        height={bounds.height}
+        stroke="rgba(192,193,255,0.9)"
+        strokeWidth={1}
+        dash={[5, 4]}
+        rotation={transform.rotation}
+      />
+      <Group
+        x={bounds.x + bounds.width / 2 - moveHandleOffset}
+        y={bounds.y + bounds.height / 2 - moveHandleOffset}
+        opacity={moveHandleOpacity}
+        onPointerEnter={() => setMoveHandleActive(true)}
+        onPointerLeave={() => setMoveHandleActive(false)}
+        onPointerDown={(event) => {
+          setMoveHandleActive(true);
+          onGestureStart(event, "move");
+        }}
+      >
+        <Rect
+          x={0}
+          y={0}
+          width={moveHandleSize}
+          height={moveHandleSize}
+          fill="rgba(192,193,255,0.92)"
+          stroke="#050505"
+          strokeWidth={1}
+          cornerRadius={4}
+          shadowColor="black"
+          shadowOpacity={0.28}
+          shadowBlur={8}
+        />
+        <Text
+          text="+"
+          x={0}
+          y={Math.max(0, moveHandleSize / 2 - 9)}
+          width={moveHandleSize}
+          align="center"
+          fill="#050505"
+          fontFamily="Inter"
+          fontSize={16}
+          fontStyle="bold"
+          listening={false}
+        />
+      </Group>
+      {([
+        ["nw", bounds.x, bounds.y],
+        ["ne", bounds.x + bounds.width, bounds.y],
+        ["sw", bounds.x, bounds.y + bounds.height],
+        ["se", bounds.x + bounds.width, bounds.y + bounds.height],
+      ] as const).map(([corner, x, y]) => (
+        <Rect
+          key={corner}
+          x={x - handleOffset}
+          y={y - handleOffset}
+          width={handleSize}
+          height={handleSize}
+          fill="#c0c1ff"
+          stroke="#050505"
+          strokeWidth={1}
+          cornerRadius={2}
+          onPointerDown={(event) => onGestureStart(event, "resize", corner)}
+        />
+      ))}
+      <Rect
+        x={bounds.x + bounds.width / 2 - handleOffset}
+        y={rotateY - handleOffset}
+        width={handleSize}
+        height={handleSize}
+        fill="#c0c1ff"
+        stroke="#050505"
+        strokeWidth={1}
+        cornerRadius={handleSize / 2}
+        onPointerDown={(event) => onGestureStart(event, "rotate")}
+      />
+    </>
+  );
+}
 function EmptyFrame({ frameBounds }: { frameBounds: PreviewRect }) {
-  const calculatedFontSize = Math.floor(frameBounds.height * 0.10);
+  const calculatedFontSize = Math.floor(frameBounds.width * 0.08);
   return (
     <>
       <Rect {...frameBounds} fillLinearGradientStartPoint={{ x: frameBounds.x, y: frameBounds.y }} fillLinearGradientEndPoint={{ x: frameBounds.x + frameBounds.width, y: frameBounds.y + frameBounds.height }} fillLinearGradientColorStops={[0, "#111111", 0.55, "#1b2426", 1, "#191919"]} />
@@ -992,7 +1125,6 @@ function fitStageToArea(area: StageSize, settings: VideoProjectSettings | undefi
 
 function usePlaybackClock({
   playing,
-  mediaClockActive,
   currentTime,
   timelineDuration,
   frameRate,
@@ -1000,7 +1132,6 @@ function usePlaybackClock({
   onEnd,
 }: {
   playing: boolean;
-  mediaClockActive: boolean;
   currentTime: number;
   timelineDuration: number;
   frameRate: number;
@@ -1014,7 +1145,7 @@ function usePlaybackClock({
   }, [currentTime, frameRate, onEnd, onTimeChange, timelineDuration]);
 
   useEffect(() => {
-    if (!playing || mediaClockActive) {
+    if (!playing) {
       return undefined;
     }
 
@@ -1033,20 +1164,56 @@ function usePlaybackClock({
         return;
       }
 
-      const snappedTime = stepPreviewTime({
+      state.onTimeChange(stepPreviewTime({
         currentTime: nextTime,
         direction: 1,
         frameRate: state.frameRate,
         timelineDuration: state.timelineDuration,
         frames: 0,
-      });
-      state.onTimeChange(snappedTime);
+      }));
       frameId = requestAnimationFrame(tick);
     };
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [mediaClockActive, playing]);
+  }, [playing]);
+}
+
+function PreviewVideoElement({
+  activeVideo,
+  playing,
+  muted,
+  volume,
+  onElementChange,
+  onError,
+  onDrawNeeded,
+}: {
+  activeVideo: PreviewVisualPlan;
+  playing: boolean;
+  muted: boolean;
+  volume: number;
+  onElementChange: (itemId: string, element: HTMLVideoElement | null) => void;
+  onError: (message: string) => void;
+  onDrawNeeded: () => void;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    onElementChange(activeVideo.item.id, ref.current);
+    return () => onElementChange(activeVideo.item.id, null);
+  }, [activeVideo.item.id, onElementChange]);
+
+  useVideoElementSync({
+    ref,
+    activeVideo,
+    playing,
+    muted,
+    volume,
+    onError,
+    onDrawNeeded,
+  });
+
+  return <video ref={ref} className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />;
 }
 
 function useVideoElementSync({
@@ -1055,48 +1222,36 @@ function useVideoElementSync({
   playing,
   muted,
   volume,
-  timelineDuration,
-  onTimeChange,
-  onEnd,
   onError,
   onDrawNeeded,
 }: {
   ref: RefObject<HTMLVideoElement | null>;
-  activeVideo: PreviewVisualPlan | null;
+  activeVideo: PreviewVisualPlan;
   playing: boolean;
   muted: boolean;
   volume: number;
-  timelineDuration: number;
-  onTimeChange: (time: number) => void;
-  onEnd: () => void;
   onError: (message: string) => void;
   onDrawNeeded: () => void;
 }) {
-  const item = activeVideo?.item.type === "video" ? activeVideo.item : null;
-  const objectUrl = activeVideo?.objectUrl ?? null;
-  const sourceTime = activeVideo?.sourceTime ?? 0;
+  const item = activeVideo.item.type === "video" ? activeVideo.item : null;
+  const objectUrl = activeVideo.objectUrl;
+  const sourceTime = activeVideo.sourceTime ?? 0;
   const itemId = item?.id ?? null;
   const speed = item?.speed ?? 1;
   const sourceTimeRef = useRef(sourceTime);
   const onErrorRef = useRef(onError);
   const onDrawNeededRef = useRef(onDrawNeeded);
-  const onTimeChangeRef = useRef(onTimeChange);
-  const onEndRef = useRef(onEnd);
   const lastSourceKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     sourceTimeRef.current = sourceTime;
     onErrorRef.current = onError;
     onDrawNeededRef.current = onDrawNeeded;
-    onTimeChangeRef.current = onTimeChange;
-    onEndRef.current = onEnd;
-  }, [onDrawNeeded, onEnd, onError, onTimeChange, sourceTime]);
+  }, [onDrawNeeded, onError, sourceTime]);
 
   useEffect(() => {
     const video = ref.current;
-    if (!video) {
-      return;
-    }
+    if (!video) return;
 
     if (!objectUrl) {
       video.pause();
@@ -1125,9 +1280,7 @@ function useVideoElementSync({
 
   useEffect(() => {
     const video = ref.current;
-    if (!video || !objectUrl) {
-      return undefined;
-    }
+    if (!video || !objectUrl) return undefined;
 
     const handleError = () => onErrorRef.current("Video preview object could not be loaded.");
     video.addEventListener("error", handleError);
@@ -1136,9 +1289,7 @@ function useVideoElementSync({
 
   useEffect(() => {
     const video = ref.current;
-    if (!video) {
-      return;
-    }
+    if (!video) return;
 
     if (!playing || !objectUrl) {
       video.pause();
@@ -1150,9 +1301,7 @@ function useVideoElementSync({
 
   useEffect(() => {
     const video = ref.current;
-    if (!video || !objectUrl) {
-      return;
-    }
+    if (!video || !objectUrl) return;
 
     const sourceKey = `${itemId ?? ""}:${objectUrl}`;
     const sourceChanged = lastSourceKeyRef.current !== sourceKey;
@@ -1164,42 +1313,15 @@ function useVideoElementSync({
   }, [itemId, objectUrl, playing, ref, sourceTime]);
 
   useEffect(() => {
-    if (!playing || !item || !objectUrl) {
-      return undefined;
-    }
+    if (!playing || !objectUrl) return undefined;
+    const video = ref.current;
+    if (!video) return undefined;
 
     let frameId = 0;
     let videoFrameId = 0;
-    const video = ref.current;
-    if (!video) {
-      return undefined;
-    }
-
-    const publish = () => {
-      const timelineTime = mediaSourceTimeToTimelineTime(item, video.currentTime);
-      const clipEndTime = item.timelineStart + item.duration;
-      const clipEnded =
-        video.currentTime >= item.sourceOut - mediaClockEndEpsilon ||
-        timelineTime >= clipEndTime - mediaClockEndEpsilon;
-      onDrawNeededRef.current();
-
-      if (clipEnded) {
-        const nextTime = mediaClockHandoffTime(clipEndTime, timelineDuration);
-        onTimeChangeRef.current(nextTime);
-        if (nextTime >= timelineDuration - mediaClockEndEpsilon) {
-          onEndRef.current();
-        }
-        return false;
-      }
-
-      onTimeChangeRef.current(timelineTime);
-      return true;
-    };
-
     const draw = () => {
-      if (publish()) {
-        frameId = requestAnimationFrame(draw);
-      }
+      onDrawNeededRef.current();
+      frameId = requestAnimationFrame(draw);
     };
 
     if ("requestVideoFrameCallback" in video) {
@@ -1207,42 +1329,29 @@ function useVideoElementSync({
       const cancelVideoFrameCallback = (video as HTMLVideoElementWithFrameCallback).cancelVideoFrameCallback?.bind(video);
       let cancelled = false;
       const onFrame = () => {
-        if (cancelled) {
-          return;
-        }
-        if (publish()) {
-          videoFrameId = requestVideoFrameCallback(onFrame);
-        }
+        if (cancelled) return;
+        onDrawNeededRef.current();
+        videoFrameId = requestVideoFrameCallback(onFrame);
       };
       videoFrameId = requestVideoFrameCallback(onFrame);
       return () => {
         cancelled = true;
-        if (cancelVideoFrameCallback) {
-          cancelVideoFrameCallback(videoFrameId);
-        }
+        if (cancelVideoFrameCallback) cancelVideoFrameCallback(videoFrameId);
       };
     }
 
     frameId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frameId);
-  }, [item, objectUrl, playing, ref, timelineDuration]);
+  }, [objectUrl, playing, ref]);
 }
 
 function PreviewAudioElement({
   activeAudio,
   playing,
-  primaryClock,
-  timelineDuration,
-  onTimeChange,
-  onEnd,
   onError,
 }: {
   activeAudio: PreviewAudioPlan;
   playing: boolean;
-  primaryClock: boolean;
-  timelineDuration: number;
-  onTimeChange: (time: number) => void;
-  onEnd: () => void;
   onError: (message: string) => void;
 }) {
   const ref = useRef<HTMLAudioElement>(null);
@@ -1251,10 +1360,6 @@ function PreviewAudioElement({
     ref,
     activeAudio,
     playing,
-    primaryClock,
-    timelineDuration,
-    onTimeChange,
-    onEnd,
     onError,
   });
 
@@ -1265,19 +1370,11 @@ function useAudioElementSync({
   ref,
   activeAudio,
   playing,
-  primaryClock,
-  timelineDuration,
-  onTimeChange,
-  onEnd,
   onError,
 }: {
   ref: RefObject<HTMLAudioElement | null>;
   activeAudio: PreviewAudioPlan;
   playing: boolean;
-  primaryClock: boolean;
-  timelineDuration: number;
-  onTimeChange: (time: number) => void;
-  onEnd: () => void;
   onError: (message: string) => void;
 }) {
   const {
@@ -1289,22 +1386,16 @@ function useAudioElementSync({
   } = activeAudio;
   const sourceTimeRef = useRef(sourceTime);
   const onErrorRef = useRef(onError);
-  const onTimeChangeRef = useRef(onTimeChange);
-  const onEndRef = useRef(onEnd);
   const lastSourceKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     sourceTimeRef.current = sourceTime;
     onErrorRef.current = onError;
-    onTimeChangeRef.current = onTimeChange;
-    onEndRef.current = onEnd;
-  }, [onEnd, onError, onTimeChange, sourceTime]);
+  }, [onError, sourceTime]);
 
   useEffect(() => {
     const audio = ref.current;
-    if (!audio) {
-      return;
-    }
+    if (!audio) return;
 
     if (!objectUrl) {
       audio.pause();
@@ -1332,9 +1423,7 @@ function useAudioElementSync({
 
   useEffect(() => {
     const audio = ref.current;
-    if (!audio || !objectUrl) {
-      return undefined;
-    }
+    if (!audio || !objectUrl) return undefined;
 
     const handleError = () => onErrorRef.current("Audio preview object could not be loaded.");
     audio.addEventListener("error", handleError);
@@ -1343,9 +1432,7 @@ function useAudioElementSync({
 
   useEffect(() => {
     const audio = ref.current;
-    if (!audio) {
-      return;
-    }
+    if (!audio) return;
 
     if (!playing || !objectUrl) {
       audio.pause();
@@ -1357,9 +1444,7 @@ function useAudioElementSync({
 
   useEffect(() => {
     const audio = ref.current;
-    if (!audio || !objectUrl) {
-      return;
-    }
+    if (!audio || !objectUrl) return;
 
     const sourceKey = `${item.id}:${objectUrl}`;
     const sourceChanged = lastSourceKeyRef.current !== sourceKey;
@@ -1369,40 +1454,6 @@ function useAudioElementSync({
     }
     lastSourceKeyRef.current = sourceKey;
   }, [item.id, objectUrl, playing, ref, sourceTime]);
-
-  useEffect(() => {
-    if (!playing || !primaryClock || !objectUrl) {
-      return undefined;
-    }
-
-    let frameId = 0;
-    const audio = ref.current;
-    if (!audio) {
-      return undefined;
-    }
-    const tick = () => {
-      const timelineTime = mediaSourceTimeToTimelineTime(item, audio.currentTime);
-      const clipEndTime = item.timelineStart + item.duration;
-      const clipEnded =
-        audio.currentTime >= item.sourceOut - mediaClockEndEpsilon ||
-        timelineTime >= clipEndTime - mediaClockEndEpsilon;
-
-      if (clipEnded) {
-        const nextTime = mediaClockHandoffTime(clipEndTime, timelineDuration);
-        onTimeChangeRef.current(nextTime);
-        if (nextTime >= timelineDuration - mediaClockEndEpsilon) {
-          onEndRef.current();
-        }
-        return;
-      }
-
-      onTimeChangeRef.current(timelineTime);
-      frameId = requestAnimationFrame(tick);
-    };
-
-    frameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frameId);
-  }, [item, objectUrl, playing, primaryClock, ref, timelineDuration]);
 }
 
 function useElementSize(initialSize: StageSize): [StageSize, { ref: (node: HTMLDivElement | null) => void }] {
@@ -1509,12 +1560,10 @@ function syncElementCurrentTime(element: HTMLMediaElement, sourceTime: number): 
   }
 }
 
-function mediaClockHandoffTime(clipEndTime: number, timelineDuration: number): number {
-  if (clipEndTime >= timelineDuration - mediaClockEndEpsilon) {
-    return timelineDuration;
-  }
-
-  return Math.min(timelineDuration, clipEndTime + mediaClockEndEpsilon);
+function activeVideoSignature(activeVideos: PreviewVisualPlan[]): string {
+  return activeVideos
+    .map((video) => `${video.item.id}:${video.objectUrl ?? ""}:${video.sourceTime ?? 0}`)
+    .join("|");
 }
 
 function activeAudioSignature(activeAudio: PreviewAudioPlan[]): string {
@@ -1529,12 +1578,19 @@ function fontStyleForText(style: VideoTextStyle): string {
   return `${italic} ${weight}`.trim() || "normal";
 }
 
-function transformForTextGesture(
-  gesture: TextGesture,
+function transformForVisualGesture(
+  gesture: VisualGesture,
   pointer: { x: number; y: number },
   frameBounds: PreviewRect,
   settings: VideoProjectSettings,
 ): VideoTransform {
+  if (gesture.kind === "rotate" && gesture.center && gesture.startAngle !== undefined) {
+    return {
+      ...gesture.startTransform,
+      rotation: roundTransformValue(pointerAngle(gesture.center, pointer) - gesture.startAngle),
+    };
+  }
+
   const frameScale = frameBounds.width / settings.width;
   const deltaX = frameScale > 0 ? (pointer.x - gesture.startPointer.x) / frameScale : 0;
   const deltaY = frameScale > 0 ? (pointer.y - gesture.startPointer.y) / frameScale : 0;
@@ -1550,14 +1606,18 @@ function transformForTextGesture(
   const corner = gesture.corner ?? "se";
   const horizontalSign = corner.endsWith("e") ? 1 : -1;
   const verticalSign = corner.startsWith("s") ? 1 : -1;
-  const baseWidth = settings.width * 0.8;
-  const baseHeight = settings.height * 0.12;
+  const baseWidth = gesture.baseWidth ?? settings.width;
+  const baseHeight = gesture.baseHeight ?? settings.height;
 
   return {
     ...gesture.startTransform,
-    scaleX: roundTransformValue(Math.max(0.1, gesture.startTransform.scaleX + (deltaX * horizontalSign) / baseWidth)),
-    scaleY: roundTransformValue(Math.max(0.1, gesture.startTransform.scaleY + (deltaY * verticalSign) / baseHeight)),
+    scaleX: roundTransformValue(Math.max(0.1, Math.abs(gesture.startTransform.scaleX) + (deltaX * horizontalSign) / baseWidth) * Math.sign(gesture.startTransform.scaleX || 1)),
+    scaleY: roundTransformValue(Math.max(0.1, Math.abs(gesture.startTransform.scaleY) + (deltaY * verticalSign) / baseHeight) * Math.sign(gesture.startTransform.scaleY || 1)),
   };
+}
+
+function pointerAngle(center: { x: number; y: number }, pointer: { x: number; y: number }): number {
+  return (Math.atan2(pointer.y - center.y, pointer.x - center.x) * 180) / Math.PI;
 }
 
 function sameTransform(left: VideoTransform, right: VideoTransform): boolean {
@@ -1666,3 +1726,4 @@ function TransitionPreviewOverlay({ transitionType }: { transitionType: string |
 
   return null;
 }
+

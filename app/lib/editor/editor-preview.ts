@@ -72,6 +72,7 @@ export interface ProgramMonitorPlan {
   currentTime: number;
   timelineDuration: number;
   activeVisual: PreviewVisualPlan | null;
+  activeVisuals: PreviewVisualPlan[];
   overlays: PreviewOverlayPlan[];
   activeAudio: PreviewAudioPlan[];
   primaryAudio: PreviewAudioPlan | null;
@@ -209,13 +210,15 @@ export function createProgramMonitorPlan({
   });
 
   const activeAudio = audioCandidates;
+  const activeVisuals = visualCandidates.sort(compareVisualOrder);
 
   return {
     document,
     settings: document.settings,
     currentTime,
     timelineDuration: getTimelineDuration(document),
-    activeVisual: selectTopVisual(visualCandidates),
+    activeVisual: activeVisuals[activeVisuals.length - 1] ?? null,
+    activeVisuals,
     overlays: overlays.sort(compareOverlayOrder),
     activeAudio,
     primaryAudio: activeAudio[0] ?? null,
@@ -435,8 +438,8 @@ function warnIfMissingObject(
   });
 }
 
-function selectTopVisual(candidates: PreviewVisualPlan[]): PreviewVisualPlan | null {
-  return candidates.sort((left, right) => layerOrder(right.item) - layerOrder(left.item))[0] ?? null;
+function compareVisualOrder(left: PreviewVisualPlan, right: PreviewVisualPlan): number {
+  return layerOrder(left.item) - layerOrder(right.item);
 }
 
 function compareOverlayOrder(left: PreviewOverlayPlan, right: PreviewOverlayPlan): number {
@@ -476,3 +479,4 @@ function isBffMediaObjectUrl(url: string, mediaId: string): boolean {
 function clampTime(value: number, timelineDuration: number): number {
   return Math.min(Math.max(0, timelineDuration), Math.max(0, value));
 }
+

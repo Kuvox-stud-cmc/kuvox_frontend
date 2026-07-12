@@ -127,6 +127,8 @@ export interface VideoTransform {
   scaleX: number;
   scaleY: number;
   rotation: number;
+  anchorX?: number;
+  anchorY?: number;
 }
 
 export interface VideoCrop {
@@ -219,6 +221,8 @@ const defaultTransform: VideoTransform = {
   scaleX: 1,
   scaleY: 1,
   rotation: 0,
+  anchorX: 0.5,
+  anchorY: 0.5,
 };
 
 const defaultCrop: VideoCrop = {
@@ -227,6 +231,22 @@ const defaultCrop: VideoCrop = {
   bottom: 0,
   left: 0,
 };
+
+export function normalizeVideoTransform(transform: Partial<VideoTransform> | undefined): VideoTransform {
+  return { ...defaultTransform, ...transform };
+}
+
+export function resolveItemTransform(item: { transform?: Partial<VideoTransform>; properties?: { transform?: Partial<VideoTransform> } }): VideoTransform {
+  return normalizeVideoTransform(item.properties?.transform ?? item.transform);
+}
+
+export function resolveItemOpacity(item: { opacity?: number; properties?: { opacity?: number } }): number {
+  return item.properties?.opacity ?? item.opacity ?? 1;
+}
+
+export function resolveItemCrop(item: { crop?: VideoCrop; properties?: { crop?: VideoCrop } }): VideoCrop {
+  return item.properties?.crop ?? item.crop ?? defaultCrop;
+}
 
 const defaultSettings: VideoProjectSettings = {
   width: 1920,
@@ -1106,6 +1126,10 @@ export interface AnimatableProperty<T> {
 }
 
 export interface VideoItemProperties {
+  transform?: VideoTransform;
+  opacity?: number;
+  crop?: VideoCrop;
+  effects?: Record<string, JsonValue>;
   adjust?: {
     exposure?: AnimatableProperty<number>;
     brightness?: AnimatableProperty<number>;
@@ -1189,7 +1213,9 @@ export interface AudioItemProperties {
 }
 
 export interface ImageItemProperties {
-  crop?: {
+  transform?: VideoTransform;
+  opacity?: number;
+  crop?: VideoCrop | {
     top?: AnimatableProperty<number>;
     bottom?: AnimatableProperty<number>;
     left?: AnimatableProperty<number>;
@@ -1218,6 +1244,11 @@ export interface ImageItemProperties {
 }
 
 export interface TextItemProperties {
+  transform?: VideoTransform;
+  opacity?: number;
+  crop?: VideoCrop;
+  effects?: Record<string, JsonValue>;
+  filters?: Record<string, JsonValue>;
   stroke?: {
     color?: AnimatableProperty<string>;
     width?: AnimatableProperty<number>;
@@ -1233,3 +1264,4 @@ export interface TextItemProperties {
     duration?: AnimatableProperty<number>;
   };
 }
+

@@ -1,6 +1,7 @@
 import { actionErrorMessage } from "~/lib/action-error.server";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router";
+import { ThemeManager, THEMES, type ThemeId } from "~/lib/theme";
 
 import {
   AssetCard,
@@ -324,6 +325,16 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
   const [previewMediaId, setPreviewMediaId] = useState<string | null>(null);
   const previewMedia = previewMediaId ? recentMedia.find((item) => item.id === previewMediaId) ?? null : null;
 
+  const [showCustomize, setShowCustomize] = useState(false);
+  const [activeTheme, setActiveTheme] = useState<ThemeId>("midnight-jade");
+
+  useEffect(() => {
+    setActiveTheme(ThemeManager.getTheme());
+    return ThemeManager.subscribe((newTheme) => {
+      setActiveTheme(newTheme);
+    });
+  }, []);
+
   return (
     <div className="space-y-8">
       {error && <ErrorBanner message={error} />}
@@ -341,13 +352,93 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         </div>
         <button
           type="button"
-          className="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-body-sm font-medium text-on-surface transition-colors hover:bg-surface-container"
+          onClick={() => setShowCustomize(!showCustomize)}
+          className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-body-sm font-medium transition-colors ${
+            showCustomize
+              ? "border-primary bg-primary/10 text-primary hover:bg-primary/20"
+              : "border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container"
+          }`}
         >
           <span className="material-symbols-outlined text-[18px]">tune</span>
           Customize
-          <span className="material-symbols-outlined ml-1 text-[14px]">expand_more</span>
+          <span className="material-symbols-outlined ml-1 text-[14px]">
+            {showCustomize ? "expand_less" : "expand_more"}
+          </span>
         </button>
       </section>
+
+      {/* Collapsible Customize Panel */}
+      {showCustomize && (
+        <div className="rounded-2xl border border-outline-variant bg-surface-container-low p-6 animate-fade-in-up shadow-xl transition-all duration-300">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-body-lg font-bold text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">palette</span>
+                Workspace Theme Engine
+              </h3>
+              <p className="text-label-md text-on-surface-variant mt-1">
+                Select a visual profile to customize your dashboard and editor workspace. Hover to preview instantly.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCustomize(false)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors"
+              aria-label="Close panel"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-4">
+            {THEMES.map((theme) => {
+              const isActive = activeTheme === theme.id;
+              return (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => ThemeManager.setTheme(theme.id)}
+                  onMouseEnter={() => ThemeManager.applyTheme(theme.id)}
+                  onMouseLeave={() => ThemeManager.applyTheme(ThemeManager.getTheme())}
+                  className={`flex items-center gap-3 text-left rounded-lg border p-2.5 transition-all duration-200 group relative ${
+                    isActive
+                      ? "border-primary bg-surface-container-high ring-1 ring-primary shadow-sm"
+                      : "border-outline-variant/60 bg-surface-container-low hover:border-primary/40 hover:bg-surface-container"
+                  }`}
+                >
+                  {/* Swatch circle containing 4 colors */}
+                  <div className="flex h-7 w-7 shrink-0 overflow-hidden rounded-full border border-outline-variant/50 shadow-inner">
+                    <span className="h-full w-[25%]" style={{ backgroundColor: theme.colors.background }} />
+                    <span className="h-full w-[25%]" style={{ backgroundColor: theme.colors.surface }} />
+                    <span className="h-full w-[25%]" style={{ backgroundColor: theme.colors.primary }} />
+                    <span className="h-full w-[25%]" style={{ backgroundColor: theme.colors.accent }} />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-body-sm font-bold text-on-surface truncate">
+                        {theme.name}
+                      </h4>
+                      <span className="text-[10px] text-on-surface-variant/40 truncate">
+                        • {theme.inspiration}
+                      </span>
+                    </div>
+                    <p className="text-label-sm text-on-surface-variant truncate">
+                      {theme.description}
+                    </p>
+                  </div>
+
+                  {isActive && (
+                    <span className="text-primary material-symbols-outlined text-[18px] shrink-0 pr-1">
+                      check_circle
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Stats Row */}
       <div className="grid grid-cols-12 gap-6">
