@@ -350,7 +350,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
       </section>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-12 gap-6">
+      <div data-tour="dashboard-metrics" className="grid grid-cols-12 gap-6">
         <div className="col-span-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             variant="stacked"
@@ -388,7 +388,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
       </div>
 
       {/* Continue Editing */}
-      <section>
+      <section data-tour="dashboard-recent-projects">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-headline-md font-bold text-on-surface">Continue Editing</h2>
           <Link
@@ -412,7 +412,7 @@ export default function DashboardHome({ loaderData, actionData }: Route.Componen
         )}
       </section>
 
-      <section>
+      <section data-tour="dashboard-recent-assets">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-headline-md font-bold text-on-surface">Recent Assets</h2>
           <Link

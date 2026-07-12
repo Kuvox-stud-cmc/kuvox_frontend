@@ -779,7 +779,10 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
 
   if (!timelineOpen) {
     return (
-      <footer className={`z-40 flex h-10 shrink-0 items-center justify-center border-t border-outline-variant bg-surface ${className}`}>
+      <footer
+        data-tour="timeline-panel"
+        className={`z-40 flex h-10 shrink-0 items-center justify-center border-t border-outline-variant bg-surface ${className}`}
+      >
         <button
           type="button"
           onClick={() => dispatch(timelineOpenChanged(true))}
@@ -794,6 +797,7 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
 
   return (
     <footer
+      data-tour="timeline-panel"
       className={`relative z-40 flex min-h-video-timeline-min max-h-video-timeline-max shrink-0 flex-col border-t border-outline-variant bg-surface ${className}`}
       style={{ height: timelineHeight }}
       tabIndex={0}

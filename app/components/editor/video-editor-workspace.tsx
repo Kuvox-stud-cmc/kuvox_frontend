@@ -76,6 +76,7 @@ import {
 import { AiAssistantPanel } from "./ai-assistant-panel";
 import { EditorPanelErrorBoundary } from "./editor-panel-error-boundary";
 import { EditorExitGuard } from "./editor-exit-guard";
+import { GuidedTour } from "./guided-tour";
 import { EditorIcon } from "./editor-ui";
 import { EditorModalLayer, EditorPopoverLayer, EditorToast } from "./editor-overlays";
 import { EditorTopBar } from "./editor-top-bar";
@@ -586,6 +587,7 @@ export function VideoEditorWorkspace({
         flushLocalDraft={autosave.flushLocalDraft}
         syncNow={autosave.syncNow}
       />
+      <GuidedTour storageScope={`${userId}:${project.id}`} />
       <EditorTopBar
         project={project}
         user={user}
@@ -884,6 +886,7 @@ function ManualNavigationRail({ activeTab, onTabChange }: { activeTab: string, o
 
   return (
     <nav
+      data-tour="category-rail"
       aria-label="Editor categories"
       className="z-40 hidden h-full w-[72px] shrink-0 flex-col items-center border-r border-outline-variant bg-surface py-3 min-[1180px]:flex"
     >
