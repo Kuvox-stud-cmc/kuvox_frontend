@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type Konva from "konva";
 import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from "react-konva";
 
@@ -86,6 +86,7 @@ interface StageSize {
 
 type MediaErrorMap = Record<string, string>;
 type ResizeCorner = VisualResizeCorner;
+type PreviewEditableVisualItem = PreviewVisualPlan["item"] | PreviewMediaOverlayPlan["item"];
 type TextTransformPreview = Record<string, VideoTransform>;
 type VisualTransformPreview = Record<string, VideoTransform>;
 type VisualCropPreview = Record<string, { crop: VideoCrop; transform: VideoTransform }>;
@@ -216,9 +217,25 @@ export function PreviewPanel({
   );
   const activeVideoRef = videoRefForSource(videoRefA, videoRefB, activeVideo?.objectUrl ?? null);
   const preloadVideoRef = activeVideoRef === videoRefA ? videoRefB : videoRefA;
-  const activeEffect = document && plan?.activeVisual
-    ? document.effects.find((effect) => effect.enabled && effect.targetItemIds.includes(plan.activeVisual!.item.id))?.type ?? null
+  const activePreviewItem = useMemo(() => {
+    if (!plan) return null;
+    if (selectedItemIds.length === 1) {
+      const selectedId = selectedItemIds[0];
+      return plan.visuals.find((visual) => visual.item.id === selectedId)?.item
+        ?? plan.overlays.find((overlay): overlay is PreviewMediaOverlayPlan =>
+          overlay.kind === "media" && overlay.item.id === selectedId,
+        )?.item
+        ?? null;
+    }
+    return plan.activeVisual?.item ?? null;
+  }, [plan, selectedItemIds]);
+  const activeEffect = document && activePreviewItem
+    ? document.effects.find((effect) => effect.enabled && effect.targetItemIds.includes(activePreviewItem.id))?.type ?? null
     : null;
+  const visualPreviewOverlay = useMemo(
+    () => getVisualPreviewOverlay(activeEffect, activePreviewItem),
+    [activeEffect, activePreviewItem],
+  );
   const activeTransition = document
     ? findActiveTransition(document, playback.currentTime)
     : null;
@@ -459,7 +476,7 @@ export function PreviewPanel({
             style={{
               width: stageSize.width,
               height: stageSize.height,
-              filter: getCSSFilterForEffect(activeEffect),
+              filter: getPreviewCSSFilter(activeEffect, activePreviewItem),
             }}
             onDragOver={(event) => {
               if (!Array.from(event.dataTransfer.types).includes("application/x-kuvox-media-id")) return;
@@ -526,8 +543,26 @@ export function PreviewPanel({
                 </div>
               </div>
             ) : null}
-            {activeEffect === "Vignette" && (
-              <div className="pointer-events-none absolute inset-0 z-30 bg-[radial-gradient(circle,transparent_40%,rgba(0,0,0,0.65)_100%)]" />
+            {visualPreviewOverlay.vignetteOpacity > 0 && (
+              <div
+                className="pointer-events-none absolute inset-0 z-30"
+                style={{
+                  background: `radial-gradient(circle, transparent 42%, rgba(0,0,0,${visualPreviewOverlay.vignetteOpacity}) 100%)`,
+                }}
+              />
+            )}
+            {visualPreviewOverlay.grainOpacity > 0 && (
+              <div
+                className="pointer-events-none absolute inset-0 z-30 mix-blend-overlay"
+                style={{
+                  opacity: visualPreviewOverlay.grainOpacity,
+                  backgroundImage:
+                    "repeating-radial-gradient(circle at 17% 23%, rgba(255,255,255,0.42) 0 1px, transparent 1px 4px), repeating-linear-gradient(115deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 5px)",
+                }}
+              />
+            )}
+            {visualPreviewOverlay.maskWindowStyle && (
+              <div className="pointer-events-none absolute z-30" style={visualPreviewOverlay.maskWindowStyle} />
             )}
             {activeTransition && (
               <TransitionPreviewOverlay
@@ -3154,6 +3189,128 @@ function parseTimecode(value: string, frameRate: number): number | null {
 
   const [hours, minutes, seconds, frames] = parts;
   return hours * 3600 + minutes * 60 + seconds + frames / Math.max(1, frameRate);
+}
+
+function getPreviewCSSFilter(effect: string | null, item: PreviewEditableVisualItem | null): string {
+  const parts: string[] = [];
+  const effectFilter = getCSSFilterForEffect(effect);
+  if (effectFilter !== "none") parts.push(effectFilter);
+
+  if (item) {
+    const preset = previewStringProperty(item, "filters", item.type === "video" ? "builtIn" : "filterType", "None");
+    const lut = previewStringProperty(item, "filters", "lutLibrary", "None");
+    const intensity = previewNumberProperty(item, "filters", "intensity", 100);
+    const blend = previewNumberProperty(item, "filters", "blend", 100);
+    const presetFilter = getCSSFilterForEffect(preset !== "None" ? preset : lut);
+    if (presetFilter !== "none" && intensity > 0 && blend > 0) parts.push(presetFilter);
+
+    const exposure = previewNumberProperty(item, "adjust", "exposure", 0);
+    const brightness = previewNumberProperty(item, "adjust", "brightness", 100);
+    const contrast = previewNumberProperty(item, "adjust", "contrast", 100);
+    const highlights = previewNumberProperty(item, "adjust", "highlights", 100);
+    const shadows = previewNumberProperty(item, "adjust", "shadows", 100);
+    const whites = previewNumberProperty(item, "adjust", "whites", 0);
+    const blacks = previewNumberProperty(item, "adjust", "blacks", 0);
+    const temperature = previewNumberProperty(item, "adjust", "temperature", 0);
+    const tint = previewNumberProperty(item, "adjust", "tint", 0);
+    const saturation = previewNumberProperty(item, "adjust", "saturation", 100);
+    const vibrance = previewNumberProperty(item, "adjust", "vibrance", 100);
+    const lift = previewNumberProperty(item, "color", "lift", 0);
+    const gamma = previewNumberProperty(item, "color", "gamma", 0);
+    const gain = previewNumberProperty(item, "color", "gain", 0);
+
+    const brightnessValue = clampPreviewValue(
+      brightness / 100 + exposure / 240 + lift / 320 + whites / 520 - blacks / 520 + (shadows - 100) / 700,
+      0.08,
+      3,
+    );
+    const contrastValue = clampPreviewValue(
+      contrast / 100 + gamma / 260 + gain / 420 + (highlights - 100) / 700 - (shadows - 100) / 900,
+      0.08,
+      3,
+    );
+    const saturationValue = clampPreviewValue(saturation / 100 + (vibrance - 100) / 260 + gain / 340, 0, 3.5);
+    const hueRotation = clampPreviewValue((temperature * -0.18) + (tint * 0.22), -45, 45);
+    const sepia = clampPreviewValue(Math.max(0, temperature) / 420, 0, 0.28);
+
+    parts.push(
+      `brightness(${formatFilterNumber(brightnessValue)})`,
+      `contrast(${formatFilterNumber(contrastValue)})`,
+      `saturate(${formatFilterNumber(saturationValue)})`,
+    );
+    if (Math.abs(hueRotation) > 0.01) parts.push(`hue-rotate(${formatFilterNumber(hueRotation)}deg)`);
+    if (sepia > 0) parts.push(`sepia(${formatFilterNumber(sepia)})`);
+  }
+
+  return parts.length ? parts.join(" ") : "none";
+}
+
+function getVisualPreviewOverlay(effect: string | null, item: PreviewEditableVisualItem | null): {
+  vignetteOpacity: number;
+  grainOpacity: number;
+  maskWindowStyle: CSSProperties | null;
+} {
+  const vignette = item ? previewNumberProperty(item, "color", "vignette", 0) : 0;
+  const grain = item ? previewNumberProperty(item, "color", "grain", 0) : 0;
+
+  return {
+    vignetteOpacity: effect === "Vignette" ? 0.65 : clampPreviewValue(vignette / 135, 0, 0.72),
+    grainOpacity: clampPreviewValue(grain / 360, 0, 0.28),
+    maskWindowStyle: item ? getMaskWindowStyle(item) : null,
+  };
+}
+
+function getMaskWindowStyle(item: PreviewEditableVisualItem): CSSProperties | null {
+  const shape = previewStringProperty(item, "mask", item.type === "video" ? "shape" : "maskType", "None");
+  if (!shape || shape === "None") return null;
+
+  const expansion = previewNumberProperty(item, "mask", "expansion", 0);
+  const size = clampPreviewValue(previewNumberProperty(item, "mask", "maskSize", 66) + expansion / 4, 12, 112);
+  const feather = clampPreviewValue(previewNumberProperty(item, "mask", "maskFeather", 10) / 100, 0, 1);
+  const invert = Boolean(previewRawProperty(item, "mask", "invert", false));
+  const isCircle = shape === "Circle";
+  const width = isCircle ? size : clampPreviewValue(size * 1.35, 16, 118);
+  const height = isCircle ? size : clampPreviewValue(size * 0.82, 12, 100);
+
+  return {
+    left: "50%",
+    top: "50%",
+    width: `${width}%`,
+    height: `${height}%`,
+    transform: "translate(-50%, -50%)",
+    borderRadius: isCircle ? "999px" : "10px",
+    border: "1.5px solid rgba(255,255,255,0.74)",
+    boxShadow: invert
+      ? `inset 0 0 ${Math.round(18 + feather * 40)}px rgba(0,0,0,0.38)`
+      : `0 0 0 9999px rgba(0,0,0,${formatFilterNumber(0.2 + feather * 0.32)})`,
+  };
+}
+
+function previewNumberProperty(item: PreviewEditableVisualItem, groupName: string, propertyName: string, fallback: number): number {
+  const value = previewRawProperty(item, groupName, propertyName, fallback);
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function previewStringProperty(item: PreviewEditableVisualItem, groupName: string, propertyName: string, fallback: string): string {
+  const value = previewRawProperty(item, groupName, propertyName, fallback);
+  return typeof value === "string" ? value : fallback;
+}
+
+function previewRawProperty(
+  item: PreviewEditableVisualItem,
+  groupName: string,
+  propertyName: string,
+  fallback: unknown,
+): unknown {
+  return (item as any).properties?.[groupName]?.[propertyName]?.value ?? fallback;
+}
+
+function clampPreviewValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function formatFilterNumber(value: number): string {
+  return Number(value.toFixed(3)).toString();
 }
 
 function getCSSFilterForEffect(effect: string | null): string {

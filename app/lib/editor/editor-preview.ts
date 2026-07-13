@@ -170,11 +170,12 @@ export function createProgramMonitorPlan({
 
       if (item.type === "text") {
         const evaluated = evaluateVisualState(item, currentTime);
+        const opacity = previewAnimationOpacity(item, currentTime, evaluated?.opacity ?? 1);
         overlays.push({
           kind: "text",
           item: evaluated ? { ...item, transform: evaluated.transform } : item,
           stackOrder: stackOrderByItemId.get(item.id) ?? 0,
-          opacity: evaluated?.opacity ?? 1,
+          opacity,
         });
         continue;
       }
@@ -336,9 +337,30 @@ function evaluatedVisualItem<T extends VideoClipTimelineItem | ImageOverlayTimel
   return {
     ...item,
     transform: evaluated.transform,
-    opacity: evaluated.opacity,
+    opacity: previewAnimationOpacity(item, currentTime, evaluated.opacity),
     ...(evaluated.crop ? { crop: evaluated.crop } : {}),
   } as T;
+}
+
+function previewAnimationOpacity(item: VideoTimelineItem, currentTime: number, baseOpacity: number): number {
+  const fadeIn = numericProperty(item, "animation", "fadeIn", 0);
+  const fadeOut = numericProperty(item, "animation", "fadeOut", 0);
+  if (fadeIn <= 0 && fadeOut <= 0) return baseOpacity;
+
+  const itemTime = Math.max(0, Math.min(item.duration, currentTime - item.timelineStart));
+  const fadeInGain = fadeIn > 0 ? Math.min(1, itemTime / Math.min(fadeIn, item.duration)) : 1;
+  const fadeOutWindow = Math.min(fadeOut, item.duration);
+  const fadeOutStart = item.duration - fadeOutWindow;
+  const fadeOutGain = fadeOut > 0 && itemTime > fadeOutStart
+    ? Math.max(0, (item.duration - itemTime) / Math.max(fadeOutWindow, 0.001))
+    : 1;
+
+  return Math.max(0, Math.min(1, baseOpacity * fadeInGain * fadeOutGain));
+}
+
+function numericProperty(item: VideoTimelineItem, groupName: string, propertyName: string, fallback: number): number {
+  const value = (item as any).properties?.[groupName]?.[propertyName]?.value;
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 export function mediaSourceTimeToTimelineTime(
