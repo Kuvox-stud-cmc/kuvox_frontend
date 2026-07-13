@@ -9,7 +9,9 @@ import type {
   VideoMediaReference,
   VideoProjectDocument,
   VideoTimelineItem,
+  VideoTransform,
   VideoTrack,
+  VideoTrackKind,
 } from "./video-document";
 import { findCompatibleTrack, roundTime } from "./editor-timeline";
 import type { VideoEditorShotSearchResult } from "./video-retrieval";
@@ -153,19 +155,14 @@ export function buildAddMediaToTimelineOperation({
   }
 
   if (media.kind === MediaKind.Image) {
+    const transform = defaultImageTransformForMedia(document, media);
     const item: ImageOverlayTimelineItem = {
       id: itemId,
       type: targetTrack.kind === "overlay" ? "overlay" : "image",
       mediaId: media.id,
       timelineStart,
       duration,
-      transform: {
-        x: 0,
-        y: 0,
-        scaleX: 1,
-        scaleY: 1,
-        rotation: 0,
-      },
+      transform,
       crop: {
         top: 0,
         right: 0,
@@ -323,11 +320,13 @@ function targetTrackForMedia(document: VideoProjectDocument, media: MediaDto, pr
   }
 
   if (media.kind === MediaKind.Image) {
-    if (!preferredTrackId) {
-      const overlayTrack = document.tracks.find((track) => !track.locked && track.kind === "overlay");
-      if (overlayTrack) return overlayTrack;
+    if (preferredTrackId) {
+      return findCompatibleTrack(document, "image", preferredTrackId);
     }
-    return findCompatibleTrack(document, "image", preferredTrackId);
+    if (isElementOverlayMedia(media)) {
+      return createDedicatedOverlayTrack(document);
+    }
+    return findCompatibleTrack(document, "image");
   }
 
   return findCompatibleTrack(document, "video", preferredTrackId);
@@ -435,16 +434,71 @@ function nextLayerOrder(document: VideoProjectDocument): number {
   }, 0) + 1;
 }
 
+/**
+ * Creates a new overlay track with a unique ID.
+ * The track is a virtual placeholder — it will be materialised by the
+ * operation application layer when the item is actually added.
+ */
+function createDedicatedOverlayTrack(document: VideoProjectDocument): VideoTrack {
+  const overlayCount = document.tracks.filter((track) => track.kind === "overlay").length;
+  return {
+    id: `o-${crypto.randomUUID()}`,
+    kind: "overlay" as VideoTrackKind,
+    label: `O${overlayCount + 1}`,
+    locked: false,
+    hidden: false,
+    muted: false,
+    items: [],
+  };
+}
+
+function defaultImageTransformForMedia(document: VideoProjectDocument, media: MediaDto): VideoTransform {
+  const transform = {
+    x: 0,
+    y: 0,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+  };
+
+  if (!isElementOverlayMedia(media)) {
+    return transform;
+  }
+
+  const mediaWidth = positiveNumberOrUndefined(media.width) ?? 100;
+  const mediaHeight = positiveNumberOrUndefined(media.height) ?? 100;
+  const projectWidth = positiveNumberOrUndefined(document.settings.width) ?? 1920;
+  const projectHeight = positiveNumberOrUndefined(document.settings.height) ?? 1080;
+  const fitScale = Math.min(projectWidth / mediaWidth, projectHeight / mediaHeight);
+  const targetLongSide = Math.min(180, Math.max(96, Math.min(projectWidth, projectHeight) * 0.16));
+  const iconScale = fitScale > 0
+    ? targetLongSide / (Math.max(mediaWidth, mediaHeight) * fitScale)
+    : 1;
+
+  return {
+    ...transform,
+    scaleX: roundTime(Math.max(0.01, iconScale)),
+    scaleY: roundTime(Math.max(0.01, iconScale)),
+  };
+}
+
+function isElementOverlayMedia(media: MediaDto): boolean {
+  return (
+    (media.ownerId === "iconify" && media.id.startsWith("iconify_")) ||
+    media.id.startsWith("el_")
+  );
+}
+
 function objectUrlsForMedia(media: MediaDto): Partial<Record<"proxy" | "canonical" | "raw", string>> {
   return omitUndefined({
     proxy: media.proxyStorageKey
-      ? `/bff/media/${encodeURIComponent(media.id)}/object/proxy?v=${encodeURIComponent(media.proxyStorageKey)}`
+      ? objectUrlForStorageKey(media.id, "proxy", media.proxyStorageKey)
       : undefined,
     canonical: media.canonicalStorageKey
-      ? `/bff/media/${encodeURIComponent(media.id)}/object/canonical?v=${encodeURIComponent(media.canonicalStorageKey)}`
+      ? objectUrlForStorageKey(media.id, "canonical", media.canonicalStorageKey)
       : undefined,
     raw: media.storageKey
-      ? `/bff/media/${encodeURIComponent(media.id)}/object/raw?v=${encodeURIComponent(media.storageKey)}`
+      ? objectUrlForStorageKey(media.id, "raw", media.storageKey)
       : undefined,
   });
 }
@@ -466,8 +520,21 @@ function sourceObjectForMedia(
 
   return {
     ...candidate,
-    url: objectUrls[candidate.variant] ?? `/bff/media/${encodeURIComponent(media.id)}/object/${candidate.variant}?v=${encodeURIComponent(candidate.key)}`,
+    url: objectUrls[candidate.variant] ?? objectUrlForStorageKey(media.id, candidate.variant, candidate.key),
   };
+}
+
+function objectUrlForStorageKey(
+  mediaId: string,
+  variant: "proxy" | "canonical" | "raw",
+  storageKey: string,
+): string {
+  if (isDirectMediaUrl(storageKey)) return storageKey;
+  return `/bff/media/${encodeURIComponent(mediaId)}/object/${variant}?v=${encodeURIComponent(storageKey)}`;
+}
+
+function isDirectMediaUrl(value: string): boolean {
+  return /^(?:https?:|data:|blob:)/i.test(value);
 }
 
 function numberOrUndefined(value: number | string | null | undefined): number | undefined {

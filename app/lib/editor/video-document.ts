@@ -349,6 +349,7 @@ export function createEmptyVideoProjectDocument(project: VideoProjectSeed): Vide
     media: {},
     tracks: [
       createTrack("v1", "video", "V1"),
+      createTrack("o1", "overlay", "Overlay track"),
       createTrack("a1", "audio", "A1"),
       createTrack("t1", "text", "T1"),
     ],

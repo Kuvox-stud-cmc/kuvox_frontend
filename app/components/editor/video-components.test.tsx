@@ -71,6 +71,7 @@ vi.mock("react-konva", async () => {
         pointerId: event.pointerId ?? 1,
         pointerType: event.pointerType || "mouse",
         button: typeof event.button === "number" ? event.button : 0,
+        buttons: event.buttons,
         isPrimary: event.isPrimary !== false,
         shiftKey: event.shiftKey,
       },
@@ -511,6 +512,11 @@ describe("Timeline and top-bar controls", () => {
     expect(findItem(store, "tl-beach")).toMatchObject({ timelineStart: 2 });
   });
 
+  it("does not mark direct SVG overlay elements as missing in the timeline", () => {
+    renderWithEditorStore(<TimelinePanel />, { document: overlayElementDocument() });
+    expect(screen.getByRole("button", { name: /overlay timeline item, Arrow/i })).not.toHaveTextContent("Missing");
+  });
+
   it("reorders tracks by dragging a track header onto another track", () => {
     const base = createMockVideoProjectDocument("track-reorder", "Track Reorder");
     const document: VideoProjectDocument = {
@@ -580,9 +586,8 @@ describe("PreviewPanel direct visual manipulation", () => {
     expect(selectEditorState(store.getState()).selection.activeItemId).toBe("tl-beach");
     expect(setPointerCapture).not.toHaveBeenCalled();
 
-    fireEvent.pointerUp(visual, { clientX: 100, clientY: 100, pointerId: 31, pointerType: "mouse" });
-    expect(setPointerCapture).not.toHaveBeenCalled();
-    fireEvent.pointerMove(stage, { clientX: 400, clientY: 400, pointerId: 31, pointerType: "mouse" });
+    fireEvent.mouseUp(window, { clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(stage, { clientX: 400, clientY: 400, pointerId: 31, pointerType: "mouse", buttons: 0 });
     fireEvent.pointerUp(stage, { clientX: 400, clientY: 400, pointerId: 31, pointerType: "mouse" });
 
     expect(findItem(store, "tl-beach")).toMatchObject({ transform: { x: 0, y: 0 } });
@@ -599,9 +604,9 @@ describe("PreviewPanel direct visual manipulation", () => {
 
     fireEvent.pointerDown(visual, { clientX: 100, clientY: 100, pointerId: 2, pointerType: "mouse", button: 0 });
     expect(setPointerCapture).not.toHaveBeenCalled();
-    fireEvent.pointerMove(stage, { clientX: 196, clientY: 370, pointerId: 2, pointerType: "mouse" });
-    expect(setPointerCapture).toHaveBeenCalledTimes(1);
-    fireEvent.pointerMove(stage, { clientX: 580, clientY: 640, pointerId: 2, pointerType: "mouse" });
+    fireEvent.pointerMove(stage, { clientX: 196, clientY: 370, pointerId: 2, pointerType: "mouse", buttons: 1 });
+    expect(setPointerCapture).not.toHaveBeenCalled();
+    fireEvent.pointerMove(stage, { clientX: 580, clientY: 640, pointerId: 2, pointerType: "mouse", buttons: 1 });
     expect(findItem(store, "tl-beach")).toMatchObject({ transform: { x: 0, y: 0 } });
 
     fireEvent.pointerUp(stage, { clientX: 580, clientY: 640, pointerId: 2, pointerType: "mouse" });
@@ -610,19 +615,47 @@ describe("PreviewPanel direct visual manipulation", () => {
     expect(selectEditorState(store.getState()).lastAppliedOperationIds).toHaveLength(1);
   });
 
+  it("commits overlay element drags on window pointer release and preserves them across rerenders", () => {
+    installMediaElementMocks();
+    const { store, container } = renderWithEditorStore(<PreviewPanel />, {
+      document: overlayElementDocument(),
+      selectedItemIds: ["element-arrow"],
+    });
+    const visual = container.querySelector('[data-konva-name="preview-visual-element-arrow"]') as HTMLElement;
+    const stage = container.querySelector("[data-konva-stage] > div") as HTMLElement;
+
+    fireEvent.pointerDown(visual, { clientX: 100, clientY: 100, pointerId: 42, pointerType: "mouse", button: 0 });
+    fireEvent.pointerMove(stage, { clientX: 196, clientY: 370, pointerId: 42, pointerType: "mouse", buttons: 1 });
+    expect(findItem(store, "element-arrow")).toMatchObject({ transform: { x: 0, y: 0 } });
+
+    fireEvent.pointerUp(stage, { clientX: 100, clientY: 100, pointerId: 42, pointerType: "mouse" });
+    expect(findItem(store, "element-arrow")).toMatchObject({ transform: { x: 192, y: 540 } });
+    expect(selectEditorState(store.getState()).undoStack).toHaveLength(1);
+
+    act(() => store.dispatch(timelineItemsSelected({ itemIds: ["tl-beach"], activeItemId: "tl-beach" })));
+    act(() => store.dispatch(timelineItemsSelected({ itemIds: ["element-arrow"], activeItemId: "element-arrow" })));
+    act(() => store.dispatch(currentTimeChanged(1)));
+    expect(findItem(store, "element-arrow")).toMatchObject({ transform: { x: 192, y: 540 } });
+
+    act(() => store.dispatch(videoUndoRequested()));
+    expect(findItem(store, "element-arrow")).toMatchObject({ transform: { x: 0, y: 0 } });
+    act(() => store.dispatch(videoRedoRequested()));
+    expect(findItem(store, "element-arrow")).toMatchObject({ transform: { x: 192, y: 540 } });
+  });
+
   it("cancels without document mutation and blocks movement on locked tracks", () => {
     installMediaElementMocks();
     const { store, container } = renderWithEditorStore(<PreviewPanel />, { document: directManipulationDocument() });
     const visual = container.querySelector('[data-konva-name="preview-visual-tl-beach"]') as HTMLElement;
     const stage = container.querySelector("[data-konva-stage] > div") as HTMLElement;
     fireEvent.pointerDown(visual, { clientX: 100, clientY: 100, pointerId: 3, pointerType: "mouse", button: 0 });
-    fireEvent.pointerMove(stage, { clientX: 400, clientY: 400, pointerId: 3, pointerType: "mouse" });
+    fireEvent.pointerMove(stage, { clientX: 400, clientY: 400, pointerId: 3, pointerType: "mouse", buttons: 1 });
     fireEvent.pointerCancel(stage, { clientX: 400, clientY: 400, pointerId: 3, pointerType: "mouse" });
     expect(findItem(store, "tl-beach")).toMatchObject({ transform: { x: 0, y: 0 } });
     expect(selectEditorState(store.getState()).undoStack).toHaveLength(0);
 
     fireEvent.pointerDown(visual, { clientX: 100, clientY: 100, pointerId: 6, pointerType: "mouse", button: 0 });
-    fireEvent.pointerMove(stage, { clientX: 500, clientY: 400, pointerId: 6, pointerType: "mouse" });
+    fireEvent.pointerMove(stage, { clientX: 500, clientY: 400, pointerId: 6, pointerType: "mouse", buttons: 1 });
     fireEvent.keyDown(window, { key: "Escape" });
     fireEvent.pointerUp(stage, { clientX: 500, clientY: 400, pointerId: 6, pointerType: "mouse" });
     expect(findItem(store, "tl-beach")).toMatchObject({ transform: { x: 0, y: 0 } });
@@ -634,7 +667,7 @@ describe("PreviewPanel direct visual manipulation", () => {
     const lockedVisual = lockedRender.container.querySelector('[data-konva-name="preview-visual-tl-beach"]') as HTMLElement;
     const lockedStage = lockedRender.container.querySelector("[data-konva-stage] > div") as HTMLElement;
     fireEvent.pointerDown(lockedVisual, { clientX: 100, clientY: 100, pointerId: 4, pointerType: "mouse", button: 0 });
-    fireEvent.pointerMove(lockedStage, { clientX: 400, clientY: 400, pointerId: 4, pointerType: "mouse" });
+    fireEvent.pointerMove(lockedStage, { clientX: 400, clientY: 400, pointerId: 4, pointerType: "mouse", buttons: 1 });
     fireEvent.pointerUp(lockedStage, { clientX: 400, clientY: 400, pointerId: 4, pointerType: "mouse" });
     expect(selectEditorState(lockedRender.store.getState()).selection.activeItemId).toBe("tl-beach");
     expect(findItem(lockedRender.store, "tl-beach")).toMatchObject({ transform: { x: 0, y: 0 } });
@@ -675,7 +708,7 @@ describe("PreviewPanel direct visual manipulation", () => {
     const stage = container.querySelector("[data-konva-stage] > div") as HTMLElement;
 
     fireEvent.pointerDown(handle, { clientX: 953, clientY: 533, pointerId: 7, pointerType: "mouse", button: 0 });
-    fireEvent.pointerMove(stage, { clientX: 713, clientY: 398, pointerId: 7, pointerType: "mouse" });
+    fireEvent.pointerMove(stage, { clientX: 713, clientY: 398, pointerId: 7, pointerType: "mouse", buttons: 1 });
     expect(findItem(store, "tl-beach")).toMatchObject({ transform: { scaleX: 1, scaleY: 1 } });
     fireEvent.pointerUp(stage, { clientX: 713, clientY: 398, pointerId: 7, pointerType: "mouse" });
 
@@ -1177,6 +1210,48 @@ function directManipulationDocument(): VideoProjectDocument {
       ...track,
       items: track.items.map((item) => item.id === "tl-beach" ? { ...item, timelineStart: 0 } : item),
     } : track),
+  };
+}
+
+function overlayElementDocument(): VideoProjectDocument {
+  const base = directManipulationDocument();
+  const svgUrl = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><path d="M10,40 L70,40 L70,20 L95,50 L70,80 L70,60 L10,60 Z" fill="%23ff2d2d"/></svg>`;
+  return {
+    ...base,
+    media: {
+      ...base.media,
+      "element-arrow-media": {
+        id: "element-arrow-media",
+        kind: "image",
+        name: "Arrow",
+        width: 100,
+        height: 100,
+        sourceUrl: svgUrl,
+        objectUrls: { raw: svgUrl },
+      },
+    },
+    tracks: [
+      ...base.tracks,
+      {
+        id: "element-track",
+        kind: "overlay",
+        label: "Element",
+        locked: false,
+        hidden: false,
+        muted: false,
+        items: [{
+          id: "element-arrow",
+          type: "overlay",
+          mediaId: "element-arrow-media",
+          timelineStart: 0,
+          duration: 5,
+          transform: { x: 0, y: 0, scaleX: 0.16, scaleY: 0.16, rotation: 0 },
+          crop: { top: 0, right: 0, bottom: 0, left: 0 },
+          opacity: 1,
+          layerOrder: 8,
+        }],
+      },
+    ],
   };
 }
 

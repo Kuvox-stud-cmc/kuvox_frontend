@@ -7,6 +7,54 @@ test.beforeEach(async ({ page }) => {
   await installBffMocks(page);
 });
 
+test("overlay elements drag directly in preview and persist after the next click", async ({ page }) => {
+  await page.route("**/api/iconify/search**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ icons: ["lucide:heart"] }),
+    });
+  });
+  await page.route("https://api.iconify.design/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M12 21s-7-4.35-9.5-8.5C.5 9.2 2.3 5 6.2 5c2.1 0 3.3 1.2 3.8 2 .5-.8 1.7-2 3.8-2 3.9 0 5.7 4.2 3.7 7.5C19 16.65 12 21 12 21Z"/></svg>',
+    });
+  });
+
+  await page.goto("/editor/video/e2e-video-project");
+  const closeTutorial = page.getByRole("button", { name: "Close tutorial" }).first();
+  await closeTutorial.click({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Elements" }).click();
+  await page.getByTitle("Add lucide:heart").click();
+  await expect(page.getByLabel(/overlay timeline item, lucide:heart/i)).toBeVisible();
+
+  const positionX = page.getByLabel("Position X");
+  const positionY = page.getByLabel("Position Y");
+  await expect(positionX).toHaveValue("0");
+  await expect(positionY).toHaveValue("0");
+
+  const stage = page.locator('[data-tour="preview-panel"] .konvajs-content').filter({ visible: true }).first();
+  const bounds = await stage.boundingBox();
+  expect(bounds).not.toBeNull();
+  const startX = (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2;
+  const startY = (bounds?.y ?? 0) + (bounds?.height ?? 0) / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 120, startY + 70, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(positionX).not.toHaveValue("0");
+  await expect(positionY).not.toHaveValue("0");
+  const movedX = await positionX.inputValue();
+  const movedY = await positionY.inputValue();
+
+  await page.mouse.click(startX + 120, startY + 70);
+  await expect(positionX).toHaveValue(movedX);
+  await expect(positionY).toHaveValue(movedY);
+});
+
 test("timeline shows a session-only preparing block before committing media", async ({ page }, testInfo) => {
   await page.unroute("**/bff/media/**");
   await page.route("**/bff/media/**", async (route) => {

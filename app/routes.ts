@@ -131,6 +131,7 @@ export default [
   route("editor/video/:projectId", `${routesFolder.EDITOR}/video.tsx`),
   route("editor/image/:projectId", `${routesFolder.EDITOR}/image.tsx`),
   route("editor/:projectId", `${routesFolder.EDITOR}/editor.tsx`),
+  route("api/iconify/search", "routes/api/iconify-search.ts"),
 
   // ── Settings ────────────────────────────────────────────────────────────────
   layout(`${routesFolder.SETTINGS}/layout.tsx`, [

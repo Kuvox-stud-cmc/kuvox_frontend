@@ -43,6 +43,7 @@ function main(): void {
   assertCheckpointUndoRules();
   assertCoalescing();
   assertRevisionMetadata();
+  assertDedicatedOverlayTrackFallback();
 }
 
 function assertHistoryEntriesForAllOperationTypes(): void {
@@ -515,6 +516,32 @@ function assertRevisionMetadata(): void {
   assert.equal(movedAcrossTracks.document.tracks.find((track) => track.id === "o1")?.items[0]?.id, "tl-added-image");
 }
 
+function assertDedicatedOverlayTrackFallback(): void {
+  const document = createDocument();
+  const operation = addOverlayOperation("o-dedicated");
+  const result = applyVideoOperation(document, operation);
+  assert.equal(result.ok, true, result.errors?.join("; "));
+
+  const trackIds = result.document.tracks.map((track) => track.id);
+  assert.ok(trackIds.indexOf("o-dedicated") > trackIds.indexOf("v1"));
+  assert.ok(trackIds.indexOf("o-dedicated") < trackIds.indexOf("a1"));
+  assert.equal(result.document.tracks.find((track) => track.id === "o-dedicated")?.items[0]?.id, "tl-added-overlay");
+
+  assert.equal(result.undo?.type, "inverseOperations");
+  const undoOperation = result.undo?.type === "inverseOperations" ? result.undo.inverseOperations[0] : null;
+  assert.equal(undoOperation?.type, "deleteItem");
+  const undone = undoOperation ? applyVideoOperation(result.document, undoOperation) : null;
+  assert.equal(undone?.ok, true);
+  assert.equal(undone?.document.tracks.some((track) => track.id === "o-dedicated"), false);
+
+  const redone = undone?.ok ? applyVideoOperation(undone.document, operation) : null;
+  assert.equal(redone?.ok, true);
+  assert.equal(redone?.document.tracks.find((track) => track.id === "o-dedicated")?.items[0]?.id, "tl-added-overlay");
+
+  const missingImageTrack = applyVideoOperation(document, { ...addImageOperation(), id: "missing-image-track", trackId: "missing-image-track" });
+  assertFailedWithoutMutation(missingImageTrack, document, "missing ordinary image track should fail");
+}
+
 function createDocument(): VideoProjectDocument {
   const document = createMockVideoProjectDocument("operation-test", "Operation Test");
   document.media["still-poster"] = {
@@ -573,6 +600,21 @@ function addImageOperation(): AddMediaToTimelineOperation {
     layerOrder: 11,
   };
   return { ...base("add-image", "Add image", [item.id]), type: "addMediaToTimeline", trackId: "v1", item };
+}
+
+function addOverlayOperation(trackId: string): AddMediaToTimelineOperation {
+  const item: ImageOverlayTimelineItem = {
+    id: "tl-added-overlay",
+    type: "overlay",
+    mediaId: "still-poster",
+    timelineStart: 6,
+    duration: 4,
+    transform: { x: 0, y: 0, scaleX: 0.5, scaleY: 0.5, rotation: 15 },
+    crop: { top: 0, right: 0, bottom: 0, left: 0 },
+    opacity: 1,
+    layerOrder: 12,
+  };
+  return { ...base("add-overlay", "Add overlay", [item.id]), type: "addMediaToTimeline", trackId, item };
 }
 
 function addAudioOperation(): AddAudioItemOperation {

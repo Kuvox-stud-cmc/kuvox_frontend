@@ -1076,6 +1076,7 @@ function itemEnd(item: { timelineStart: number; duration: number }): number {
 }
 
 function mediaObjectUrl(mediaId: string, variant: "canonical", cacheKey: string): string {
+  if (/^(?:https?:|data:|blob:)/i.test(cacheKey)) return cacheKey;
   return `/bff/media/${encodeURIComponent(mediaId)}/object/${variant}?v=${encodeURIComponent(cacheKey)}`;
 }
 

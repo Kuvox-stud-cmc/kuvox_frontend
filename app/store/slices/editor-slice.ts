@@ -673,6 +673,8 @@ const editorSlice = createSlice({
       const placement = "media" in action.payload
         ? { trackId: action.payload.trackId, timelineStart: action.payload.timelineStart }
         : undefined;
+      const beforeDocument = cloneJson(state.document);
+
       const mediaReference = mediaDtoToVideoMediaReference(media);
       const documentWithMedia = {
         ...state.document,
@@ -694,7 +696,6 @@ const editorSlice = createSlice({
         return;
       }
 
-      const beforeDocument = cloneJson(state.document);
       const batch = normalizeVideoOperationPayload(build.operation);
       const result = applyVideoOperationBatch(documentWithMedia, batch);
 

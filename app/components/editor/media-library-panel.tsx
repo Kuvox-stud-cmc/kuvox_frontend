@@ -21,6 +21,7 @@ import {
   mediaAssetAddedToTimeline,
   modalOpened,
   searchQueryChanged,
+  selectCurrentTimeSeconds,
   selectLibraryPanelState,
   selectSelectedItemIds,
   selectVideoDocument,
@@ -52,6 +53,21 @@ const readinessFilters: Array<{ value: ReadinessFilterValue; label: string; icon
   { value: "failed", label: "Failed", icon: "error" },
   { value: "all", label: "All", icon: "filter_alt" },
 ];
+
+const allowedIconifyPrefixes = [
+  "lucide",
+  "tabler",
+  "heroicons",
+  "ph",
+  "material-symbols",
+] as const;
+
+type IconifyIconResult = {
+  name: string;
+  prefix: string;
+  iconName: string;
+  svgUrl: string;
+};
 
 export interface MediaLibraryPanelProps {
   activeTab?: string;
@@ -637,6 +653,10 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
 
   const dispatch = useAppDispatch();
 
+  if (tab === "elements") {
+    return <IconifyElementsPanel onClose={onClose} />;
+  }
+
   const handleItemClick = (itemName: string) => {
     if (tab === "text") {
       dispatch(textItemCreated({
@@ -677,6 +697,8 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
       dispatch(toastShown(`Transition selected: ${itemName}`));
     } else if (tab === "elements") {
       let svgUrl = "";
+      let elementWidth = 100;
+      let elementHeight = 100;
       if (itemName === "Circle") {
         svgUrl = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><circle cx="50" cy="50" r="45" fill="%238B7CFF"/></svg>`;
       } else if (itemName === "Square" || itemName === "Classic Border" || itemName === "Soft Gradient") {
@@ -688,6 +710,7 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
       } else if (itemName === "Heart") {
         svgUrl = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><path d="M50,30 C35,10 10,20 10,45 C10,70 50,90 50,90 C50,90 90,70 90,45 C90,20 65,10 50,30 Z" fill="%23FF7675"/></svg>`;
       } else if (itemName === "Line" || itemName === "Curve Line") {
+        elementHeight = 10;
         svgUrl = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 10" width="100" height="10"><line x1="5" y1="5" x2="95" y2="5" stroke="%23A29BFE" stroke-width="6" stroke-linecap="round"/></svg>`;
       } else if (itemName === "Arrow" || itemName === "Double Arrow") {
         svgUrl = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><path d="M10,40 L70,40 L70,20 L95,50 L70,80 L70,60 L10,60 Z" fill="%2374B9FF"/></svg>`;
@@ -698,7 +721,7 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
       }
 
       const elementMediaDto: MediaDto = {
-        id: `el_${itemName.toLowerCase().replace(/\s/g, "_")}_${Date.now()}`,
+        id: `el_${itemName.toLowerCase().replace(/\s/g, "_")}_${uniqueElementId()}`,
         ownerId: "brand-kit-user",
         ownerKind: 1,
         ownerEmail: null,
@@ -711,8 +734,8 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
         thumbnailStorageKey: null,
         errorMessage: null,
         durationSeconds: null,
-        width: null,
-        height: null,
+        width: elementWidth,
+        height: elementHeight,
         codec: null,
         frameRate: null,
         sizeBytes: 512,
@@ -828,6 +851,204 @@ function MockLibraryPanelContent({ tab, onClose }: { tab: string; onClose: () =>
       </div>
     </div>
   );
+}
+
+function IconifyElementsPanel({ onClose }: { onClose: () => void }) {
+  const dispatch = useAppDispatch();
+  const currentTime = useAppSelector(selectCurrentTimeSeconds);
+  const [query, setQuery] = useState("heart");
+  const [results, setResults] = useState<IconifyIconResult[]>([]);
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+
+  useEffect(() => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      setResults([]);
+      setStatus("idle");
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setStatus("loading");
+      fetch(`/api/iconify/search?query=${encodeURIComponent(normalizedQuery)}&limit=48`, {
+        signal: controller.signal,
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error("Iconify search failed");
+          return response.json() as Promise<{ icons?: string[] }>;
+        })
+        .then((payload) => {
+          setResults((payload.icons ?? []).map(iconifyResultFromName).filter(isIconifyResult));
+          setStatus("ready");
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          setResults([]);
+          setStatus("error");
+          console.error(error);
+        });
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [query]);
+
+  return (
+    <div className="flex h-full flex-col bg-surface">
+      <div className="flex h-13 shrink-0 items-center justify-between gap-3 px-4 border-b border-outline-variant/30">
+        <div>
+          <h2 className="text-body-sm font-bold text-on-surface leading-tight">Elements</h2>
+          <p className="text-[10px] text-on-surface-variant/75 leading-none mt-0.5">
+            Iconify SVG icons
+          </p>
+        </div>
+        <EditorIconButton
+          icon="close"
+          label="Close elements"
+          className="hidden h-[30px] w-[30px] min-[760px]:flex min-[1180px]:hidden"
+          onClick={onClose}
+        />
+      </div>
+
+      <div className="flex shrink-0 gap-2 border-b border-outline-variant px-3 py-2">
+        <label className="relative min-w-0 flex-1">
+          <EditorIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[14px] text-on-surface-variant">
+            search
+          </EditorIcon>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder="Search icons"
+            aria-label="Search Iconify elements"
+            data-editor-shortcuts="ignore"
+            className="h-8 w-full rounded-[6px] border border-outline-variant bg-surface-container-low pl-8 pr-2 text-[11px] font-medium text-on-surface outline-none transition-colors placeholder:text-[11px] placeholder:text-on-surface-variant/70 focus:border-primary motion-reduce:transition-none"
+          />
+        </label>
+      </div>
+
+      <div className="flex shrink-0 flex-wrap gap-1 border-b border-outline-variant px-3 py-2">
+        {allowedIconifyPrefixes.map((prefix) => (
+          <span
+            key={prefix}
+            className="rounded-[4px] border border-outline-variant/50 bg-surface-container-low px-1.5 py-0.5 text-[9px] font-semibold text-on-surface-variant"
+          >
+            {prefix}
+          </span>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+        {status === "error" ? (
+          <PanelMessage icon="sync_problem" title="Icon search failed" body="Try another keyword in a moment." />
+        ) : status === "loading" && results.length === 0 ? (
+          <PanelMessage icon="progress_activity" title="Searching icons" body="Loading approved Iconify sets." />
+        ) : results.length === 0 ? (
+          <PanelMessage icon="search" title="No icons found" body="Try a simpler keyword such as heart, arrow, or music." />
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            {results.map((icon) => (
+              <button
+                key={icon.name}
+                type="button"
+                title={`Add ${icon.name}`}
+                onClick={() => dispatch(mediaAssetAddedToTimeline({
+                  media: createIconifyMedia(icon),
+                  timelineStart: currentTime,
+                }))}
+                className="group flex aspect-square min-w-0 flex-col items-center justify-center gap-2 rounded-[6px] border border-outline-variant/50 bg-surface-container-low p-2 text-center transition-colors hover:border-primary/60 hover:bg-surface-container-high"
+              >
+                <img
+                  src={icon.svgUrl}
+                  alt=""
+                  className="h-8 w-8 opacity-95 drop-shadow-[0_0_10px_rgba(139,124,255,0.35)] transition-opacity group-hover:opacity-100"
+                  loading="lazy"
+                />
+                <span className="w-full truncate text-[9px] font-semibold text-on-surface-variant">
+                  {icon.iconName}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PanelMessage({ icon, title, body }: { icon: string; title: string; body: string }) {
+  return (
+    <div className="flex min-h-[190px] flex-col items-center justify-center rounded-[8px] border border-dashed border-outline-variant bg-surface-container-lowest p-4 text-center">
+      <EditorIcon className="text-[28px] text-on-surface-variant">{icon}</EditorIcon>
+      <p className="mt-2 text-body-sm font-semibold text-on-surface">{title}</p>
+      <p className="mt-1 max-w-[220px] text-label-md text-on-surface-variant">{body}</p>
+    </div>
+  );
+}
+
+function iconifyResultFromName(name: string): IconifyIconResult | null {
+  const [prefix, iconName] = name.split(":");
+  if (!prefix || !iconName || !allowedIconifyPrefixes.includes(prefix as typeof allowedIconifyPrefixes[number])) {
+    return null;
+  }
+  return {
+    name,
+    prefix,
+    iconName,
+    svgUrl: iconifySvgUrl(name),
+  };
+}
+
+function isIconifyResult(value: IconifyIconResult | null): value is IconifyIconResult {
+  return value !== null;
+}
+
+function createIconifyMedia(icon: IconifyIconResult): MediaDto {
+  return {
+    id: `iconify_${icon.prefix}_${icon.iconName}_${uniqueElementId()}`,
+    ownerId: "iconify",
+    ownerKind: 1,
+    ownerEmail: null,
+    ownerDisplayName: "Iconify",
+    kind: MediaKind.Image,
+    filename: icon.name,
+    storageKey: icon.svgUrl,
+    canonicalStorageKey: icon.svgUrl,
+    proxyStorageKey: null,
+    thumbnailStorageKey: null,
+    errorMessage: null,
+    durationSeconds: null,
+    width: 24,
+    height: 24,
+    codec: "svg",
+    frameRate: null,
+    sizeBytes: 0,
+    status: "ready",
+    createdAt: new Date().toISOString(),
+    isFavorite: false,
+    pipeline: {
+      stage: "ready",
+      label: "Ready",
+      detail: "Iconify SVG",
+      step: 4,
+      stepCount: 4,
+      terminal: true,
+    },
+  };
+}
+
+function uniqueElementId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function iconifySvgUrl(iconName: string): string {
+  const [prefix, name] = iconName.split(":");
+  return `https://api.iconify.design/${encodeURIComponent(prefix)}/${encodeURIComponent(name)}.svg?color=%23f1f2fb`;
 }
 
 function normalizeEditorFeatureType(value: string): string {

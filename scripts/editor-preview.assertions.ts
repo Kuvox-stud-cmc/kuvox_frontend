@@ -45,6 +45,7 @@ function main(): void {
   assertImageAndTextOverlaysResolveInActiveRange();
   assertTopTrackControlsVisualPriority();
   assertProxyUrlIsPreferred();
+  assertDirectIconUrlsCanPreviewAsOverlays();
   assertMissingMediaReturnsWarningState();
   assertFrameStepClampsAtTimelineEdges();
   assertFrameBoundsAndSafeGuidesAreComputed();
@@ -681,6 +682,64 @@ function assertProxyUrlIsPreferred(): void {
     url: "/bff/media/media-1/object/proxy?v=proxy",
     variant: "proxy",
   });
+}
+
+function assertDirectIconUrlsCanPreviewAsOverlays(): void {
+  const iconUrl = "https://api.iconify.design/lucide/heart.svg?color=%23f1f2fb";
+  assert.deepEqual(choosePreviewObjectUrl({
+    id: "iconify-lucide-heart",
+    kind: "image",
+    name: "lucide:heart",
+    sourceUrl: iconUrl,
+    objectUrls: {
+      canonical: iconUrl,
+    },
+  }, "balanced"), {
+    url: iconUrl,
+    variant: null,
+  });
+
+  const document = createMockVideoProjectDocument("preview", "Preview");
+  document.media["iconify-lucide-heart"] = {
+    id: "iconify-lucide-heart",
+    kind: "image",
+    name: "lucide:heart",
+    duration: 5,
+    width: 100,
+    height: 100,
+    sourceUrl: iconUrl,
+    objectUrls: {
+      canonical: iconUrl,
+    },
+  };
+  document.tracks.push({
+    id: "overlay-icon",
+    kind: "overlay",
+    label: "Overlay track",
+    locked: false,
+    hidden: false,
+    muted: false,
+    items: [{
+      id: "tl-icon-heart",
+      type: "overlay",
+      mediaId: "iconify-lucide-heart",
+      timelineStart: 1,
+      duration: 5,
+      transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+      crop: { top: 0, right: 0, bottom: 0, left: 0 },
+      opacity: 1,
+      layerOrder: 10,
+    }],
+  });
+
+  const plan = createProgramMonitorPlan({ document, currentTime: 2 });
+  const overlay = plan.overlays.find((candidate) => candidate.kind === "media" && candidate.item.id === "tl-icon-heart");
+  assert.equal(overlay?.kind, "media");
+  assert.equal(overlay?.objectUrl, iconUrl);
+  assert.equal(
+    plan.warnings.some((warning) => warning.code === "missing-object-url" && warning.mediaId === "iconify-lucide-heart"),
+    false,
+  );
 }
 
 function assertMissingMediaReturnsWarningState(): void {
