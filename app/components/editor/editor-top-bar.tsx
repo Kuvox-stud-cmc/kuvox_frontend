@@ -129,7 +129,10 @@ export function EditorTopBar({
       </div>
 
       <div className="flex min-w-0 items-center justify-center gap-2 2xl:gap-3">
-        <div className="flex items-center rounded-[6px] border border-outline-variant bg-surface-container-low p-1">
+        <div
+          data-tour="editor-mode"
+          className="flex items-center rounded-[6px] border border-outline-variant bg-surface-container-low p-1"
+        >
           {modes.map((mode) => {
             const active = editorMode === mode.value;
             return (
@@ -239,6 +242,7 @@ export function EditorTopBar({
         <button
           type="button"
           aria-label="Export video"
+          data-tour="export-video"
           onClick={() => dispatch(modalOpened("export"))}
           className="flex h-10 min-w-10 items-center justify-center gap-2 rounded-[7px] bg-primary px-2 text-label-md font-bold text-on-primary shadow-[0_0_20px_rgba(139,124,255,0.24)] hover:brightness-110 min-[760px]:h-9 min-[760px]:px-4"
         >
