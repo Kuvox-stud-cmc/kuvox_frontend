@@ -41,7 +41,7 @@ export function MediaTemplatePanel({
 }: MediaTemplatePanelProps) {
   return (
     <aside
-      className={`min-h-0 border-r border-white/10 bg-[#15171b] ${className}`}
+      className={`min-h-0 border-r border-outline-variant bg-surface-container-low ${className}`}
       onDrop={onDropFiles}
       onDragOver={(event) => {
         event.preventDefault();
@@ -56,14 +56,14 @@ export function MediaTemplatePanel({
         onDragStateChange?.(false);
       }}
     >
-      <div className="flex h-12 items-center gap-2 border-b border-white/10 px-3">
-        <EditorIcon className="text-[18px] text-[#8fd6c8]">perm_media</EditorIcon>
-        <h2 className="min-w-0 truncate text-label-md font-semibold uppercase tracking-wide text-white/70">
+      <div className="flex h-12 items-center gap-2 border-b border-outline-variant px-3">
+        <EditorIcon className="text-[18px] text-primary">perm_media</EditorIcon>
+        <h2 className="min-w-0 truncate text-label-md font-semibold uppercase tracking-wide text-on-surface/70">
           Assets
         </h2>
       </div>
 
-      <div className="flex border-b border-white/10 p-2">
+      <div className="flex border-b border-outline-variant p-2">
         {(["templates", "media"] as const).map((tab) => (
           <button
             key={tab}
@@ -71,8 +71,8 @@ export function MediaTemplatePanel({
             onClick={() => onTabChange(tab)}
             className={`h-8 flex-1 rounded-[4px] text-label-md font-semibold capitalize ${
               activeTab === tab
-                ? "bg-white/12 text-white"
-                : "text-white/50 hover:bg-white/[0.05] hover:text-white"
+                ? "bg-hover text-on-surface"
+                : "text-on-surface/50 hover:bg-hover hover:text-on-surface"
             }`}
           >
             {tab}
@@ -104,14 +104,14 @@ function TemplateGrid() {
         <button
           key={template.id}
           type="button"
-          className="group flex min-h-28 flex-col justify-between rounded-[6px] border border-white/10 bg-white/[0.035] p-3 text-left transition-colors hover:border-[#8fd6c8]/60 hover:bg-white/[0.055]"
+          className="group flex min-h-28 flex-col justify-between rounded-[6px] border border-outline-variant bg-surface-container-high/40 p-3 text-left transition-colors hover:border-primary/60 hover:bg-hover"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-[5px] bg-[#8fd6c8]/12 text-[#8fd6c8]">
+          <span className="flex h-9 w-9 items-center justify-center rounded-[5px] bg-primary/10 text-primary">
             <EditorIcon className="text-[22px]">{template.icon}</EditorIcon>
           </span>
           <span>
-            <span className="block text-label-md font-semibold text-white/85">{template.name}</span>
-            <span className="mt-1 block text-label-sm text-white/40">{template.preset}</span>
+            <span className="block text-label-md font-semibold text-on-surface/85">{template.name}</span>
+            <span className="mt-1 block text-label-sm text-on-surface-variant/65">{template.preset}</span>
           </span>
         </button>
       ))}
@@ -134,7 +134,7 @@ function MediaList({
 }) {
   if (mediaError) {
     return (
-      <div className="rounded-[6px] border border-amber-300/20 bg-amber-300/10 px-3 py-4 text-label-md text-amber-100/80">
+      <div className="rounded-[6px] border border-warning/20 bg-warning/10 px-3 py-4 text-label-md text-warning">
         {mediaError}
       </div>
     );
@@ -145,9 +145,9 @@ function MediaList({
       <div className="space-y-3">
         <MediaDropZone dragActive={dragActive} />
         <UploadQueueList uploadQueue={uploadQueue} />
-        <div className="rounded-[6px] border border-dashed border-white/12 bg-black/15 px-3 py-6 text-center">
-          <EditorIcon className="text-[24px] text-white/25">image</EditorIcon>
-          <p className="mt-2 text-label-md font-semibold text-white/55">No images yet</p>
+        <div className="rounded-[6px] border border-dashed border-outline-variant bg-black/15 px-3 py-6 text-center">
+          <EditorIcon className="text-[24px] text-on-surface-variant/25">image</EditorIcon>
+          <p className="mt-2 text-label-md font-semibold text-on-surface-variant/55">No images yet</p>
         </div>
       </div>
     );
@@ -162,14 +162,14 @@ function MediaList({
           key={asset.id}
           type="button"
           onClick={() => onAddMedia(asset)}
-          className="flex w-full items-center gap-3 rounded-[6px] border border-white/10 bg-white/[0.035] p-2 text-left transition-colors hover:border-[#8fd6c8]/60 hover:bg-white/[0.055]"
+          className="flex w-full items-center gap-3 rounded-[6px] border border-outline-variant bg-surface-container-high/40 p-2 text-left transition-colors hover:border-primary/60 hover:bg-hover"
         >
-          <span className="h-12 w-12 shrink-0 overflow-hidden rounded-[5px] bg-[#253239]">
+          <span className="h-12 w-12 shrink-0 overflow-hidden rounded-[5px] bg-surface-container-lowest">
             <MediaThumbnail media={asset} index={index} icon="image" />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-label-md font-semibold text-white/85">{asset.filename}</span>
-            <span className="mt-1 block truncate text-label-sm text-white/40">{mediaDetail(asset)}</span>
+            <span className="block truncate text-label-md font-semibold text-on-surface/85">{asset.filename}</span>
+            <span className="mt-1 block truncate text-label-sm text-on-surface-variant/65">{mediaDetail(asset)}</span>
           </span>
         </button>
       ))}
@@ -190,10 +190,10 @@ function mediaDetail(media: MediaDto) {
 function MediaDropZone({ dragActive }: { dragActive: boolean }) {
   return (
     <div
-      className={`rounded-[6px] border border-dashed px-3 py-3 text-center ${
+      className={`rounded-[6px] border border-dashed px-3 py-3 text-center transition-colors ${
         dragActive
-          ? "border-[#8fd6c8]/70 bg-[#8fd6c8]/12 text-[#d8fff8]"
-          : "border-white/12 bg-black/15 text-white/45"
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-outline-variant bg-black/15 text-on-surface-variant/45"
       }`}
     >
       <EditorIcon className="text-[20px]">upload_file</EditorIcon>
@@ -212,14 +212,14 @@ function UploadQueueList({ uploadQueue }: { uploadQueue: UploadQueueItem[] }) {
           key={item.id}
           className={`rounded-[6px] border px-2 py-2 ${
             item.status === "failed"
-              ? "border-[#ff6b6b]/25 bg-[#ff6b6b]/10"
-              : "border-white/10 bg-white/[0.035]"
+              ? "border-danger/25 bg-danger/10"
+              : "border-outline-variant bg-surface-container-low"
           }`}
         >
           <div className="flex min-w-0 items-center gap-2">
             <EditorIcon
               className={`shrink-0 text-[16px] ${
-                item.status === "failed" ? "text-[#ffb4b4]" : "text-[#8fd6c8]"
+                item.status === "failed" ? "text-danger" : "text-primary"
               }`}
             >
               {item.status === "uploaded"
@@ -228,21 +228,21 @@ function UploadQueueList({ uploadQueue }: { uploadQueue: UploadQueueItem[] }) {
                   ? "error"
                   : "progress_activity"}
             </EditorIcon>
-            <span className="min-w-0 flex-1 truncate text-label-md font-semibold text-white/80">
+            <span className="min-w-0 flex-1 truncate text-label-md font-semibold text-on-surface/80">
               {item.fileName}
             </span>
-            <span className="shrink-0 text-label-sm uppercase text-white/35">
+            <span className="shrink-0 text-label-sm uppercase text-on-surface-variant/35">
               {uploadStatusLabel(item)}
             </span>
           </div>
           {item.status === "failed" && item.error ? (
-            <p className="mt-1 whitespace-normal break-words text-label-sm text-[#ffb4b4]">
+            <p className="mt-1 whitespace-normal break-words text-label-sm text-danger">
               {item.error}
             </p>
           ) : (
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-container-high">
               <div
-                className="h-full rounded-full bg-[#8fd6c8]"
+                className="h-full rounded-full bg-primary"
                 style={{ width: `${Math.max(2, Math.min(100, item.progress))}%` }}
               />
             </div>

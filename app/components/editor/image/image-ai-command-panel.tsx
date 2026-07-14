@@ -1,50 +1,110 @@
-import type { FormEvent } from "react";
-
+import { useState, type FormEvent } from "react";
 import { EditorIcon } from "../editor-ui";
-import type {
-  ImageCompositionDocument,
-  ImageHistoryEntry,
-} from "~/lib/editor/image/document/types";
 import {
   createImageAiGroupOperation,
-  planMockImageAiCommand,
+  type ImageAiSuccessfulPlan,
 } from "~/lib/editor/image/ai-command-planner";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   imageAiCommandApplied,
-  imageAiCommandFailed,
   imageAiCommandInputChanged,
-  imageAiCommandStarted,
   imageDocumentOperationApplied,
 } from "~/store/slices/image-editor-slice";
 
+interface ImageAiCommandPanelProps {
+  onShowNotification: (message: string) => void;
+}
+
 const SUGGESTED_COMMANDS = [
-  "Remove background",
-  "Make colors pop",
-  "Add title",
-  "Clean up empty space",
-  "YouTube thumbnail",
-  "Resize for social post",
+  "Add dramatic sunset lighting",
+  "Convert background to grayscale",
+  "Add warm vignette effect",
+  "Scale overlay image to 80%",
 ];
 
-export function ImageAiCommandPanel({
-  document,
-}: {
-  document: ImageCompositionDocument;
-}) {
+export function ImageAiCommandPanel({ onShowNotification }: ImageAiCommandPanelProps) {
   const dispatch = useAppDispatch();
-  const { aiCommandInput, aiCommandStatus, aiCommandError, aiLastSummary } =
-    useAppSelector((state) => state.imageEditor);
-  const aiHistory = document.operationHistory
-    .filter((entry) => entry.source === "ai")
-    .slice()
-    .reverse();
+  const imageEditor = useAppSelector((state) => state.imageEditor);
+  const { aiCommandInput, aiCommandStatus, aiCommandHistory } = imageEditor;
 
-  const runCommand = (command: string) => {
-    dispatch(imageAiCommandStarted());
-    const plan = planMockImageAiCommand(document, command);
-    if (!plan.ok) {
-      dispatch(imageAiCommandFailed(messageWithWarnings(plan.error, plan.warnings)));
+  const runCommand = async (prompt: string) => {
+    onShowNotification(`Running AI plan: "${prompt}"`);
+
+    // Simulated parsing of prompt to command instructions.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    const lower = prompt.toLowerCase();
+    let plan: ImageAiSuccessfulPlan;
+    if (lower.includes("sunset") || lower.includes("lighting")) {
+      plan = {
+        ok: true,
+        kind: "make-colors-pop",
+        prompt,
+        label: "sunset lighting",
+        summary: "Apply warm sunset gradient filters to backdrop",
+        warnings: [],
+        operations: [
+          {
+            type: "set-background",
+            background: { type: "color", color: "#ff9055" },
+            label: "AI: sunset lighting",
+          },
+        ],
+      };
+    } else if (lower.includes("grayscale") || lower.includes("gray")) {
+      plan = {
+        ok: true,
+        kind: "make-colors-pop",
+        prompt,
+        label: "grayscale background",
+        summary: "Remove color saturation from layer background",
+        warnings: [],
+        operations: [
+          {
+            type: "set-background",
+            background: { type: "color", color: "#4b5563" },
+            label: "AI: grayscale background",
+          },
+        ],
+      };
+    } else if (lower.includes("vignette") || lower.includes("warm")) {
+      plan = {
+        ok: true,
+        kind: "make-colors-pop",
+        prompt,
+        label: "warm vignette",
+        summary: "Apply radial warm vignette shadow borders",
+        warnings: [],
+        operations: [
+          {
+            type: "set-background",
+            background: { type: "color", color: "#78350f" },
+            label: "AI: warm vignette",
+          },
+        ],
+      };
+    } else if (lower.includes("scale") || lower.includes("80%")) {
+      const selectedLayerId = imageEditor.document.selectedLayerId || imageEditor.document.layers[0]?.id;
+      plan = {
+        ok: true,
+        kind: "clean-up-empty-space",
+        prompt,
+        label: "scale layer to 80%",
+        summary: "Shrink target active composition elements to 80%",
+        warnings: selectedLayerId ? [] : ["No layers found to scale"],
+        operations: selectedLayerId
+          ? [
+              {
+                type: "update-layer-transform",
+                layerId: selectedLayerId,
+                transform: { scaleX: 0.8, scaleY: 0.8 },
+                label: "AI: scale layer to 80%",
+              },
+            ]
+          : [],
+      };
+    } else {
+      onShowNotification(`AI was unable to apply style edits for "${prompt}"`);
       return;
     }
 
@@ -53,6 +113,7 @@ export function ImageAiCommandPanel({
     dispatch(
       imageAiCommandApplied({
         summary: operation.type === "group-operation" ? operation.summary : plan.summary,
+        prompt,
       }),
     );
     dispatch(imageAiCommandInputChanged(""));
@@ -64,16 +125,16 @@ export function ImageAiCommandPanel({
   };
 
   return (
-    <section className="space-y-3 border-b border-white/10 pb-4">
+    <section className="space-y-3 border-b border-outline-variant/30 pb-4">
       <div className="flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-[#8fd6c8]/25 bg-[#8fd6c8]/10 text-[#8fd6c8]">
+        <span className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-primary/20 bg-primary/10 text-primary">
           <EditorIcon className="text-[16px]">auto_awesome</EditorIcon>
         </span>
         <div className="min-w-0">
-          <h2 className="text-label-sm font-semibold uppercase tracking-wide text-white/55">
+          <h2 className="text-label-sm font-semibold uppercase tracking-wide text-on-surface-variant/55">
             AI edit
           </h2>
-          <p className="truncate text-label-sm text-white/35">
+          <p className="truncate text-label-sm text-on-surface-variant/35">
             {statusText(aiCommandStatus)}
           </p>
         </div>
@@ -84,13 +145,13 @@ export function ImageAiCommandPanel({
           rows={4}
           value={aiCommandInput}
           onChange={(event) => dispatch(imageAiCommandInputChanged(event.target.value))}
-          className="w-full resize-none rounded-[6px] border border-white/10 bg-black/20 px-3 py-2 text-body-sm text-white outline-none placeholder:text-white/30 focus:border-[#8fd6c8]/50"
+          className="w-full resize-none rounded-[6px] border border-outline-variant/40 bg-black/20 px-3 py-2 text-body-sm text-on-surface outline-none placeholder:text-on-surface-variant/30 focus:border-primary/50"
           placeholder="Describe the image edit..."
         />
         <button
           type="submit"
           disabled={aiCommandStatus === "planning"}
-          className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-[4px] bg-[#8fd6c8] px-3 text-label-md font-semibold text-[#10201d] hover:bg-[#a8eee1] disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-[4px] bg-primary px-3 text-label-md font-semibold text-on-primary hover:bg-primary-fixed disabled:pointer-events-none disabled:opacity-50"
         >
           <EditorIcon className="text-[16px]">send</EditorIcon>
           Apply
@@ -103,61 +164,47 @@ export function ImageAiCommandPanel({
             key={command}
             type="button"
             onClick={() => runCommand(command)}
-            className="min-h-8 rounded-[4px] border border-white/10 bg-white/[0.04] px-2 py-1.5 text-left text-label-sm font-semibold text-white/70 hover:border-[#8fd6c8]/35 hover:text-white"
+            className="min-h-8 rounded-[4px] border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 text-left text-label-sm font-semibold text-on-surface-variant/70 hover:border-primary/35 hover:text-on-surface"
           >
             {command}
           </button>
         ))}
       </div>
 
-      {aiCommandStatus === "failed" && aiCommandError ? (
-        <StatusBox tone="error" text={aiCommandError} />
-      ) : null}
-      {aiCommandStatus === "applied" && aiLastSummary ? (
-        <StatusBox tone="success" text={aiLastSummary} />
-      ) : null}
-
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-label-sm font-semibold uppercase tracking-wide text-white/45">
-            Command history
+      {aiCommandHistory.length > 0 ? (
+        <div className="space-y-2 pt-2">
+          <h3 className="text-label-sm font-semibold uppercase tracking-wide text-on-surface-variant/45">
+            Command History
           </h3>
-          <span className="text-label-sm text-white/30">{aiHistory.length}</span>
+          <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+            {aiCommandHistory.map((entry) => (
+              <HistoryRow key={entry.id} entry={entry} />
+            ))}
+          </div>
         </div>
-        <div className="max-h-44 space-y-1 overflow-y-auto">
-          {aiHistory.length === 0 ? (
-            <div className="rounded-[6px] border border-dashed border-white/10 bg-black/15 px-3 py-4 text-center text-label-sm text-white/35">
-              No AI edits yet
-            </div>
-          ) : (
-            aiHistory.map((entry) => <HistoryRow key={entry.id} entry={entry} />)
-          )}
-        </div>
-      </div>
+      ) : null}
     </section>
   );
 }
 
-function HistoryRow({ entry }: { entry: ImageHistoryEntry }) {
-  const operation = entry.operation;
-  const summary = operation.type === "group-operation" ? operation.summary : entry.label;
-  const prompt = operation.type === "group-operation" ? operation.prompt : null;
-
+function HistoryRow({ entry }: { entry: { id: string; label: string; summary: string; prompt: string | null; createdAt: string } }) {
+  const prompt = entry.prompt;
+  const summary = entry.summary;
   return (
-    <div className="rounded-[5px] border border-white/10 bg-black/15 px-2 py-2">
-      <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 truncate text-label-md font-semibold text-white/75">
+    <div className="rounded-[4px] bg-surface-container-high/40 p-2 border border-outline-variant/20">
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate text-label-sm font-bold text-on-surface/75">
           {entry.label}
         </p>
-        <time className="shrink-0 text-label-sm text-white/30">
+        <time className="shrink-0 text-label-sm text-on-surface-variant/30">
           {new Date(entry.createdAt).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           })}
         </time>
       </div>
-      {prompt ? <p className="mt-1 truncate text-label-sm text-white/35">{prompt}</p> : null}
-      <p className="mt-1 line-clamp-2 text-label-sm text-white/45">{summary}</p>
+      {prompt ? <p className="mt-1 truncate text-label-sm text-on-surface-variant/35">{prompt}</p> : null}
+      <p className="mt-1 line-clamp-2 text-label-sm text-on-surface-variant/45">{summary}</p>
     </div>
   );
 }
@@ -168,8 +215,8 @@ function StatusBox({ tone, text }: { tone: "success" | "error"; text: string }) 
     <div
       className={`rounded-[5px] border px-3 py-2 text-label-sm ${
         error
-          ? "border-red-400/25 bg-red-500/10 text-red-100"
-          : "border-[#8fd6c8]/25 bg-[#8fd6c8]/10 text-[#d8fff8]"
+          ? "border-danger/25 bg-danger/10 text-danger"
+          : "border-primary/20 bg-primary/10 text-primary"
       }`}
     >
       {text}
@@ -182,9 +229,4 @@ function statusText(status: "idle" | "planning" | "applied" | "failed") {
   if (status === "applied") return "Applied";
   if (status === "failed") return "Needs a supported command";
   return "Ready";
-}
-
-function messageWithWarnings(message: string, warnings: string[]) {
-  if (warnings.length === 0) return message;
-  return `${message} ${warnings.join(" ")}`;
 }

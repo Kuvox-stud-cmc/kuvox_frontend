@@ -25,17 +25,17 @@ export function LayersPanel({
   const layers = [...document.layers].reverse();
 
   return (
-    <section className="border-b border-white/10">
+    <section className="border-b border-outline-variant/30">
       <div className="flex h-10 items-center justify-between px-3">
-        <h2 className="text-label-sm font-semibold uppercase tracking-wide text-white/45">Layers</h2>
-        <span className="text-label-sm text-white/35">{document.layers.length}</span>
+        <h2 className="text-label-sm font-semibold uppercase tracking-wide text-on-surface-variant/45">Layers</h2>
+        <span className="text-label-sm text-on-surface-variant/35">{document.layers.length}</span>
       </div>
       <div className="max-h-56 overflow-y-auto px-3 pb-3">
         {layers.length === 0 ? (
-          <div className="rounded-[6px] border border-dashed border-white/12 bg-black/15 px-3 py-6 text-center">
-            <EditorIcon className="text-[24px] text-white/25">layers</EditorIcon>
-            <p className="mt-2 text-label-md font-semibold text-white/55">No layers yet</p>
-            <p className="mt-1 text-label-sm text-white/35">The blank document is ready.</p>
+          <div className="rounded-[6px] border border-dashed border-outline-variant bg-black/15 px-3 py-6 text-center">
+            <EditorIcon className="text-[24px] text-on-surface-variant/25">layers</EditorIcon>
+            <p className="mt-2 text-label-md font-semibold text-on-surface-variant/55">No layers yet</p>
+            <p className="mt-1 text-label-sm text-on-surface-variant/35">The blank document is ready.</p>
           </div>
         ) : (
           <div className="space-y-1">
@@ -97,10 +97,10 @@ function LayerRow({
 
   return (
     <div
-      className={`rounded-[4px] px-2 py-1 text-label-md ${
+      className={`rounded-[4px] px-2 py-1 text-label-md transition-colors ${
         selected
-          ? "bg-[#8fd6c8]/16 text-white"
-          : "text-white/65 hover:bg-white/[0.05] hover:text-white"
+          ? "bg-primary/15 text-on-surface font-semibold"
+          : "text-on-surface/65 hover:bg-hover hover:text-on-surface"
       }`}
     >
       <div className="flex h-8 items-center gap-2">
@@ -114,7 +114,7 @@ function LayerRow({
             value={layer.name}
             onClick={(event) => event.stopPropagation()}
             onChange={(event) => onRename(event.target.value)}
-            className="min-w-0 flex-1 truncate bg-transparent text-label-md font-semibold outline-none"
+            className="min-w-0 flex-1 truncate bg-transparent text-label-md font-semibold outline-none text-on-surface"
             aria-label="Layer name"
           />
         </button>
@@ -162,7 +162,7 @@ function LayerIconButton({
         event.stopPropagation();
         onClick();
       }}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] text-white/45 hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:text-white/15"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] text-on-surface-variant/45 hover:bg-hover hover:text-on-surface disabled:pointer-events-none disabled:opacity-30"
     >
       <EditorIcon className="text-[16px]">{icon}</EditorIcon>
     </button>

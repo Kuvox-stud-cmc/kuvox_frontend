@@ -129,6 +129,7 @@ export interface ProgramMonitorPlan {
   visuals: PreviewVisualPlan[];
   activeVisual: PreviewVisualPlan | null;
   activeVideo: PreviewVisualPlan | null;
+  activeVisuals: PreviewVisualPlan[];
   overlays: PreviewOverlayPlan[];
   activeAudio: PreviewAudioPlan[];
   primaryAudio: PreviewAudioPlan | null;
@@ -277,8 +278,8 @@ export function createProgramMonitorPlan({
   });
 
   const activeAudio = audioCandidates;
-
   const visuals = sortVisualStack(visualCandidates);
+  const activeVisuals = visuals;
   return {
     document,
     settings: document.settings,
@@ -287,6 +288,7 @@ export function createProgramMonitorPlan({
     visuals,
     activeVisual: visuals.at(-1) ?? null,
     activeVideo: topVideoVisual(visuals),
+    activeVisuals,
     overlays: overlays.sort(compareOverlayOrder),
     activeAudio,
     primaryAudio: activeAudio[0] ?? null,

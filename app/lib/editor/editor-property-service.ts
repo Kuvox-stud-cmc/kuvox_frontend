@@ -1,4 +1,5 @@
 import type { VideoTimelineItem } from "./video-document";
+import { resolveItemCrop, resolveItemTransform } from "./video-document";
 import {
   updateTransformCropOperation,
   updateAudioOperation,
@@ -8,7 +9,7 @@ import {
 export interface PropertyMetadata {
   id: string;
   label: string;
-  group: "adjust" | "filters" | "color" | "mask" | "animation" | "speed" | "audio" | "audioSettings" | "crop" | "textStyle";
+  group: string;
   min?: number;
   max?: number;
   step?: number;
@@ -30,6 +31,7 @@ export const PROPERTY_REGISTRY: Record<string, PropertyMetadata> = {
   tint: { id: "tint", label: "Tint", group: "adjust", min: -100, max: 100, step: 1, defaultValue: 0 },
   saturation: { id: "saturation", label: "Saturation", group: "adjust", min: 0, max: 200, step: 1, defaultValue: 100, suffix: "%" },
   vibrance: { id: "vibrance", label: "Vibrance", group: "adjust", min: 0, max: 200, step: 1, defaultValue: 100, suffix: "%" },
+  clarity: { id: "clarity", label: "Clarity", group: "adjust", min: -100, max: 100, step: 1, defaultValue: 0 },
   sharpness: { id: "sharpness", label: "Sharpness", group: "adjust", min: 0, max: 100, step: 1, defaultValue: 0 },
 
   // Filters
@@ -42,6 +44,7 @@ export const PROPERTY_REGISTRY: Record<string, PropertyMetadata> = {
   gain: { id: "gain", label: "Gain", group: "color", min: -100, max: 100, step: 1, defaultValue: 0 },
   vignette: { id: "vignette", label: "Vignette", group: "color", min: 0, max: 100, step: 1, defaultValue: 0 },
   grain: { id: "grain", label: "Grain", group: "color", min: 0, max: 100, step: 1, defaultValue: 0 },
+  hue: { id: "hue", label: "Hue", group: "color", min: -180, max: 180, step: 1, defaultValue: 0, suffix: "deg" },
 
   // Crop
   top: { id: "top", label: "Top", group: "crop", min: 0, max: 100, step: 1, defaultValue: 0, suffix: "%" },
@@ -104,8 +107,12 @@ export function clampPropertyValue(propertyName: string, value: any): any {
  */
 export function getTimelineItemPropertyValue(item: VideoTimelineItem, groupName: string, propertyName: string): any {
   const props = (item as any).properties;
-  if (props && props[groupName] && props[groupName][propertyName]) {
-    return props[groupName][propertyName].value;
+  if (props && props[groupName] && props[groupName][propertyName] !== undefined) {
+    const property = props[groupName][propertyName];
+    if (property && typeof property === "object" && "value" in property) {
+      return property.value;
+    }
+    return property;
   }
   
   // Fallback to legacy schema mappings or defaults
@@ -175,6 +182,19 @@ export const EditorPropertyService = {
             [propertyName]: { value: clampedValue }
           }
         }
+      }, operationLabel);
+    }
+
+    if (resolvedGroup === "transform" && ["x", "y", "scaleX", "scaleY", "rotation", "anchorX", "anchorY"].includes(propertyName)) {
+      const transform = { ...resolveItemTransform(item), [propertyName]: clampedValue };
+      return updateTransformCropOperation(item.id, { transform }, operationLabel);
+    }
+
+    if (resolvedGroup === "crop" && ["top", "right", "bottom", "left"].includes(propertyName)) {
+      const crop = { ...resolveItemCrop(item as any), [propertyName]: clampedValue };
+      return updateTransformCropOperation(item.id, {
+        ...(item.type === "video" ? { crop } : {}),
+        properties: { crop } as any,
       }, operationLabel);
     }
 
