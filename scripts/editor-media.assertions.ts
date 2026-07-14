@@ -21,6 +21,8 @@ async function main(): Promise<void> {
   assertMediaReferenceMapping();
   assertReadinessClassification();
   assertVideoImageAndAudioOperations();
+  assertIconifyElementsUseTightInitialBounds();
+  assertIconifyElementsCreateDedicatedOverlayTracks();
   assertNonReadyMediaIsNonDestructive();
   assertImageFallsBackToVideoTrack();
   await assertBrowserDurationHydration();
@@ -82,7 +84,8 @@ function assertVideoImageAndAudioOperations(): void {
     now,
   });
   assert.equal(image.ok, true);
-  assert.equal(image.ok && image.operation.trackId, "o1");
+  assert.equal(image.ok && image.operation.trackId, "v1");
+  assert.equal(image.ok && image.operation.item.type, "image");
   assert.equal(image.ok && image.operation.item.duration, 5);
 
   const audio = buildAddMediaToTimelineOperation({
@@ -160,6 +163,124 @@ function assertVideoImageAndAudioOperations(): void {
   assert.equal(preferredAudio.ok && preferredAudio.operation.item.timelineStart, 3.457);
 }
 
+function assertIconifyElementsUseTightInitialBounds(): void {
+  const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
+  const icon = mediaDto({
+    id: "iconify_lucide_heart_test",
+    ownerId: "iconify",
+    ownerDisplayName: "Iconify",
+    kind: MediaKind.Image,
+    filename: "lucide:heart",
+    width: 100,
+    height: 100,
+    storageKey: "https://api.iconify.design/lucide/heart.svg?color=%23f1f2fb",
+    canonicalStorageKey: "https://api.iconify.design/lucide/heart.svg?color=%23f1f2fb",
+  });
+  const built = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, icon),
+    media: icon,
+    now: "2026-03-01T12:00:00.000Z",
+    placement: { trackId: "o1", timelineStart: 1 },
+  });
+
+  assert.equal(built.ok, true);
+  assert.equal(built.ok && built.operation.type, "addMediaToTimeline");
+  assert.equal(built.ok && built.operation.trackId, "o1");
+  assert.equal(built.ok && built.operation.item.type, "overlay");
+  assert.equal(built.ok && built.operation.item.type === "overlay" ? built.operation.item.transform.scaleX : undefined, 0.16);
+  assert.equal(built.ok && built.operation.item.type === "overlay" ? built.operation.item.transform.scaleY : undefined, 0.16);
+}
+
+function assertIconifyElementsCreateDedicatedOverlayTracks(): void {
+  const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
+  const firstIcon = mediaDto({
+    id: "iconify_lucide_heart_first",
+    ownerId: "iconify",
+    ownerDisplayName: "Iconify",
+    kind: MediaKind.Image,
+    filename: "lucide:heart",
+    width: 100,
+    height: 100,
+    storageKey: "https://api.iconify.design/lucide/heart.svg",
+    canonicalStorageKey: "https://api.iconify.design/lucide/heart.svg",
+  });
+  const first = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, firstIcon),
+    media: firstIcon,
+    now: "2026-03-01T12:00:00.000Z",
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.ok && first.operation.item.type, "overlay");
+  assert.notEqual(first.ok && first.operation.trackId, "o1");
+  assert.match(first.ok ? first.operation.trackId : "", /^o-/);
+
+  const firstApplied = first.ok
+    ? applyVideoOperationBatch(
+        upsertMedia(document, firstIcon),
+        createVideoOperationBatch({
+          id: first.operation.id,
+          source: first.operation.source,
+          timestamp: first.operation.timestamp,
+          label: first.operation.label,
+          operations: [first.operation],
+          affectedEntityIds: first.operation.affectedEntityIds,
+        }),
+      )
+    : null;
+  assert.equal(firstApplied?.ok, true);
+
+  const secondIcon = mediaDto({
+    id: "iconify_lucide_star_second",
+    ownerId: "iconify",
+    ownerDisplayName: "Iconify",
+    kind: MediaKind.Image,
+    filename: "lucide:star",
+    width: 100,
+    height: 100,
+    storageKey: "https://api.iconify.design/lucide/star.svg",
+    canonicalStorageKey: "https://api.iconify.design/lucide/star.svg",
+  });
+  const second = firstApplied?.ok
+    ? buildAddMediaToTimelineOperation({
+        document: upsertMedia(firstApplied.document, secondIcon),
+        media: secondIcon,
+        now: "2026-03-01T12:00:01.000Z",
+      })
+    : { ok: false as const, reason: "first icon did not apply" };
+
+  assert.equal(second.ok, true);
+  assert.notEqual(second.ok && first.ok && second.operation.trackId, first.ok && first.operation.trackId);
+
+  const preferred = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, firstIcon),
+    media: firstIcon,
+    now: "2026-03-01T12:00:02.000Z",
+    placement: { trackId: "o1", timelineStart: 2 },
+  });
+  assert.equal(preferred.ok, true);
+  assert.equal(preferred.ok && preferred.operation.trackId, "o1");
+
+  const shape = mediaDto({
+    id: "el_arrow_test",
+    kind: MediaKind.Image,
+    filename: "Arrow",
+    width: 100,
+    height: 100,
+    storageKey: "data:image/svg+xml;utf8,<svg viewBox='0 0 100 100'></svg>",
+    canonicalStorageKey: "data:image/svg+xml;utf8,<svg viewBox='0 0 100 100'></svg>",
+  });
+  const shapeBuilt = buildAddMediaToTimelineOperation({
+    document: upsertMedia(document, shape),
+    media: shape,
+    now: "2026-03-01T12:00:03.000Z",
+  });
+  assert.equal(shapeBuilt.ok, true);
+  assert.equal(shapeBuilt.ok && shapeBuilt.operation.item.type, "overlay");
+  assert.match(shapeBuilt.ok ? shapeBuilt.operation.trackId : "", /^o-/);
+  assert.equal(shapeBuilt.ok && shapeBuilt.operation.item.type === "overlay" ? shapeBuilt.operation.item.transform.scaleX : undefined, 0.16);
+}
+
 function assertNonReadyMediaIsNonDestructive(): void {
   const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
   const processing = buildAddMediaToTimelineOperation({
@@ -194,7 +315,10 @@ function assertNonReadyMediaIsNonDestructive(): void {
 }
 
 function assertImageFallsBackToVideoTrack(): void {
-  const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
+  const document = {
+    ...createEmptyVideoProjectDocument({ id: "project-1", name: "Project" }),
+    tracks: createEmptyVideoProjectDocument({ id: "project-1", name: "Project" }).tracks.filter((track) => track.kind !== "overlay"),
+  };
   const media = mediaDto({ id: "image-1", kind: MediaKind.Image, filename: "still.png" });
   const built = buildAddMediaToTimelineOperation({
     document: upsertMedia(document, media),
@@ -273,24 +397,7 @@ async function assertBrowserDurationHydration(): Promise<void> {
 }
 
 function documentWithOverlay(): VideoProjectDocument {
-  const document = createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
-  return {
-    ...document,
-    tracks: [
-      document.tracks[0],
-      {
-        id: "o1",
-        kind: "overlay",
-        label: "O1",
-        locked: false,
-        hidden: false,
-        muted: false,
-        items: [],
-      },
-      document.tracks[1],
-      document.tracks[2],
-    ],
-  };
+  return createEmptyVideoProjectDocument({ id: "project-1", name: "Project" });
 }
 
 function upsertMedia(document: VideoProjectDocument, media: MediaDto): VideoProjectDocument {

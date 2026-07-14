@@ -1119,6 +1119,17 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
                     <EditorIcon className="text-[14px]">subtitles</EditorIcon>
                     Text Track
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(trackAdded({ kind: "overlay", label: `Overlay ${(document?.tracks ?? []).filter(t => t.kind === "overlay").length + 1}` }));
+                      setAddTrackDropdownOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-left text-label-md text-on-surface hover:bg-surface-container-highest"
+                  >
+                    <EditorIcon className="text-[14px]">filter</EditorIcon>
+                    Overlay Track
+                  </button>
                 </div>
               )}
             </div>
@@ -1495,7 +1506,12 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
                 key={layout.item.id}
                 layout={previewLayout(layout, dragPreview, scale)}
                 media={"mediaId" in layout.item ? document?.media[layout.item.mediaId] : undefined}
-                availability={"mediaId" in layout.item ? projectMediaAvailabilityById[layout.item.mediaId]?.availability ?? "missing" : undefined}
+                availability={"mediaId" in layout.item
+                  ? timelineAvailabilityForMedia(
+                    document?.media[layout.item.mediaId],
+                    projectMediaAvailabilityById[layout.item.mediaId]?.availability,
+                  )
+                  : undefined}
                 selected={selectedItemIdSet.has(layout.item.id)}
                 linked={"linkedGroupId" in layout.item && Boolean(layout.item.linkedGroupId)}
                 activeToolId={activeToolId}
@@ -2052,6 +2068,23 @@ function unavailableBadge(availability: string | undefined): string | null {
   if (availability === "inaccessible") return "No access";
   if (availability === "missing") return "Missing";
   return null;
+}
+
+function timelineAvailabilityForMedia(
+  media: VideoMediaReference | undefined,
+  availability: string | undefined,
+): string | undefined {
+  if (availability) return availability;
+  if (media && hasDirectDocumentMediaSource(media)) return undefined;
+  return "missing";
+}
+
+function hasDirectDocumentMediaSource(media: VideoMediaReference): boolean {
+  const urls = [
+    media.sourceUrl,
+    ...Object.values(media.objectUrls ?? {}),
+  ];
+  return urls.some((url) => typeof url === "string" && /^(?:https?:|data:|blob:)/i.test(url));
 }
 
 function trackIcon(kind: VideoTrack["kind"]): string {

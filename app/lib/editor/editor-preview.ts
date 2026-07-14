@@ -314,9 +314,17 @@ export function choosePreviewObjectUrl(
     urls[sourceVariant] = urls[sourceVariant] ?? media.sourceUrl;
   }
 
+  if (media.sourceUrl && isDirectPreviewUrl(media.sourceUrl)) {
+    return { url: media.sourceUrl, variant: null };
+  }
+
   for (const variant of preferredVariants(preference)) {
     const url = urls[variant];
     if (url && isBffMediaObjectUrl(url, media.id)) {
+      return { url, variant };
+    }
+
+    if (url && isDirectPreviewUrl(url)) {
       return { url, variant };
     }
   }
@@ -1208,6 +1216,10 @@ function variantFromBffObjectUrl(url: string | undefined): PreviewObjectVariant 
 function isBffMediaObjectUrl(url: string, mediaId: string): boolean {
   const escapedMediaId = encodeURIComponent(mediaId).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`^/bff/media/${escapedMediaId}/object/(proxy|canonical|raw)(?:\\?|$)`).test(url);
+}
+
+function isDirectPreviewUrl(url: string): boolean {
+  return /^(?:https?:|data:|blob:)/i.test(url);
 }
 
 function clampTime(value: number, timelineDuration: number): number {
