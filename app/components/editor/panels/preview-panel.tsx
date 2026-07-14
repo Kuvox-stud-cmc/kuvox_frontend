@@ -427,7 +427,10 @@ export function PreviewPanel({
   }, [dispatch]);
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest">
+    <main
+      data-tour="preview-panel"
+      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest"
+    >
       <video ref={videoRefA} data-preview-video-slot="a" className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
       <video ref={videoRefB} data-preview-video-slot="b" className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
       {activeAudio.map((audioPlan) => (

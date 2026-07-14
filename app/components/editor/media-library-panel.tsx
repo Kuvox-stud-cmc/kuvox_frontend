@@ -159,6 +159,7 @@ export function MediaLibraryPanel({
 
   return (
     <aside
+      data-tour="media-library"
       className={`relative z-40 h-full min-w-video-library-min max-w-video-library-max shrink-0 flex-col border-r border-outline-variant bg-surface ${className}`}
       style={{ width: resizable ? libraryWidth : undefined }}
       aria-label="Media library"
@@ -219,6 +220,7 @@ export function MediaLibraryPanel({
               <button
                 type="button"
                 aria-label="Add media"
+                data-tour="import-media"
                 onClick={() => dispatch(modalOpened("import-media"))}
                 className="flex h-[30px] items-center gap-1 rounded-[5px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-container-high hover:border-on-surface-variant focus:outline-none"
               >

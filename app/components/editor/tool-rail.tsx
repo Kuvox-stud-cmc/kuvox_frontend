@@ -48,6 +48,7 @@ export function ToolRail({
 
   return (
     <aside
+      data-tour={isRightRail ? "inspector-tools" : undefined}
       className={
         className ||
         "z-40 hidden h-full w-video-tool-rail-width shrink-0 flex-col border-l border-outline-variant bg-surface lg:flex"
