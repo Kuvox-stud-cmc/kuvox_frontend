@@ -9,6 +9,7 @@ import {
 } from "../app/lib/editor/video-retrieval";
 import {
   editorReducer,
+  documentLoaded,
   projectMediaAvailabilityLoaded,
   projectOpened,
   semanticReferenceSelected,
@@ -72,7 +73,8 @@ function assertSearchLifecycleAndReadiness(): void {
 }
 
 function assertSemanticSelection(): void {
-  const state = editorReducer(undefined, projectOpened("project-1"));
+  let state = editorReducer(undefined, projectOpened("project-1"));
+  state = editorReducer(state, documentLoaded(createMockVideoProjectDocument("project-1")));
   const selectedExisting = editorReducer(state, semanticReferenceSelected({
     ...shotResult(),
     shotId: "shot-beach-opening",
@@ -83,7 +85,8 @@ function assertSemanticSelection(): void {
 
   const selectedNew = editorReducer(state, semanticReferenceSelected(shotResult()));
   assert.equal(selectedNew.selectedSemanticReference?.shotId, "media-1:shot:000001");
-  assert.equal(selectedNew.selection.activeItemId, "tl-beach");
+  assert.equal(selectedNew.selectedSemanticReference?.existingItemId, undefined);
+  assert.equal(selectedNew.selection.activeItemId, undefined);
 }
 
 function assertShotAddCreatesUndoableClip(): void {

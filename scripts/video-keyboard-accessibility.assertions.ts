@@ -36,7 +36,15 @@ function assertVisualPositionNudgesUseProjectPixels(): void {
     deltaY: -1,
   });
   assert.equal(onePixel?.type, "updateTransformCrop");
-  assert.deepEqual(onePixel?.transform, { x: 1, y: -1, scaleX: 1, scaleY: 1, rotation: 0 });
+  assert.deepEqual(onePixel?.transform, {
+    x: 1,
+    y: -1,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    anchorX: 0.5,
+    anchorY: 0.5,
+  });
 
   const locked = withTracks(document, { v1: { locked: true } });
   assert.equal(buildVisualPositionNudgeOperation({

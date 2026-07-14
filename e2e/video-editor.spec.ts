@@ -2,33 +2,20 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 const testVideoObject = readFile(new URL("../public/test-media.mp4", import.meta.url));
+const editorTourStorageKey = "kuvox.editor.onboardingTour.completed.v1:user-e2e:e2e-video-project";
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript((storageKey) => {
+    window.localStorage.setItem(storageKey, "true");
+  }, editorTourStorageKey);
   await installBffMocks(page);
 });
 
 test("overlay elements drag directly in preview and persist after the next click", async ({ page }) => {
-  await page.route("**/api/iconify/search**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ icons: ["lucide:heart"] }),
-    });
-  });
-  await page.route("https://api.iconify.design/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M12 21s-7-4.35-9.5-8.5C.5 9.2 2.3 5 6.2 5c2.1 0 3.3 1.2 3.8 2 .5-.8 1.7-2 3.8-2 3.9 0 5.7 4.2 3.7 7.5C19 16.65 12 21 12 21Z"/></svg>',
-    });
-  });
-
   await page.goto("/editor/video/e2e-video-project");
-  const closeTutorial = page.getByRole("button", { name: "Close tutorial" }).first();
-  await closeTutorial.click({ timeout: 10_000 });
   await page.getByRole("button", { name: "Elements" }).click();
-  await page.getByTitle("Add lucide:heart").click();
-  await expect(page.getByLabel(/overlay timeline item, lucide:heart/i)).toBeVisible();
+  await page.getByTitle("Drag or click to add Watercolor Blue to timeline").click();
+  await expect(page.getByLabel(/timeline item, Watercolor Blue/i)).toBeVisible();
 
   const positionX = page.getByLabel("Position X");
   const positionY = page.getByLabel("Position Y");
@@ -217,7 +204,10 @@ test("video editor route loads, edits timeline, recovers IndexedDB autosave, app
   await page.getByRole("button", { name: /expand ai workspace/i }).click();
   await page.getByPlaceholder("Search moments...").fill("b-roll");
   await page.getByRole("button", { name: /search moments/i }).last().click();
-  await expect(page.getByRole("button", { name: /add shot to timeline/i })).toBeVisible();
+  const addShot = page.getByRole("button", { name: /add shot to timeline/i });
+  await expect(addShot).toBeVisible();
+  await addShot.click();
+  await expect(page.getByLabel(/video timeline item, Beach ready/i)).toBeVisible();
 
   await page.getByRole("button", { name: /export video/i }).click();
   await page.getByRole("button", { name: /create render job/i }).click();
@@ -255,9 +245,11 @@ test("render jobs complete over the shared websocket without status polling", as
   });
 
   await page.goto("/editor/video/e2e-video-project");
+  await page.getByRole("button", { name: /beach ready/i }).click();
+  await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
   await page.getByRole("button", { name: /export video/i }).click();
   await page.getByRole("button", { name: /create render job/i }).click();
-  await expect(page.getByText("Queued")).toBeVisible();
+  await expect(page.getByText("Queued", { exact: true })).toBeVisible();
 
   await emitSignalR(page, "renderJobUpdated", {
     jobId: "render-e2e",
@@ -266,7 +258,7 @@ test("render jobs complete over the shared websocket without status polling", as
     outputAvailable: false,
     message: "Rendering video.",
   });
-  await expect(page.getByText("Rendering")).toBeVisible();
+  await expect(page.getByText("Rendering", { exact: true })).toBeVisible();
   await emitSignalR(page, "renderJobUpdated", {
     jobId: "render-e2e",
     timelineId: "timeline-e2e",
@@ -328,7 +320,7 @@ test("manual editor adapts across phone, tablet, and desktop layouts", async ({ 
   await expect(responsiveControls).toBeHidden();
   await expect(mediaPanel).toBeVisible();
   await expect(inspectorPanel).toBeHidden();
-  await page.getByRole("button", { name: "Show inspector" }).click();
+  await page.getByRole("button", { name: "Adjust" }).click();
   await expect(inspectorPanel).toBeVisible();
   await expect(page.locator("[data-video-editor-root]")).toHaveCSS("overflow", "hidden");
 });

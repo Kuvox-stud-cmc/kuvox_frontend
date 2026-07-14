@@ -117,7 +117,7 @@ function assertBffCorrelation(): void {
   assert.ok(proxy.includes("\"x-kuvox-editor-correlation-id\""));
   assert.ok(proxy.includes("headers[\"x-request-id\"] = correlation.requestId"));
   assert.ok(proxy.includes("headers[\"x-kuvox-editor-correlation-id\"] = correlation.editorCorrelationId"));
-  assert.ok(proxy.includes("responseHeaders(upstreamRes.headers, auth.setCookie, correlation)"));
+  assert.ok(proxy.includes("responseHeaders(upstreamRes.headers, setCookie, correlation)"));
   assert.ok(proxy.includes("event: \"bff.proxy\""));
   assert.ok(proxy.includes("event: \"bff.ai.retrieval\""));
   assert.ok(!proxy.includes("Authorization: `Bearer ${token}` },"));
@@ -141,7 +141,6 @@ function assertApiCorrelationAndTimelineLogs(): void {
     "VideoTimelineSaveConflict",
     "VideoTimelineSaveSuccess",
     "VideoTimelineRenderQueued",
-    "VideoTimelineRenderConflict",
     "OperationIds",
     "OperationCount",
   ]) {

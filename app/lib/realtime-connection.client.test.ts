@@ -39,8 +39,8 @@ describe("shared realtime connection", () => {
         sockets.push(socket);
         return socket as unknown as WebSocket;
       },
-      setTimeout: window.setTimeout.bind(window),
-      clearTimeout: window.clearTimeout.bind(window),
+      setTimeout: vi.fn(() => 1),
+      clearTimeout: vi.fn(),
       hubUrl: () => "ws://test/hubs/media",
     });
 

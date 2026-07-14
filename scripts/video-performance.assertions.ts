@@ -194,8 +194,8 @@ function assertBoundedHistoryAndCacheMarkers(): void {
 
 function assertPreviewLifecycleMarkers(): void {
   const preview = readFileSync("app/components/editor/panels/preview-panel.tsx", "utf8");
-  assert.match(preview, /plan\?\.activeVisual/);
-  assert.match(preview, /plan\?\.activeAudio\.filter/);
+  assert.match(preview, /plan\??\.activeVisual/);
+  assert.match(preview, /plan\??\.activeAudio\.filter/);
   assert.match(preview, /decodedImageCache/);
   assert.doesNotMatch(preview, /revokeObjectURL\([^)]*\/bff\/media/);
 }
