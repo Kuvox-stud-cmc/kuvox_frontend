@@ -93,7 +93,7 @@ export function EditorExitGuard({
         aria-modal="true"
         aria-labelledby="editor-exit-title"
         aria-describedby="editor-exit-description"
-        className="relative z-10 w-full max-w-md rounded-[8px] border border-outline-variant bg-surface p-5 shadow-[0_24px_72px_rgba(0,0,0,0.48)]"
+        className="relative z-10 w-full max-w-lg rounded-[8px] border border-outline-variant bg-surface p-6 shadow-[0_24px_72px_rgba(0,0,0,0.48)]"
       >
         <h2 id="editor-exit-title" className="text-title-lg font-semibold text-on-surface">
           Leave the editor?
@@ -112,7 +112,7 @@ export function EditorExitGuard({
             type="button"
             disabled={busyAction !== null}
             onClick={cancel}
-            className="h-9 rounded-[4px] border border-outline-variant px-3 text-label-md font-semibold text-on-surface hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-45"
+            className="h-9 w-full whitespace-nowrap rounded-[4px] border border-outline-variant px-4 text-label-md font-semibold text-on-surface hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-45 sm:w-auto"
           >
             Cancel
           </button>
@@ -120,17 +120,17 @@ export function EditorExitGuard({
             type="button"
             disabled={busyAction !== null}
             onClick={() => void leaveWithoutSyncing()}
-            className="h-9 rounded-[4px] border border-outline-variant px-3 text-label-md font-semibold text-on-surface hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-45"
+            className="h-9 w-full whitespace-nowrap rounded-[4px] border border-outline-variant px-4 text-label-md font-semibold text-on-surface hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-45 sm:w-auto"
           >
-            {busyAction === "local" ? "Saving locally" : "Leave without syncing"}
+            {busyAction === "local" ? "Saving locally…" : "Leave without syncing"}
           </button>
           <button
             type="button"
             disabled={busyAction !== null}
             onClick={() => void syncAndLeave()}
-            className="h-9 rounded-[4px] bg-primary px-3 text-label-md font-semibold text-on-primary hover:opacity-90 disabled:pointer-events-none disabled:opacity-45"
+            className="h-9 w-full whitespace-nowrap rounded-[4px] bg-primary px-4 text-label-md font-semibold text-on-primary hover:opacity-90 disabled:pointer-events-none disabled:opacity-45 sm:w-auto"
           >
-            {busyAction === "sync" ? "Syncing" : "Sync and leave"}
+            {busyAction === "sync" ? "Syncing…" : "Sync and leave"}
           </button>
         </div>
       </div>
