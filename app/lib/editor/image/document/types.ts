@@ -16,6 +16,12 @@ export type ImageDocumentBackground =
       type: "transparent";
     };
 
+export interface ImageAdjustmentSettings {
+  exposure: number;
+  contrast: number;
+  saturation: number;
+}
+
 export interface ImageLayerTransform {
   x: number;
   y: number;
@@ -110,6 +116,14 @@ export type ImageCompositionOperation =
     }
   | {
       id: string;
+      type: "adjust-image";
+      adjustments: Partial<ImageAdjustmentSettings>;
+      label: string;
+      source: ImageOperationSource;
+      createdAt: string;
+    }
+  | {
+      id: string;
       type: "group-operation";
       childOperations: ImageCompositionOperation[];
       prompt: string;
@@ -194,6 +208,7 @@ export interface ImageCompositionDocument {
   version: ImageDocumentVersion;
   canvas: ImageCanvas;
   background: ImageDocumentBackground;
+  adjustments: ImageAdjustmentSettings;
   layers: ImageCompositionLayer[];
   selectedLayerId: string | null;
   operationHistory: ImageHistoryEntry[];

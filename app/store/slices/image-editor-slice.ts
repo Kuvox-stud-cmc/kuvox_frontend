@@ -4,6 +4,7 @@ import { createDefaultImageCompositionDocument } from "~/lib/editor/image/docume
 import {
   applyImageOperation,
   imageLayerOperationAvailability,
+  normalizeAdjustments,
   restoreImageDocumentSnapshot,
 } from "~/lib/editor/image/document/operations";
 import type {
@@ -347,6 +348,7 @@ function normalizeLoadedDocument(
     updatedAt: document.updatedAt ?? lastSyncedAt ?? null,
     baseRevisionNumber,
     lastSyncedAt,
+    adjustments: normalizeAdjustments(document.adjustments),
     layers: [...document.layers],
     operationHistory: document.operationHistory ?? [],
   };

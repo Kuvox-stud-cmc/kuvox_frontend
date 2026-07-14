@@ -7,6 +7,7 @@ import {
   createImageLayerFromMedia,
   createImageOperation,
   imageLayerOperationAvailability,
+  imageAdjustmentFilter,
 } from "./operations";
 import type { ImageCompositionDocument, ShapeLayer } from "./types";
 import { MediaKind, type MediaDto } from "~/lib/api";
@@ -107,6 +108,33 @@ describe("image document operations", () => {
       }),
     );
     expect(unchanged.operationHistory).toHaveLength(2);
+  });
+
+  it("applies image adjustments with history and clamps supported ranges", () => {
+    let document = createDefaultImageCompositionDocument();
+
+    document = applyImageOperation(
+      document,
+      createImageOperation({
+        type: "adjust-image",
+        adjustments: { exposure: 140, contrast: 24, saturation: -18 },
+        label: "Adjust image",
+      }),
+    );
+
+    expect(document.adjustments).toEqual({ exposure: 100, contrast: 24, saturation: -18 });
+    expect(document.operationHistory).toHaveLength(1);
+    expect(imageAdjustmentFilter(document.adjustments)).toBe("brightness(1.500) contrast(1.240) saturate(0.820)");
+
+    const unchanged = applyImageOperation(
+      document,
+      createImageOperation({
+        type: "adjust-image",
+        adjustments: { exposure: 100, contrast: 24, saturation: -18 },
+        label: "Adjust image again",
+      }),
+    );
+    expect(unchanged.operationHistory).toHaveLength(1);
   });
 
   it("blocks content, transform, duplicate, and delete operations on locked or hidden layers", () => {

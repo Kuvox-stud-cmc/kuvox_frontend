@@ -13,6 +13,11 @@ export function createDefaultImageCompositionDocument(): ImageCompositionDocumen
       type: "color",
       color: "#ffffff",
     },
+    adjustments: {
+      exposure: 0,
+      contrast: 0,
+      saturation: 0,
+    },
     layers: [],
     selectedLayerId: null,
     baseRevisionNumber: 0,

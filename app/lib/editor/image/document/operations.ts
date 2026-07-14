@@ -4,6 +4,7 @@ import type {
   ImageCompositionDocument,
   ImageCompositionLayer,
   ImageCompositionOperation,
+  ImageAdjustmentSettings,
   ImageDocumentSnapshot,
   ImageCanvas,
   ImageDocumentBackground,
@@ -17,6 +18,12 @@ import type {
 const DEFAULT_TEXT_WIDTH = 520;
 const DEFAULT_TEXT_HEIGHT = 120;
 const DUPLICATE_OFFSET = 28;
+
+export const DEFAULT_IMAGE_ADJUSTMENTS: ImageAdjustmentSettings = {
+  exposure: 0,
+  contrast: 0,
+  saturation: 0,
+};
 
 export type ImageCompositionOperationInput =
   ImageCompositionOperation extends infer Operation
@@ -105,6 +112,7 @@ export function applyImageOperation(
   const before = toImageDocumentSnapshot(document);
   const next: ImageCompositionDocument = {
     ...document,
+    adjustments: normalizeAdjustments(document.adjustments),
     layers: document.layers.map((layer) => cloneLayer(layer)),
     operationHistory: [...document.operationHistory],
     updatedAt: document.updatedAt ?? null,
@@ -134,6 +142,7 @@ export function restoreImageDocumentSnapshot(
 ): ImageCompositionDocument {
   return {
     ...snapshot,
+    adjustments: normalizeAdjustments(snapshot.adjustments),
     layers: snapshot.layers.map((layer) => cloneLayer(layer)),
     operationHistory,
     updatedAt: new Date().toISOString(),
@@ -144,8 +153,27 @@ export function toImageDocumentSnapshot(document: ImageCompositionDocument): Ima
   const { operationHistory: _, ...snapshot } = document;
   return {
     ...snapshot,
+    adjustments: normalizeAdjustments(document.adjustments),
     layers: document.layers.map((layer) => cloneLayer(layer)),
   };
+}
+
+export function normalizeAdjustments(
+  adjustments: Partial<ImageAdjustmentSettings> | null | undefined,
+): ImageAdjustmentSettings {
+  return {
+    exposure: clamp(finiteNumber(adjustments?.exposure ?? DEFAULT_IMAGE_ADJUSTMENTS.exposure, 0), -100, 100),
+    contrast: clamp(finiteNumber(adjustments?.contrast ?? DEFAULT_IMAGE_ADJUSTMENTS.contrast, 0), -100, 100),
+    saturation: clamp(finiteNumber(adjustments?.saturation ?? DEFAULT_IMAGE_ADJUSTMENTS.saturation, 0), -100, 100),
+  };
+}
+
+export function imageAdjustmentFilter(adjustments: ImageAdjustmentSettings): string {
+  const normalized = normalizeAdjustments(adjustments);
+  const brightness = 1 + normalized.exposure / 200;
+  const contrast = 1 + normalized.contrast / 100;
+  const saturation = 1 + normalized.saturation / 100;
+  return `brightness(${brightness.toFixed(3)}) contrast(${contrast.toFixed(3)}) saturate(${saturation.toFixed(3)})`;
 }
 
 export function imageLayerOperationAvailability(
@@ -194,6 +222,16 @@ function applyOperationWithoutHistory(
   if (operation.type === "resize-canvas") {
     if (sameCanvas(document.canvas, operation.canvas)) return false;
     document.canvas = { ...operation.canvas };
+    return true;
+  }
+
+  if (operation.type === "adjust-image") {
+    const adjustments = normalizeAdjustments({
+      ...document.adjustments,
+      ...operation.adjustments,
+    });
+    if (sameAdjustments(document.adjustments, adjustments)) return false;
+    document.adjustments = adjustments;
     return true;
   }
 
@@ -375,6 +413,14 @@ function sameCanvas(current: ImageCanvas, next: ImageCanvas) {
     current.height === next.height &&
     current.unit === next.unit &&
     current.presetName === next.presetName
+  );
+}
+
+function sameAdjustments(current: ImageAdjustmentSettings, next: ImageAdjustmentSettings) {
+  return (
+    current.exposure === next.exposure &&
+    current.contrast === next.contrast &&
+    current.saturation === next.saturation
   );
 }
 
