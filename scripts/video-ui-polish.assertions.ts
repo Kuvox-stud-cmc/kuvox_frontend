@@ -11,6 +11,7 @@ function main(): void {
   assertStablePanelDimensions();
   assertEmptyAndFailureStates();
   assertResponsiveManualLayout();
+  assertResponsiveElementsPanel();
   assertIconButtonsAndReducedMotion();
 }
 
@@ -78,6 +79,21 @@ function assertResponsiveManualLayout(): void {
   assert.match(videoUiSources.toolRail, /orientation\?: "vertical" \| "horizontal"/);
   assert.match(videoUiSources.topBar, /hidden whitespace-nowrap xl:inline/);
   assert.match(videoUiSources.topBar, /aria-label="Project aspect ratio"/);
+}
+
+function assertResponsiveElementsPanel(): void {
+  const elementsPanel = videoUiSources.mediaLibrary.slice(
+    videoUiSources.mediaLibrary.indexOf("export function ElementsLibraryPanelContent"),
+  );
+
+  assert.ok(elementsPanel.includes("flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden"));
+  assert.ok(elementsPanel.includes("flex min-h-0 flex-1 flex-col overflow-hidden"));
+  assert.ok(elementsPanel.includes("overflow-x-hidden overflow-y-auto overscroll-contain"));
+  assert.ok(elementsPanel.includes("max-h-[48%] shrink-0 flex-col"));
+  assert.ok(elementsPanel.includes("grid-cols-[repeat(auto-fit,minmax(min(100%,5.5rem),1fr))]"));
+  assert.ok(elementsPanel.includes("col-span-full py-10"));
+  assert.ok(elementsPanel.includes("min-w-[112px] max-w-full flex-1"));
+  assert.ok(elementsPanel.includes("aspect-square w-full min-w-0 overflow-hidden"));
 }
 
 function assertIconButtonsAndReducedMotion(): void {

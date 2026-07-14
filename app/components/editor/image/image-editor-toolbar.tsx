@@ -19,8 +19,8 @@ const tools: Array<{ id: ImageEditorTool; icon: string; label: string }> = [
 
 export function ImageEditorToolbar({ activeTool, onToolChange }: ImageEditorToolbarProps) {
   return (
-    <div className="absolute inset-x-0 top-0 z-10 flex h-11 items-center justify-center border-b border-white/10 bg-[#14161a]/95">
-      <div className="flex items-center gap-1 rounded-[6px] border border-white/10 bg-black/25 p-1">
+    <div className="absolute inset-x-0 top-0 z-10 flex h-11 items-center justify-center border-b border-outline-variant/30 bg-surface-container-high/95">
+      <div className="flex items-center gap-1 rounded-[6px] border border-outline-variant/40 bg-black/25 p-1">
         {tools.map((tool) => (
           <EditorIconButton
             key={tool.id}
@@ -32,7 +32,7 @@ export function ImageEditorToolbar({ activeTool, onToolChange }: ImageEditorTool
           />
         ))}
       </div>
-      <div className="ml-3 hidden items-center gap-1 text-label-sm uppercase tracking-wide text-white/35 md:flex">
+      <div className="ml-3 hidden items-center gap-1 text-label-sm uppercase tracking-wide text-on-surface-variant/45 md:flex">
         <EditorIcon className="text-[15px]">lock_open</EditorIcon>
         Local document
       </div>

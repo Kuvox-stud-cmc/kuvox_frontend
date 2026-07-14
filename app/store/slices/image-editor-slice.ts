@@ -49,6 +49,7 @@ export interface ImageEditorState {
   aiCommandStatus: ImageAiCommandStatus;
   aiCommandError: string | null;
   aiLastSummary: string | null;
+  aiCommandHistory: { id: string; label: string; summary: string; prompt: string | null; createdAt: string }[];
 }
 
 const initialState: ImageEditorState = {
@@ -69,6 +70,7 @@ const initialState: ImageEditorState = {
   aiCommandStatus: "idle",
   aiCommandError: null,
   aiLastSummary: null,
+  aiCommandHistory: [],
 };
 
 const imageEditorSlice = createSlice({
@@ -108,6 +110,7 @@ const imageEditorSlice = createSlice({
       state.aiCommandStatus = "idle";
       state.aiCommandError = null;
       state.aiLastSummary = null;
+      state.aiCommandHistory = [];
     },
     imageEditorModeChanged(state, action: PayloadAction<ImageEditorMode>) {
       state.editorMode = action.payload;
@@ -264,10 +267,17 @@ const imageEditorSlice = createSlice({
       state.aiCommandStatus = "planning";
       state.aiCommandError = null;
     },
-    imageAiCommandApplied(state, action: PayloadAction<{ summary: string }>) {
+    imageAiCommandApplied(state, action: PayloadAction<{ summary: string; prompt?: string }>) {
       state.aiCommandStatus = "applied";
       state.aiCommandError = null;
       state.aiLastSummary = action.payload.summary;
+      state.aiCommandHistory.push({
+        id: `image-ai-cmd-${Date.now()}`,
+        label: `AI Plan`,
+        summary: action.payload.summary,
+        prompt: action.payload.prompt ?? state.aiCommandInput ?? null,
+        createdAt: new Date().toISOString(),
+      });
     },
     imageAiCommandFailed(state, action: PayloadAction<string>) {
       state.aiCommandStatus = "failed";

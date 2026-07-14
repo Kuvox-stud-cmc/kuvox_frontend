@@ -109,6 +109,19 @@
   --spacing-video-timeline-max: 420px;
   --spacing-panel-padding: 12px;
   --spacing-gutter: 16px;
+
+  /* ── Semantic states and interactive tokens ────────────────────────────── */
+  --color-success: #3cbf72;
+  --color-warning: #e7b548;
+  --color-danger: #e76b73;
+  --color-info: #4fb5e9;
+  --color-accent: #2fa98c;
+  --color-accent-muted: #1f2b2d;
+  --color-focus-ring: #2fa98c;
+  --color-selection: rgba(47, 169, 140, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.05);
+  --color-active: rgba(255, 255, 255, 0.1);
+  --color-disabled: rgba(255, 255, 255, 0.2);
 }
 
 html,
@@ -424,3 +437,283 @@ body {
     max-width: 100%;
   }
 }
+
+/* ==========================================================================
+   GLOBAL THEME SYSTEM & WORKSPACE SYNCHRONIZATION
+   ========================================================================== */
+
+/* ── Theme 1: Midnight Jade ────────────────────────────────────────────── */
+html[data-theme="midnight-jade"],
+html[data-theme="midnight-jade"] .video-editor-theme {
+  --color-background: #0c0e10;
+  --color-surface: #12181a;
+  --color-surface-dim: #0c0e10;
+  --color-surface-bright: #45c7a8;
+  --color-surface-container-lowest: #0c0e10;
+  --color-surface-container-low: #12181a;
+  --color-surface-container: #182124;
+  --color-surface-container-high: #1f2b2d;
+  --color-surface-container-highest: #1f2b2d;
+  --color-surface-variant: #182124;
+  
+  --color-on-surface: #efe8dc;
+  --color-on-surface-variant: #c7a35a;
+  
+  --color-primary: #2fa98c;
+  --color-primary-container: #1f2b2d;
+  --color-primary-fixed: #45c7a8;
+  --color-primary-fixed-dim: #6fe1c6;
+  --color-on-primary: #0c0e10;
+  --color-on-primary-container: #efe8dc;
+
+  --color-secondary: #c7a35a;
+  --color-on-secondary: #0c0e10;
+  
+  --color-outline: #1f2b2d;
+  --color-outline-variant: #182124;
+
+  --color-success: #3cbf72;
+  --color-warning: #e7b548;
+  --color-danger: #e56c72;
+  --color-info: #4fb5e9;
+  --color-error: #e56c72;
+  
+  --color-accent: #2fa98c;
+  --color-accent-muted: #1f2b2d;
+  --color-focus-ring: #2fa98c;
+  --color-selection: rgba(47, 169, 140, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.05);
+  --color-active: rgba(255, 255, 255, 0.08);
+  --color-disabled: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Theme 2: Ink & Copper ──────────────────────────────────────────────── */
+html[data-theme="ink-copper"],
+html[data-theme="ink-copper"] .video-editor-theme {
+  --color-background: #090909;
+  --color-surface: #111111;
+  --color-surface-dim: #090909;
+  --color-surface-bright: #d6a15d;
+  --color-surface-container-lowest: #090909;
+  --color-surface-container-low: #111111;
+  --color-surface-container: #111111;
+  --color-surface-container-high: #171412;
+  --color-surface-container-highest: #171412;
+  --color-surface-variant: #171412;
+  
+  --color-on-surface: #f2e7d9;
+  --color-on-surface-variant: #d6a15d;
+  
+  --color-primary: #a86a3d;
+  --color-primary-container: #171412;
+  --color-primary-fixed: #d6a15d;
+  --color-primary-fixed-dim: #d6a15d;
+  --color-on-primary: #090909;
+  --color-on-primary-container: #f2e7d9;
+
+  --color-secondary: #35544a;
+  --color-on-secondary: #f2e7d9;
+
+  --color-tertiary: #35544a;
+  --color-tertiary-container: #4f8d86;
+  
+  --color-outline: #171412;
+  --color-outline-variant: #171412;
+
+  --color-success: #3cbf72;
+  --color-warning: #e7b548;
+  --color-danger: #e76b73;
+  --color-info: #4fb5e9;
+  --color-error: #e76b73;
+  
+  --color-accent: #a86a3d;
+  --color-accent-muted: #171412;
+  --color-focus-ring: #a86a3d;
+  --color-selection: rgba(168, 106, 61, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.04);
+  --color-active: rgba(255, 255, 255, 0.07);
+  --color-disabled: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Theme 3: Graphite + Cyan ───────────────────────────────────────────── */
+html[data-theme="graphite-cyan"],
+html[data-theme="graphite-cyan"] .video-editor-theme {
+  --color-background: #0f1116;
+  --color-surface: #171a22;
+  --color-surface-dim: #0f1116;
+  --color-surface-bright: #9be7f7;
+  --color-surface-container-lowest: #0f1116;
+  --color-surface-container-low: #171a22;
+  --color-surface-container: #20252f;
+  --color-surface-container-high: #20252f;
+  --color-surface-container-highest: #2d3443;
+  --color-surface-variant: #20252f;
+  
+  --color-on-surface: #f4f6fa;
+  --color-on-surface-variant: #9198a6;
+  
+  --color-primary: #5bc7e8;
+  --color-primary-container: #20252f;
+  --color-primary-fixed: #9be7f7;
+  --color-primary-fixed-dim: #9be7f7;
+  --color-on-primary: #0f1116;
+  --color-on-primary-container: #f4f6fa;
+
+  --color-secondary: #5e6573;
+  --color-on-secondary: #f4f6fa;
+  
+  --color-outline: #20252f;
+  --color-outline-variant: #20252f;
+
+  --color-success: #3cbf72;
+  --color-warning: #e7b548;
+  --color-danger: #e76b73;
+  --color-info: #4fb5e9;
+  --color-error: #e76b73;
+  
+  --color-accent: #5bc7e8;
+  --color-accent-muted: #20252f;
+  --color-focus-ring: #5bc7e8;
+  --color-selection: rgba(91, 199, 232, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.05);
+  --color-active: rgba(255, 255, 255, 0.08);
+  --color-disabled: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Theme 4: Plum Noir ─────────────────────────────────────────────────── */
+html[data-theme="plum-noir"],
+html[data-theme="plum-noir"] .video-editor-theme {
+  --color-background: #09090c;
+  --color-surface: #0f0f13;
+  --color-surface-dim: #09090c;
+  --color-surface-bright: #8a75ff;
+  --color-surface-container-lowest: #09090c;
+  --color-surface-container-low: #0f0f13;
+  --color-surface-container: #141419;
+  --color-surface-container-high: #1a1a20;
+  --color-surface-container-highest: #212129;
+  --color-surface-variant: #141419;
+  
+  --color-on-surface: #f4f4f7;
+  --color-on-surface-variant: #a1a1aa;
+  
+  --color-primary: #8a75ff;
+  --color-primary-container: #211f30;
+  --color-primary-fixed: #8a75ff;
+  --color-primary-fixed-dim: #8a75ff;
+  --color-on-primary: #09090c;
+  --color-on-primary-container: #f4f4f7;
+
+  --color-secondary: #a1a1aa;
+  --color-on-secondary: #09090c;
+  
+  --color-outline: #212129;
+  --color-outline-variant: #141419;
+
+  --color-success: #3cbf72;
+  --color-warning: #e7b548;
+  --color-danger: #e76b73;
+  --color-info: #4fb5e9;
+  --color-error: #e76b73;
+  
+  --color-accent: #8a75ff;
+  --color-accent-muted: rgba(138, 117, 255, 0.12);
+  --color-focus-ring: #8a75ff;
+  --color-selection: rgba(138, 117, 255, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.05);
+  --color-active: rgba(255, 255, 255, 0.08);
+  --color-disabled: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Theme 5: Lotus Pond ────────────────────────────────────────────────── */
+html[data-theme="lotus-pond"],
+html[data-theme="lotus-pond"] .video-editor-theme {
+  --color-background: #120f0c;
+  --color-surface: #111816;
+  --color-surface-dim: #120f0c;
+  --color-surface-bright: #c9a962;
+  --color-surface-container-lowest: #120f0c;
+  --color-surface-container-low: #100e0c;
+  --color-surface-container: #111816;
+  --color-surface-container-high: #2d2117;
+  --color-surface-container-highest: #3d2d20;
+  --color-surface-variant: #111816;
+  
+  --color-on-surface: #f5f2ed;
+  --color-on-surface-variant: #efe3d2;
+  
+  --color-primary: #c9a962;
+  --color-primary-container: #2d2117;
+  --color-primary-fixed: #c9a962;
+  --color-primary-fixed-dim: #c9a962;
+  --color-on-primary: #120f0c;
+  --color-on-primary-container: #f5f2ed;
+
+  --color-secondary: #efe3d2;
+  --color-on-secondary: #120f0c;
+  
+  --color-outline: #1c1613;
+  --color-outline-variant: #100e0c;
+
+  --color-success: #3cbf72;
+  --color-warning: #e7b548;
+  --color-danger: #e76b73;
+  --color-info: #4fb5e9;
+  --color-error: #e76b73;
+  
+  --color-accent: #e86cb5;
+  --color-accent-muted: rgba(232, 108, 181, 0.12);
+  --color-focus-ring: #c9a962;
+  --color-selection: rgba(201, 169, 98, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.05);
+  --color-active: rgba(255, 255, 255, 0.08);
+  --color-disabled: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Theme 6: Aurora Emerald ────────────────────────────────────────────── */
+html[data-theme="aurora-emerald"],
+html[data-theme="aurora-emerald"] .video-editor-theme {
+  --color-background: #120f0c;
+  --color-surface: #120f0c;
+  --color-surface-dim: #0c0c0e;
+  --color-surface-bright: #8adbe7;
+  --color-surface-container-lowest: #0c0c0e;
+  --color-surface-container-low: #100e0c;
+  --color-surface-container: #111816;
+  --color-surface-container-high: #062532;
+  --color-surface-container-highest: #241a35;
+  --color-surface-variant: #07394d;
+  
+  --color-on-surface: #ffffff;
+  --color-on-surface-variant: #efe3d2;
+  
+  --color-primary: #8adbe7;
+  --color-primary-container: #052a3a;
+  --color-primary-fixed: #8adbe7;
+  --color-primary-fixed-dim: #47b6c7;
+  --color-on-primary: #1b6f7a;
+  --color-on-primary-container: #ffffff;
+
+  --color-secondary: #c9a962;
+  --color-on-secondary: #5c3e2a;
+  
+  --color-outline: #8b8b8b;
+  --color-outline-variant: #237e8f;
+
+  --color-success: #3cbf72;
+  --color-warning: #e7b548;
+  --color-danger: #e76b73;
+  --color-info: #4fb5e9;
+  --color-error: #e76b73;
+  
+  --color-accent: #c9a962;
+  --color-accent-muted: rgba(201, 169, 98, 0.12);
+  --color-focus-ring: #8adbe7;
+  --color-selection: rgba(138, 219, 231, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.05);
+  --color-active: rgba(255, 255, 255, 0.08);
+  --color-disabled: rgba(255, 255, 255, 0.15);
+}
+
+
+

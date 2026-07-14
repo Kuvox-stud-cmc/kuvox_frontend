@@ -25,7 +25,7 @@ import {
   type TimelineItemLayout,
   type TimelineViewport,
 } from "~/lib/editor/editor-timeline";
-import { createVideoOperationBatch, type VideoOperation, type VideoOperationMetadata } from "~/lib/editor/video-operations";
+import { createVideoOperationBatch, reorderTrackOperation, type VideoOperation, type VideoOperationMetadata } from "~/lib/editor/video-operations";
 import {
   createVideoEditorPerformanceMetric,
   queueVideoEditorPerformanceMetric,
@@ -1127,11 +1127,15 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
                 transform: `translateY(${-viewport.scrollTop}px)`,
               }}
             >
-              {layoutWindow.trackLayouts.map(({ track, top, height }) => (
-                <div key={track.id} className="absolute left-0 w-full" style={{ top, height }}>
+              {layoutWindow.trackLayouts.map(({ track, top, height }) => {
+                const trackIndex = document?.tracks.findIndex((candidate) => candidate.id === track.id) ?? -1;
+                const trackCount = document?.tracks.length ?? 0;
+                return <div key={track.id} className="absolute left-0 w-full" style={{ top, height }}>
                   <TrackHeader
                     track={track}
                     height={height}
+                    trackIndex={trackIndex}
+                    trackCount={trackCount}
                     soloed={soloedAudioTrackIds.includes(track.id)}
                     showControls={trackHeadersWidth >= 140}
                     dragging={draggedTrackId === track.id}
@@ -1166,11 +1170,21 @@ export function TimelinePanel({ onMediaDrop, className = "" }: TimelinePanelProp
                         ...fields,
                       }));
                     }}
+                    onMoveUp={() => {
+                      if (trackIndex > 0) {
+                        dispatch(videoOperationApplied(reorderTrackOperation(track.id, trackIndex - 1, "Move track up")));
+                      }
+                    }}
+                    onMoveDown={() => {
+                      if (trackIndex >= 0 && trackIndex < trackCount - 1) {
+                        dispatch(videoOperationApplied(reorderTrackOperation(track.id, trackIndex + 1, "Move track down")));
+                      }
+                    }}
                     onSolo={() => dispatch(trackSoloToggled(track.id))}
                     onDelete={() => dispatch(trackDeleted(track.id))}
                   />
-                </div>
-              ))}
+                </div>;
+              })}
             </div>
           </div>
         </div>
@@ -1614,6 +1628,8 @@ function EmptyTimelineState() {
 function TrackHeader({
   track,
   height,
+  trackIndex,
+  trackCount,
   soloed,
   showControls = true,
   dragging,
@@ -1623,11 +1639,15 @@ function TrackHeader({
   onDrop,
   onDragEnd,
   onUpdate,
+  onMoveUp,
+  onMoveDown,
   onSolo,
   onDelete,
 }: {
   track: VideoTrack;
   height: number;
+  trackIndex: number;
+  trackCount: number;
   soloed: boolean;
   showControls?: boolean;
   dragging: boolean;
@@ -1637,6 +1657,8 @@ function TrackHeader({
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
   onUpdate: (fields: { locked?: boolean; hidden?: boolean; muted?: boolean }) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onSolo: () => void;
   onDelete: () => void;
 }) {
@@ -1660,6 +1682,8 @@ function TrackHeader({
       {showControls && (
         <div className="flex items-center gap-1.5 shrink-0">
           <div className="flex items-center gap-1">
+            <SmallIconButton icon="keyboard_arrow_up" label={`Move ${track.label} up`} disabled={trackIndex <= 0} onClick={onMoveUp} />
+            <SmallIconButton icon="keyboard_arrow_down" label={`Move ${track.label} down`} disabled={trackIndex < 0 || trackIndex >= trackCount - 1} onClick={onMoveDown} />
             {track.kind === "audio" ? (
               <>
                 <SmallIconButton icon="headphones" label={`Solo ${track.label}`} active={soloed} onClick={onSolo} />
@@ -1719,20 +1743,23 @@ function SmallIconButton({
   icon,
   label,
   active,
+  disabled = false,
   onClick,
 }: {
   icon: string;
   label: string;
   active?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      className={`flex h-5 w-5 items-center justify-center rounded-[3px] transition-colors hover:bg-surface-container-highest motion-reduce:transition-none ${active ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
+      className={`flex h-5 w-5 items-center justify-center rounded-[3px] transition-colors hover:bg-surface-container-highest disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent motion-reduce:transition-none ${active ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
       aria-label={label}
       aria-pressed={active}
       title={label}
+      disabled={disabled}
       onClick={onClick}
     >
       <EditorIcon className="text-[14px]">{icon}</EditorIcon>

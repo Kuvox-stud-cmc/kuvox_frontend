@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 
 import { ImageAiCommandPanel } from "./image-ai-command-panel";
+import { EditorIcon } from "../editor-ui";
 import type {
   ImageCompositionDocument,
   ImageCompositionLayer,
@@ -28,11 +29,27 @@ export function PropertiesPanel({
   onUpdateStyle,
   onUpdateTextContent,
 }: PropertiesPanelProps) {
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toastMessage) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 2400);
+
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
+
   const selectedLayer = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null;
 
   return (
     <section className="min-h-0 overflow-y-auto p-3">
-      {editorMode === "ai" ? <ImageAiCommandPanel document={document} /> : null}
+      {editorMode === "ai" ? (
+        <ImageAiCommandPanel onShowNotification={(msg) => setToastMessage(msg)} />
+      ) : null}
       {selectedLayer ? (
         <SelectedLayerProperties
           layer={selectedLayer}
@@ -43,6 +60,15 @@ export function PropertiesPanel({
       ) : (
         <CanvasProperties document={document} afterAiPanel={editorMode === "ai"} />
       )}
+
+      {toastMessage ? (
+        <div className="pointer-events-none fixed right-4 top-16 z-[80] flex max-w-[min(360px,calc(100vw-32px))] items-center gap-2 rounded-[6px] border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm font-medium text-on-surface shadow-[0_14px_40px_rgba(0,0,0,0.28)]">
+          <EditorIcon className="text-[18px] text-primary" filled>
+            check_circle
+          </EditorIcon>
+          <span className="truncate">{toastMessage}</span>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -306,12 +332,12 @@ function ToggleRow({
 }) {
   return (
     <label className="grid min-h-8 grid-cols-[88px_minmax(0,1fr)] items-center gap-3">
-      <span className="text-label-md text-white/50">{label}</span>
+      <span className="text-label-md text-on-surface-variant/50">{label}</span>
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="ml-auto h-4 w-4 accent-[#8fd6c8]"
+        className="ml-auto h-4 w-4 accent-primary"
       />
     </label>
   );

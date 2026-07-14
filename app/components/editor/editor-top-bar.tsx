@@ -37,6 +37,14 @@ interface EditorTopBarProps {
   onReloadServer?: () => void | Promise<void>;
 }
 
+const ASPECT_RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  "16:9": { width: 1920, height: 1080 },
+  "9:16": { width: 1080, height: 1920 },
+  "1:1": { width: 1080, height: 1080 },
+  "4:3": { width: 1440, height: 1080 },
+  "21:9": { width: 2560, height: 1080 },
+};
+
 const modes: Array<{ value: EditorMode; label: string; icon?: string }> = [
   { value: "manual", label: "Manual", icon: "edit" },
   { value: "ai", label: "AI Agent", icon: "auto_awesome" },
@@ -206,9 +214,10 @@ export function EditorTopBar({
                     type="button"
                     onClick={() => {
                       setAspectRatioOpen(false);
+                      const dimensions = ASPECT_RATIO_DIMENSIONS[ratio.value] ?? ASPECT_RATIO_DIMENSIONS["16:9"];
                       dispatch(videoOperationApplied(setProjectSettingsOperation(
-                        { aspectRatio: ratio.value },
-                        `Change aspect ratio to ${ratio.value}`,
+                        { aspectRatio: ratio.value, ...dimensions },
+                        `Change aspect ratio to ${ratio.label}`,
                       )));
                     }}
                     className={`flex w-full items-center justify-between rounded-[4px] px-2.5 py-1.5 text-left text-label-sm transition-colors ${

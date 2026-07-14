@@ -172,7 +172,7 @@ export function ImageEditorWorkspace({
   };
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-[#101215] text-[#f2f5f4]">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-on-surface">
       <ImageEditorTopBar
         projectName={imageEditor.projectName}
         editorMode={imageEditor.editorMode}
@@ -199,20 +199,20 @@ export function ImageEditorWorkspace({
         />
       ) : null}
 
-      <div className="hidden h-10 shrink-0 items-center gap-2 border-b border-white/10 bg-[#15171b] px-2 max-[1180px]:flex">
+      <div className="hidden h-10 shrink-0 items-center gap-2 border-b border-outline-variant/50 bg-surface-container px-2 max-[1180px]:flex">
         <button
           type="button"
           title={assetsOpen ? "Hide assets" : "Show assets"}
           aria-label={assetsOpen ? "Hide assets" : "Show assets"}
           onClick={() => setAssetsOpen((current) => !current)}
           className={`flex h-8 items-center gap-2 rounded-[4px] px-2 text-label-md font-semibold ${
-            assetsOpen ? "bg-white/12 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
+            assetsOpen ? "bg-hover text-on-surface" : "text-on-surface/60 hover:bg-hover hover:text-on-surface"
           }`}
         >
           <EditorIcon className="text-[17px]">perm_media</EditorIcon>
           Assets
         </button>
-        <div className="ml-auto hidden items-center gap-1 rounded-[6px] border border-white/10 bg-black/20 p-1 max-[760px]:flex">
+        <div className="ml-auto hidden items-center gap-1 rounded-[6px] border border-outline-variant bg-black/20 p-1 max-[760px]:flex">
           {(["canvas", "properties"] as const).map((panel) => (
             <button
               key={panel}
@@ -282,7 +282,7 @@ export function ImageEditorWorkspace({
           <div className="absolute inset-0 pt-11">
             <Suspense
               fallback={
-                <div className="flex h-full items-center justify-center bg-[#0d0f12] text-label-md text-white/45">
+                <div className="flex h-full items-center justify-center bg-background text-label-md text-on-surface/45">
                   Loading artboard
                 </div>
               }
@@ -299,18 +299,18 @@ export function ImageEditorWorkspace({
             </Suspense>
           </div>
           {dragTarget === "canvas" ? (
-            <div className="pointer-events-none absolute inset-3 z-20 rounded-[6px] border border-dashed border-[#8fd6c8]/70 bg-[#8fd6c8]/10" />
+            <div className="pointer-events-none absolute inset-3 z-20 rounded-[6px] border border-dashed border-primary/70 bg-primary/10" />
           ) : null}
         </main>
 
         <aside
-          className={`min-h-0 border-l border-white/10 bg-[#15171b] max-[760px]:border-l-0 ${
+          className={`min-h-0 border-l border-outline-variant bg-surface-container-low max-[760px]:border-l-0 ${
             narrowPanel === "canvas" ? "max-[760px]:hidden" : ""
           }`}
         >
-          <div className="flex h-12 items-center gap-2 border-b border-white/10 px-3">
-            <EditorIcon className="text-[18px] text-[#8fd6c8]">layers</EditorIcon>
-            <h2 className="min-w-0 truncate text-label-md font-semibold uppercase tracking-wide text-white/70">
+          <div className="flex h-12 items-center gap-2 border-b border-outline-variant px-3">
+            <EditorIcon className="text-[18px] text-primary">layers</EditorIcon>
+            <h2 className="min-w-0 truncate text-label-md font-semibold uppercase tracking-wide text-on-surface/70">
               Layers and properties
             </h2>
           </div>
@@ -402,18 +402,18 @@ function ImageEditorTopBar({
   onExport: () => void;
 }) {
   return (
-    <header className="grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-white/10 bg-[#191b20] px-3">
+    <header className="grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-outline-variant/30 bg-surface-container-high px-3">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] bg-[#8fd6c8]/12 text-[#8fd6c8]">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] bg-primary/10 text-primary">
           <EditorIcon className="text-[20px]">image</EditorIcon>
         </span>
         <div className="min-w-0">
-          <h1 className="truncate text-body-sm font-semibold text-white">{projectName}</h1>
-          <p className="text-label-sm uppercase tracking-wide text-white/40">Image editor</p>
+          <h1 className="truncate text-body-sm font-semibold text-on-surface">{projectName}</h1>
+          <p className="text-label-sm uppercase tracking-wide text-on-surface-variant/65">Image editor</p>
         </div>
       </div>
 
-      <div className="flex items-center rounded-[6px] border border-white/10 bg-black/20 p-1">
+      <div className="flex items-center rounded-[6px] border border-outline-variant bg-black/20 p-1">
         {(["manual", "ai"] as const).map((mode) => (
           <button
             key={mode}
@@ -421,8 +421,8 @@ function ImageEditorTopBar({
             onClick={() => onModeChange(mode)}
             className={`flex h-8 items-center gap-1 rounded-[4px] px-3 text-label-md font-semibold transition-colors max-[520px]:px-2 ${
               editorMode === mode
-                ? "bg-white/12 text-white"
-                : "text-white/55 hover:text-white"
+                ? "bg-hover text-on-surface"
+                : "text-on-surface/55 hover:text-on-surface"
             }`}
           >
             {mode === "ai" ? <EditorIcon className="text-[16px]">auto_awesome</EditorIcon> : null}
@@ -437,11 +437,11 @@ function ImageEditorTopBar({
           title={assetsOpen ? "Hide assets" : "Show assets"}
           aria-label={assetsOpen ? "Hide assets" : "Show assets"}
           onClick={onToggleAssets}
-          className="mr-1 hidden h-8 w-8 items-center justify-center rounded-[4px] text-white/70 hover:bg-white/10 hover:text-white max-[1180px]:flex"
+          className="mr-1 hidden h-8 w-8 items-center justify-center rounded-[4px] text-on-surface/70 hover:bg-hover hover:text-on-surface max-[1180px]:flex"
         >
           <EditorIcon className="text-[18px]">perm_media</EditorIcon>
         </button>
-        <span className="mr-2 min-w-0 max-w-28 truncate text-right text-label-sm uppercase tracking-wide text-white/45 max-[640px]:hidden">
+        <span className="mr-2 min-w-0 max-w-28 truncate text-right text-label-sm uppercase tracking-wide text-on-surface-variant/45 max-[640px]:hidden">
           {saveStateLabel(saveState)}
         </span>
         <TopBarButton icon="undo" label="Undo" disabled={!canUndo} onClick={onUndo} />
@@ -451,7 +451,7 @@ function ImageEditorTopBar({
           disabled={!canExport}
           title="Export"
           onClick={onExport}
-          className="ml-2 inline-flex h-8 items-center justify-center gap-2 rounded-[4px] border border-[#8fd6c8]/30 bg-[#8fd6c8]/12 px-3 text-label-md font-semibold text-[#d8fff8] hover:bg-[#8fd6c8]/20 disabled:pointer-events-none disabled:border-white/10 disabled:bg-white/[0.04] disabled:text-white/35 max-[640px]:w-8 max-[640px]:px-0"
+          className="ml-2 inline-flex h-8 items-center justify-center gap-2 rounded-[4px] border border-primary/30 bg-primary/10 px-3 text-label-md font-semibold text-primary hover:bg-primary/20 disabled:pointer-events-none disabled:border-outline-variant/30 disabled:bg-surface-container/20 disabled:text-on-surface/25 max-[640px]:w-8 max-[640px]:px-0"
         >
           <EditorIcon className="text-[16px]">ios_share</EditorIcon>
           <span className="max-[640px]:hidden">Export</span>
@@ -503,9 +503,9 @@ function ConflictBanner({
 }) {
   const busy = busyAction !== null;
   return (
-    <section className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-300/20 bg-[#2a2214] px-3 py-2 text-label-md text-amber-50">
-      <EditorIcon className="shrink-0 text-[18px] text-amber-200">sync_problem</EditorIcon>
-      <p className="min-w-[220px] flex-1 whitespace-normal break-words text-amber-50/85">
+    <section className="flex shrink-0 flex-wrap items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-label-md text-warning">
+      <EditorIcon className="shrink-0 text-[18px] text-warning">sync_problem</EditorIcon>
+      <p className="min-w-[220px] flex-1 whitespace-normal break-words text-warning/85">
         {message || "The server has a newer image version."}
         {serverRevisionNumber !== null ? ` Revision ${serverRevisionNumber}.` : ""}
         {serverUpdatedAt ? ` Updated ${formatConflictTimestamp(serverUpdatedAt)}.` : ""}
@@ -515,7 +515,7 @@ function ConflictBanner({
           type="button"
           disabled={busy}
           onClick={onReloadServerVersion}
-          className="inline-flex h-8 items-center gap-2 rounded-[4px] border border-amber-100/20 bg-amber-100/10 px-2 text-label-md font-semibold text-amber-50 hover:bg-amber-100/16 disabled:pointer-events-none disabled:opacity-55"
+          className="inline-flex h-8 items-center gap-2 rounded-[4px] border border-warning/20 bg-warning/5 px-2 text-label-md font-semibold text-warning hover:bg-warning/15 disabled:pointer-events-none disabled:opacity-55"
         >
           <EditorIcon className="text-[16px]">
             {busyAction === "reload" ? "progress_activity" : "download"}
@@ -526,7 +526,7 @@ function ConflictBanner({
           type="button"
           disabled={busy}
           onClick={onKeepLocalEdits}
-          className="inline-flex h-8 items-center gap-2 rounded-[4px] bg-[#8fd6c8] px-2 text-label-md font-semibold text-[#062f2d] hover:bg-[#a8eadf] disabled:pointer-events-none disabled:opacity-55"
+          className="inline-flex h-8 items-center gap-2 rounded-[4px] bg-primary px-2 text-label-md font-semibold text-on-primary hover:bg-primary-fixed disabled:pointer-events-none disabled:opacity-55"
         >
           <EditorIcon className="text-[16px]">
             {busyAction === "keep-local" ? "progress_activity" : "upload"}

@@ -11,6 +11,7 @@ import type {
   VideoTimelineItem,
   VideoTransform,
 } from "~/lib/editor/video-document";
+import { resolveItemCrop, resolveItemOpacity, resolveItemTransform } from "~/lib/editor/video-document";
 import {
   createVideoOperationBatch,
   type SetProjectSettingsOperation,
@@ -107,6 +108,7 @@ type TextFieldProps = {
   type?: "text" | "color";
   disabled?: boolean;
   multiline?: boolean;
+  allowEmpty?: boolean;
   onCommit: (value: string) => void;
 };
 
@@ -114,6 +116,133 @@ const fontWeights: Array<NonNullable<VideoTextStyle["fontWeight"]>> = ["normal",
 const textAlignments: Array<NonNullable<VideoTextStyle["textAlign"]>> = ["left", "center", "right"];
 const previewQualities: VideoProjectSettings["previewQuality"][] = ["draft", "balanced", "full"];
 const exportPresets = ["h264-720p", "h264-1080p", "h264-4k", "prores-master"];
+
+const defaultInspectorTransform: VideoTransform = {
+  x: 0,
+  y: 0,
+  scaleX: 1,
+  scaleY: 1,
+  rotation: 0,
+  anchorX: 0.5,
+  anchorY: 0.5,
+};
+const defaultInspectorCrop = { top: 0, right: 0, bottom: 0, left: 0 };
+const filterPresets = ["Original", "Cinematic", "Film", "Vintage", "Warm", "Cold", "Dreamy", "Noir", "Vivid"] as const;
+const cropAspectPresets = ["Free", "16:9", "9:16", "1:1", "4:5", "3:2", "21:9"] as const;
+
+type InspectorClipboardPayload = {
+  sectionId: string;
+  transform?: VideoTransform;
+  crop?: typeof defaultInspectorCrop;
+  opacity?: number;
+  layerOrder?: number;
+  properties?: Record<string, unknown>;
+};
+
+let inspectorAttributesClipboard: InspectorClipboardPayload | null = null;
+
+function cloneInspectorValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function sectionPropertyGroup(sectionId: string): string {
+  if (sectionId === "audio" || sectionId === "volume" || sectionId === "fade" || sectionId === "noise_reduction" || sectionId === "eq") {
+    return sectionId === "eq" ? "eq" : "audioSettings";
+  }
+  if (sectionId === "speed") return "speedSettings";
+  return sectionId;
+}
+
+function copySectionAttributes(item: VideoTimelineItem, sectionId: string) {
+  const properties = (item as any).properties || {};
+  const groupName = sectionPropertyGroup(sectionId);
+  const payload: InspectorClipboardPayload = { sectionId };
+
+  if ((sectionId === "transform" || sectionId === "layout") && item.type !== "audio") {
+    payload.transform = resolveItemTransform(item);
+    if ("opacity" in item) payload.opacity = resolveItemOpacity(item as any);
+    if ("layerOrder" in item) payload.layerOrder = item.layerOrder;
+  } else if (sectionId === "crop") {
+    payload.crop = resolveItemCrop(item as any);
+    payload.properties = cloneInspectorValue(properties.crop || {});
+  } else {
+    payload.properties = cloneInspectorValue(properties[groupName] || {});
+  }
+
+  inspectorAttributesClipboard = payload;
+}
+
+function propertyGroupOperation(item: VideoTimelineItem, groupName: string, properties: Record<string, unknown>, label: string) {
+  const fields = { properties: { [groupName]: properties } as any };
+  if (item.type === "audio") return updateAudioOperation(item.id, fields as any, label);
+  if (item.type === "text") return updateTextOperation(item.id, fields as any, label);
+  return updateTransformCropOperation(item.id, fields as any, label);
+}
+
+function pasteSectionAttributes(item: VideoTimelineItem): VideoOperation | ReturnType<typeof createVideoOperationBatch> | null {
+  const payload = inspectorAttributesClipboard;
+  if (!payload) return null;
+
+  if ((payload.sectionId === "transform" || payload.sectionId === "layout") && payload.transform) {
+    if (item.type === "audio") return null;
+    if (item.type === "text") {
+      return updateTextOperation(item.id, {
+        transform: payload.transform,
+        ...(payload.layerOrder !== undefined ? { layerOrder: payload.layerOrder } : {}),
+      }, "Paste attributes");
+    }
+    return updateTransformCropOperation(item.id, {
+      transform: payload.transform,
+      ...(payload.opacity !== undefined ? { opacity: payload.opacity } : {}),
+      ...(payload.layerOrder !== undefined ? { layerOrder: payload.layerOrder } : {}),
+    }, "Paste attributes");
+  }
+
+  if (payload.sectionId === "crop" && payload.crop && item.type !== "audio" && item.type !== "text") {
+    return updateTransformCropOperation(item.id, {
+      ...(item.type === "video" ? { crop: payload.crop } : {}),
+      properties: { crop: payload.crop } as any,
+    }, "Paste crop");
+  }
+
+  if (!payload.properties) return null;
+  return propertyGroupOperation(item, sectionPropertyGroup(payload.sectionId), cloneInspectorValue(payload.properties), "Paste attributes");
+}
+
+function resetSectionAttributes(item: VideoTimelineItem, sectionId: string): VideoOperation | ReturnType<typeof createVideoOperationBatch> | null {
+  if ((sectionId === "transform" || sectionId === "layout") && item.type !== "audio") {
+    if (item.type === "text") return updateTextOperation(item.id, { transform: defaultInspectorTransform, layerOrder: 0 }, "Reset transform");
+    return updateTransformCropOperation(item.id, {
+      transform: defaultInspectorTransform,
+      ...("opacity" in item ? { opacity: 1 } : {}),
+      ...("layerOrder" in item ? { layerOrder: 0 } : {}),
+    }, "Reset transform");
+  }
+
+  if (sectionId === "crop" && item.type !== "audio" && item.type !== "text") {
+    return updateTransformCropOperation(item.id, {
+      ...(item.type === "video" ? { crop: defaultInspectorCrop } : {}),
+      properties: { crop: defaultInspectorCrop } as any,
+    }, "Reset crop");
+  }
+
+  if (sectionId === "speed" && item.type === "video") {
+    return createVideoOperationBatch({
+      source: "manual",
+      label: "Reset speed",
+      operations: [
+        updateSpeedOperation(item.id, { speed: 1 }, "Reset speed"),
+        propertyGroupOperation(item, "speedSettings", {}, "Reset speed settings") as VideoOperation,
+      ],
+    });
+  }
+
+  if (sectionId === "volume" && item.type === "audio") {
+    return updateAudioOperation(item.id, { volume: 1, muted: false }, "Reset volume");
+  }
+
+  return propertyGroupOperation(item, sectionPropertyGroup(sectionId), {}, "Reset attributes");
+}
 
 export function VideoInspectorPanel({
   visibilityClassName = "hidden lg:flex",
@@ -543,6 +672,42 @@ function MockButtonField({ label, onClick, disabled = false }: { label: string; 
   );
 }
 
+const ButtonField = MockButtonField;
+
+function PresetButtonGrid<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="grid items-start gap-2 text-[13px] font-medium" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
+      <span className="pt-1 text-on-surface-variant">{label}</span>
+      <div className="grid min-w-0 grid-cols-3 gap-1.5">
+        {options.map((option) => {
+          const active = option === value;
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onChange(option)}
+              className={`min-h-12 rounded-[4px] border px-1.5 py-1 text-left text-[10px] font-semibold transition-colors ${active ? "border-primary bg-primary/15 text-primary" : "border-outline-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"}`}
+              aria-pressed={active}
+            >
+              <span className="mb-1 block h-4 rounded-[2px] bg-[linear-gradient(90deg,#151515,#c0c1ff,#f4d35e)] opacity-80" />
+              <span className="block truncate">{option}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 const videoSections = [
   { id: "transform", label: "Transform", icon: "open_with" },
   { id: "crop", label: "Crop", icon: "crop" },
@@ -579,6 +744,15 @@ function VideoClipInspector({
   
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "transform" : "");
+  const handleResetSection = () => {
+    const operation = resetSectionAttributes(item, currentSection);
+    if (operation) dispatch(operation);
+  };
+  const handleCopySection = () => copySectionAttributes(item, currentSection);
+  const handlePasteSection = () => {
+    const operation = pasteSectionAttributes(item);
+    if (operation) dispatch(operation);
+  };
 
   const [pitchCorrection, setPitchCorrection] = useState(true);
 
@@ -689,12 +863,12 @@ function VideoClipInspector({
               suffix="%"
             />
             <RealtimeSliderField
-              label="Sharpness"
-              min={0}
+              label="Clarity"
+              min={-100}
               max={100}
-              value={getTimelineItemPropertyValue(item, "adjust", "sharpness")}
-              onChange={(val) => updateProperty(item, "sharpness", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "sharpness", val, { squash: false })}
+              value={getTimelineItemPropertyValue(item, "adjust", "clarity")}
+              onChange={(val) => updateProperty(item, "clarity", val, { squash: true })}
+              onChangeEnd={(val) => updateProperty(item, "clarity", val, { squash: false })}
             />
             <RealtimeSliderField
               label="Opacity"
@@ -710,28 +884,23 @@ function VideoClipInspector({
       case "filters":
         return (
           <>
+            <TextField
+              label="Search"
+              value={getTimelineItemPropertyValue(item, "filters", "search") || ""}
+              allowEmpty
+              onCommit={(val) => updateProperty(item, "search", val, { groupName: "filters", squash: false })}
+            />
             <SelectField
-              label="Built-in"
-              options={["Cinematic", "Vintage", "Warm", "Cool", "B&W", "Film", "None"]}
-              value={getTimelineItemPropertyValue(item, "filters", "builtIn") || "None"}
+              label="Preset"
+              options={filterPresets}
+              value={(getTimelineItemPropertyValue(item, "filters", "builtIn") || "Original") as typeof filterPresets[number]}
               onChange={(val) => updateProperty(item, "builtIn", val, { groupName: "filters", squash: false })}
             />
-            <SelectField
-              label="LUT Library"
-              options={["None", "Kodak 2383", "Teal & Orange", "Rec.709"]}
-              value={getTimelineItemPropertyValue(item, "filters", "lutLibrary") || "None"}
-              onChange={(val) => updateProperty(item, "lutLibrary", val, { groupName: "filters", squash: false })}
-            />
-            <ToggleField
-              label="Favorites"
-              checked={getTimelineItemPropertyValue(item, "filters", "favorites") || false}
-              onChange={(val) => updateProperty(item, "favorites", val, { squash: false, groupName: "filters" })}
-            />
-            <SelectField
-              label="Recent"
-              options={["Cinematic", "Warm"]}
-              value={getTimelineItemPropertyValue(item, "filters", "recent") || "Cinematic"}
-              onChange={(val) => updateProperty(item, "recent", val, { groupName: "filters", squash: false })}
+            <PresetButtonGrid
+              label="Thumbnails"
+              options={filterPresets}
+              value={(getTimelineItemPropertyValue(item, "filters", "builtIn") || "Original") as typeof filterPresets[number]}
+              onChange={(val) => updateProperty(item, "builtIn", val, { groupName: "filters", squash: false })}
             />
             <RealtimeSliderField
               label="Intensity"
@@ -742,21 +911,55 @@ function VideoClipInspector({
               onChangeEnd={(val) => updateProperty(item, "intensity", val, { squash: false })}
               suffix="%"
             />
-            <RealtimeSliderField
-              label="Blend"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "filters", "blend")}
-              onChange={(val) => updateProperty(item, "blend", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "blend", val, { squash: false })}
-              suffix="%"
-            />
+            <ButtonField label="Reset Filter" onClick={() => dispatch(propertyGroupOperation(item, "filters", { builtIn: { value: "Original" }, intensity: { value: 100 } }, "Reset filter"))} />
           </>
         );
       case "color":
         return (
           <>
-            <MockButtonField label="White Balance" />
+            <RealtimeSliderField
+              label="Temperature"
+              min={-100}
+              max={100}
+              value={getTimelineItemPropertyValue(item, "color", "temperature")}
+              onChange={(val) => updateProperty(item, "temperature", val, { squash: true, groupName: "color" })}
+              onChangeEnd={(val) => updateProperty(item, "temperature", val, { squash: false, groupName: "color" })}
+            />
+            <RealtimeSliderField
+              label="Tint"
+              min={-100}
+              max={100}
+              value={getTimelineItemPropertyValue(item, "color", "tint")}
+              onChange={(val) => updateProperty(item, "tint", val, { squash: true, groupName: "color" })}
+              onChangeEnd={(val) => updateProperty(item, "tint", val, { squash: false, groupName: "color" })}
+            />
+            <RealtimeSliderField
+              label="Hue"
+              min={-180}
+              max={180}
+              value={getTimelineItemPropertyValue(item, "color", "hue")}
+              onChange={(val) => updateProperty(item, "hue", val, { squash: true, groupName: "color" })}
+              onChangeEnd={(val) => updateProperty(item, "hue", val, { squash: false, groupName: "color" })}
+              suffix="deg"
+            />
+            <RealtimeSliderField
+              label="Saturation"
+              min={0}
+              max={200}
+              value={getTimelineItemPropertyValue(item, "color", "saturation")}
+              onChange={(val) => updateProperty(item, "saturation", val, { squash: true, groupName: "color" })}
+              onChangeEnd={(val) => updateProperty(item, "saturation", val, { squash: false, groupName: "color" })}
+              suffix="%"
+            />
+            <RealtimeSliderField
+              label="Vibrance"
+              min={0}
+              max={200}
+              value={getTimelineItemPropertyValue(item, "color", "vibrance")}
+              onChange={(val) => updateProperty(item, "vibrance", val, { squash: true, groupName: "color" })}
+              onChangeEnd={(val) => updateProperty(item, "vibrance", val, { squash: false, groupName: "color" })}
+              suffix="%"
+            />
             <div className="py-2"><span className="text-label-sm font-semibold text-on-surface-variant">Color Wheels</span></div>
             <RealtimeSliderField
               label="Lift"
@@ -809,7 +1012,7 @@ function VideoClipInspector({
             <VisualTransformControls item={item} disabled={inspector.track.locked || inspector.track.hidden} />
             <NumberField
               label="Opacity"
-              value={isMock ? opacity : item.opacity}
+              value={opacity}
               min={0}
               max={1}
               step={0.01}
@@ -854,7 +1057,7 @@ function VideoClipInspector({
           <>
             <SelectField
               label="Shape"
-              options={["None", "Rectangle", "Circle", "Free Draw", "Pen Tool"]}
+              options={["None", "Rectangle", "Circle", "Ellipse", "Polygon", "Star", "Custom SVG"]}
               value={getTimelineItemPropertyValue(item, "mask", "shape") || "None"}
               onChange={(val) => updateProperty(item, "shape", val, { groupName: "mask", squash: false })}
             />
@@ -903,12 +1106,21 @@ function VideoClipInspector({
               step={0.05}
               suffix="x"
               precision={3}
-              onCommit={(sp) => {
+              onCommit={(nextSpeed) => {
                 if (isMock) {
-                  setSpeed(sp);
+                  setSpeed(nextSpeed);
                 } else {
-                  dispatch(updateSpeedOperation(item.id, { speed: sp }, "Update speed"));
+                  dispatch(updateSpeedOperation(item.id, { speed: nextSpeed }, "Update speed"));
                 }
+              }}
+            />
+            <SelectField
+              label="Preset"
+              options={["0.25x", "0.5x", "1x", "2x", "4x"]}
+              value={(getTimelineItemPropertyValue(item, "speedSettings", "preset") || "1x") as "0.25x" | "0.5x" | "1x" | "2x" | "4x"}
+              onChange={(preset) => {
+                updateProperty(item, "preset", preset, { groupName: "speedSettings", squash: false });
+                dispatch(updateSpeedOperation(item.id, { speed: Number(preset.replace("x", "")) }, "Update speed"));
               }}
             />
             <ToggleField
@@ -926,7 +1138,17 @@ function VideoClipInspector({
                 sourceTime: Math.min(item.sourceOut, sourceTime),
               }] }, "Insert freeze frame");
             }} />
-            <MockSliderField label="Duration" min={0} max={60} defaultValue={item.duration} suffix="s" />
+            <NumberField
+              label="Duration"
+              value={item.duration}
+              min={0.01}
+              max={60}
+              step={0.1}
+              precision={2}
+              suffix="s"
+              disabled={isMock}
+              onCommit={(duration) => dispatch(updateSpeedOperation(item.id, { speed: item.speed, duration }, "Update duration"))}
+            />
             <SelectField
               label="Speed Curve"
               options={["Linear", "Ease In", "Ease Out", "Smooth"]}
@@ -951,50 +1173,15 @@ function VideoClipInspector({
       case "animation":
         return (
           <>
-            <RealtimeSliderField
-              label="Fade In"
-              min={0}
-              max={10}
-              step={0.1}
-              value={getTimelineItemPropertyValue(item, "animation", "fadeIn")}
-              onChange={(val) => updateProperty(item, "fadeIn", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "fadeIn", val, { squash: false })}
-              suffix="s"
-            />
-            <RealtimeSliderField
-              label="Fade Out"
-              min={0}
-              max={10}
-              step={0.1}
-              value={getTimelineItemPropertyValue(item, "animation", "fadeOut")}
-              onChange={(val) => updateProperty(item, "fadeOut", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "fadeOut", val, { squash: false })}
-              suffix="s"
-            />
-            <SelectField
-              label="Presets"
-              options={["None", "Slide", "Zoom", "Bounce"]}
-              value={getTimelineItemPropertyValue(item, "animation", "presets") || "None"}
-              onChange={(val) => updateProperty(item, "presets", val, { groupName: "animation", squash: false })}
-            />
-            <RealtimeSliderField
-              label="Scale Anim"
-              min={0}
-              max={100}
-              value={getTimelineItemPropertyValue(item, "animation", "scaleAnim")}
-              onChange={(val) => updateProperty(item, "scaleAnim", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "scaleAnim", val, { squash: false })}
-            />
-            <RealtimeSliderField
-              label="Rot. Anim"
-              min={0}
-              max={360}
-              value={getTimelineItemPropertyValue(item, "animation", "rotationAnim")}
-              onChange={(val) => updateProperty(item, "rotationAnim", val, { squash: true })}
-              onChangeEnd={(val) => updateProperty(item, "rotationAnim", val, { squash: false })}
-              suffix="deg"
-            />
-            <MockButtonField label="Custom Keys" />
+            <SelectField label="Entrance" options={["None", "Fade", "Slide", "Scale", "Zoom", "Rotate", "Bounce"]} value={getTimelineItemPropertyValue(item, "animation", "entrance") || "None"} onChange={(val) => updateProperty(item, "entrance", val, { groupName: "animation", squash: false })} />
+            <SelectField label="Exit" options={["None", "Fade", "Slide", "Scale", "Zoom", "Rotate", "Bounce"]} value={getTimelineItemPropertyValue(item, "animation", "exit") || "None"} onChange={(val) => updateProperty(item, "exit", val, { groupName: "animation", squash: false })} />
+            <RealtimeSliderField label="Fade In" min={0} max={10} step={0.1} value={getTimelineItemPropertyValue(item, "animation", "fadeIn")} onChange={(val) => updateProperty(item, "fadeIn", val, { squash: true })} onChangeEnd={(val) => updateProperty(item, "fadeIn", val, { squash: false })} suffix="s" />
+            <RealtimeSliderField label="Fade Out" min={0} max={10} step={0.1} value={getTimelineItemPropertyValue(item, "animation", "fadeOut")} onChange={(val) => updateProperty(item, "fadeOut", val, { squash: true })} onChangeEnd={(val) => updateProperty(item, "fadeOut", val, { squash: false })} suffix="s" />
+            <RealtimeSliderField label="Duration" min={0.1} max={10} step={0.1} value={getTimelineItemPropertyValue(item, "animation", "duration")} onChange={(val) => updateProperty(item, "duration", val, { squash: true, groupName: "animation" })} onChangeEnd={(val) => updateProperty(item, "duration", val, { squash: false, groupName: "animation" })} suffix="s" />
+            <RealtimeSliderField label="Delay" min={0} max={10} step={0.1} value={getTimelineItemPropertyValue(item, "animation", "delay")} onChange={(val) => updateProperty(item, "delay", val, { squash: true, groupName: "animation" })} onChangeEnd={(val) => updateProperty(item, "delay", val, { squash: false, groupName: "animation" })} suffix="s" />
+            <SelectField label="Easing" options={["Linear", "Ease In", "Ease Out", "Ease In Out", "Spring"]} value={getTimelineItemPropertyValue(item, "animation", "easing") || "Ease Out"} onChange={(val) => updateProperty(item, "easing", val, { groupName: "animation", squash: false })} />
+            <RealtimeSliderField label="Scale Anim" min={0} max={100} value={getTimelineItemPropertyValue(item, "animation", "scaleAnim")} onChange={(val) => updateProperty(item, "scaleAnim", val, { squash: true })} onChangeEnd={(val) => updateProperty(item, "scaleAnim", val, { squash: false })} />
+            <RealtimeSliderField label="Rot. Anim" min={0} max={360} value={getTimelineItemPropertyValue(item, "animation", "rotationAnim")} onChange={(val) => updateProperty(item, "rotationAnim", val, { squash: true })} onChangeEnd={(val) => updateProperty(item, "rotationAnim", val, { squash: false })} suffix="deg" />
           </>
         );
       case "audio":
@@ -1003,9 +1190,8 @@ function VideoClipInspector({
             <ToggleField
               label="Mute Linked"
               checked={linkedMuted}
-              disabled={isMock || inspector.linkedAudioItems.length === 0}
+              disabled={inspector.linkedAudioItems.length === 0}
               onChange={(muted) => {
-                if (isMock) return;
                 const operations = inspector.linkedAudioItems.map(({ item: audio }) =>
                   updateAudioOperation(audio.id, { muted }, "Update mute"),
                 );
@@ -1020,7 +1206,7 @@ function VideoClipInspector({
                 }
               }}
             />
-            {!isMock && inspector.linkedAudioItems.map(({ item: audio }) => (
+            {inspector.linkedAudioItems.map(({ item: audio }) => (
               <div key={audio.id} className="flex flex-col gap-2 border-t border-outline-variant/30 pt-2 mt-1">
                 <div className="text-[10px] text-on-surface-variant font-bold uppercase">{audio.id} Volume</div>
                 <NumberField
@@ -1034,11 +1220,6 @@ function VideoClipInspector({
                 />
               </div>
             ))}
-            {isMock && (
-              <div className="flex flex-col gap-2 border-t border-outline-variant/30 pt-2 mt-1">
-                <MockSliderField label="Volume" min={0} max={100} defaultValue={100} suffix="%" />
-              </div>
-            )}
             <RealtimeSliderField
               label="Balance"
               min={-50}
@@ -1108,11 +1289,6 @@ function VideoClipInspector({
   if (isTest) {
     return (
       <div className="flex flex-col gap-1">
-        {isMock && (
-          <div className="rounded-[6px] border border-primary/20 bg-primary/10 px-3 py-2 text-[12px] text-primary mb-2 leading-relaxed">
-            💡 Showing preview controls. Select a timeline clip to apply changes.
-          </div>
-        )}
         <Section title="Media Info">
           <ReadOnlyRow label="Name" value={inspector.media?.name ?? item.mediaId} />
           <ReadOnlyRow label="Track" value={inspector.track.label} />
@@ -1136,11 +1312,6 @@ function VideoClipInspector({
   if (!currentSection) {
     return (
       <div className="flex flex-col gap-3">
-        {isMock && (
-          <div className="rounded-[6px] border border-primary/20 bg-primary/10 px-3 py-2 text-[12px] text-primary leading-relaxed">
-            💡 Showing preview controls. Select a timeline clip to apply changes.
-          </div>
-        )}
         <Section title="Media Info">
           <ReadOnlyRow label="Name" value={inspector.media?.name ?? item.mediaId} />
           <ReadOnlyRow label="Track" value={inspector.track.label} />
@@ -1199,6 +1370,7 @@ function VideoClipInspector({
       </div>
       <div className="flex flex-col gap-2.5">
         {renderSectionContent(currentSection)}
+        <InspectorFooter onReset={handleResetSection} onCopy={handleCopySection} onPaste={handlePasteSection} />
       </div>
     </div>
   );
@@ -1230,6 +1402,15 @@ function AudioInspector({
   
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "volume" : "");
+  const handleResetSection = () => {
+    const operation = resetSectionAttributes(item, currentSection);
+    if (operation) dispatch(operation);
+  };
+  const handleCopySection = () => copySectionAttributes(item, currentSection);
+  const handlePasteSection = () => {
+    const operation = pasteSectionAttributes(item);
+    if (operation) dispatch(operation);
+  };
 
   const renderSectionContent = (sectionId: string) => {
     switch (sectionId) {
@@ -1347,6 +1528,11 @@ function AudioInspector({
               onChangeEnd={(val) => updateProperty(item, "speedMultiplier", val, { squash: false })}
               suffix="x"
             />
+            <ToggleField
+              label="Maintain Pitch"
+              checked={getTimelineItemPropertyValue(item, "speedSettings", "pitchCorrection") !== false}
+              onChange={(val) => updateProperty(item, "pitchCorrection", val, { groupName: "speedSettings", squash: false })}
+            />
             <TimingFields
               item={item}
               noSection
@@ -1376,7 +1562,6 @@ function AudioInspector({
     );
   }
 
-  // Real Application View
   if (!currentSection) {
     return (
       <div className="flex flex-col gap-3">
@@ -1428,11 +1613,11 @@ function AudioInspector({
       </div>
       <div className="flex flex-col gap-2.5">
         {renderSectionContent(currentSection)}
+        <InspectorFooter onReset={handleResetSection} onCopy={handleCopySection} onPaste={handlePasteSection} />
       </div>
     </div>
   );
 }
-
 const imageSections = [
   { id: "transform", label: "Transform", icon: "open_with" },
   { id: "crop", label: "Crop", icon: "crop" },
@@ -1694,6 +1879,7 @@ function ImageOverlayInspector({
   );
 }
 
+
 const textSections = [
   { id: "font", label: "Font", icon: "font_download" },
   { id: "style", label: "Style", icon: "style" },
@@ -1719,6 +1905,16 @@ function TextInspector({
   
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "font" : "");
+  const handleResetSection = () => {
+    const operation = resetSectionAttributes(item, currentSection);
+    if (operation) dispatch(operation);
+  };
+  const handleCopySection = () => copySectionAttributes(item, currentSection);
+  const handlePasteSection = () => {
+    const operation = pasteSectionAttributes(item);
+    if (operation) dispatch(operation);
+  };
+  const transform = resolveItemTransform(item);
 
   const renderSectionContent = (sectionId: string) => {
     switch (sectionId) {
@@ -1996,6 +2192,7 @@ function TextInspector({
         </div>
         <div className="flex flex-col gap-2.5">
           {renderSectionContent(currentSection)}
+          <InspectorFooter onReset={handleResetSection} onCopy={handleCopySection} onPaste={handlePasteSection} />
         </div>
       </div>
     </div>
@@ -2374,7 +2571,7 @@ function NumberField({
   );
 }
 
-function TextField({ label, value, type = "text", disabled = false, multiline = false, onCommit }: TextFieldProps) {
+function TextField({ label, value, type = "text", disabled = false, multiline = false, allowEmpty = false, onCommit }: TextFieldProps) {
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
@@ -2389,7 +2586,7 @@ function TextField({ label, value, type = "text", disabled = false, multiline = 
   function commit(nextValue = draft) {
     setIsFocused(false);
     if (disabled) return;
-    if (!nextValue.trim() && type !== "color") {
+    if (!allowEmpty && !nextValue.trim() && type !== "color") {
       setError("Required.");
       return;
     }
@@ -2523,6 +2720,33 @@ function ToggleField({
   );
 }
 
+function InspectorFooter({ onReset, onCopy, onPaste }: { onReset: () => void; onCopy: () => void; onPaste: () => void }) {
+  return (
+    <div className="mt-1 grid grid-cols-3 gap-1.5 border-t border-outline-variant/40 pt-2">
+      <button
+        type="button"
+        onClick={onReset}
+        className="h-7 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        onClick={onCopy}
+        className="h-7 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+      >
+        Copy
+      </button>
+      <button
+        type="button"
+        onClick={onPaste}
+        className="h-7 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+      >
+        Paste
+      </button>
+    </div>
+  );
+}
 function useInspectorDispatch() {
   const dispatch = useAppDispatch();
   return (operation: VideoOperation | ReturnType<typeof createVideoOperationBatch>) => {
