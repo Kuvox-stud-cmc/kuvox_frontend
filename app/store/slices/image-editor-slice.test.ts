@@ -7,6 +7,7 @@ import {
   imageBackendSyncSucceeded,
   imageDocumentOperationApplied,
   imageEditorReducer,
+  imageLayerSelected,
   imageProjectOpened,
   imageRedoRequested,
   imageServerVersionLoaded,
@@ -142,5 +143,116 @@ describe("image editor reducer", () => {
     state = imageEditorReducer(state, imageRedoRequested());
     expect(state.document.layers).toHaveLength(1);
     expect(state.document.layers[0].id).toBe(layer.id);
+  });
+
+  it("supports layer selection and list operations", () => {
+    let state = imageEditorReducer(
+      undefined,
+      imageProjectOpened({ projectId: "project-1", projectName: "Project" }),
+    );
+    const first = createCenteredTextLayer(state.document.canvas, "First");
+    const second = { ...createCenteredTextLayer(state.document.canvas, "Second"), id: "second-layer" };
+
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({ type: "add-layer", layer: first, label: "Add first" })),
+    );
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({ type: "add-layer", layer: second, label: "Add second" })),
+    );
+    state = imageEditorReducer(state, imageLayerSelected(first.id));
+    expect(state.document.selectedLayerId).toBe(first.id);
+
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({
+        type: "update-layer-style",
+        layerId: first.id,
+        patch: { name: "Hero title", visible: false, locked: true },
+        label: "Update layer flags",
+      })),
+    );
+    expect(state.document.layers[0]).toMatchObject({ name: "Hero title", visible: false, locked: true });
+
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({
+        type: "reorder-layer",
+        layerId: second.id,
+        direction: "down",
+        label: "Move layer down",
+      })),
+    );
+    expect(state.document.layers.map((layer) => layer.id)).toEqual([second.id, first.id]);
+
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({
+        type: "duplicate-layer",
+        layerId: second.id,
+        newLayerId: "second-copy",
+        label: "Duplicate layer",
+      })),
+    );
+    expect(state.document.layers.map((layer) => layer.id)).toContain("second-copy");
+    expect(state.document.selectedLayerId).toBe("second-copy");
+
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({
+        type: "delete-layer",
+        layerId: "second-copy",
+        label: "Delete layer",
+      })),
+    );
+    expect(state.document.layers.map((layer) => layer.id)).not.toContain("second-copy");
+  });
+
+  it("supports transform, text, fill color, and opacity edits", () => {
+    let state = imageEditorReducer(
+      undefined,
+      imageProjectOpened({ projectId: "project-1", projectName: "Project" }),
+    );
+    const layer = createCenteredTextLayer(state.document.canvas, "Original");
+
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({ type: "add-layer", layer, label: "Add text" })),
+    );
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({
+        type: "update-layer-transform",
+        layerId: layer.id,
+        transform: { x: 12, y: 34, width: 456, height: 123, rotation: 17 },
+        label: "Transform layer",
+      })),
+    );
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({
+        type: "update-text-content",
+        layerId: layer.id,
+        text: "Edited copy",
+        label: "Edit text",
+      })),
+    );
+    state = imageEditorReducer(
+      state,
+      imageDocumentOperationApplied(createImageOperation({
+        type: "update-layer-style",
+        layerId: layer.id,
+        patch: { fill: "#ff00aa", opacity: 0.42 },
+        label: "Style layer",
+      })),
+    );
+
+    expect(state.document.layers[0]).toMatchObject({
+      type: "text",
+      text: "Edited copy",
+      fill: "#ff00aa",
+      transform: { x: 12, y: 34, width: 456, height: 123, rotation: 17, opacity: 0.42 },
+    });
   });
 });

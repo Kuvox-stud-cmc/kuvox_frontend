@@ -18,7 +18,7 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireUser(request);
+  const user = await requireUser(request);
   const projectId = params.projectId;
   if (!projectId) {
     throw redirect("/dashboard/projects");
@@ -42,6 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return {
       projectId,
       project,
+      user,
       imageComposition: normalizeImageCompositionPayload(composition),
       imageMedia: media.filter((item) => item.kind === MediaKind.Image),
       mediaError: null,
@@ -50,6 +51,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return {
       projectId,
       project,
+      user,
       imageComposition: normalizeImageCompositionPayload(composition),
       imageMedia: [],
       mediaError:
@@ -81,6 +83,7 @@ export default function ImageEditorRoute({ loaderData }: Route.ComponentProps) {
         backendComposition={loaderData.imageComposition}
         imageMedia={loaderData.imageMedia}
         mediaError={loaderData.mediaError}
+        user={loaderData.user}
       />
     </Provider>
   );
