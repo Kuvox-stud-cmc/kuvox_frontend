@@ -940,7 +940,35 @@ function applyAddItem(
   operation: AddMediaToTimelineOperation | AddAudioItemOperation | AddTextItemOperation,
 ): OperationApplication {
   const item = normalizeTimelineItemForWrite(cloneJson(operation.item));
-  const tracks = document.tracks.map((track) =>
+  let tracks = document.tracks;
+
+  // Auto-create a dedicated overlay track when it doesn't exist yet.
+  const targetTrackExists = tracks.some((track) => track.id === operation.trackId);
+  const isOverlayItem =
+    operation.type === "addMediaToTimeline" &&
+    item.type === "overlay";
+
+  if (!targetTrackExists && isOverlayItem) {
+    const overlayCount = tracks.filter((track) => track.kind === "overlay").length;
+    const newTrack: VideoTrack = {
+      id: operation.trackId,
+      kind: "overlay",
+      label: `O${overlayCount + 1}`,
+      locked: false,
+      hidden: false,
+      muted: false,
+      items: [],
+    };
+    // Insert before audio and text tracks to maintain visual stacking order.
+    const insertIndex = tracks.findIndex((track) => track.kind === "audio" || track.kind === "text");
+    if (insertIndex >= 0) {
+      tracks = [...tracks.slice(0, insertIndex), newTrack, ...tracks.slice(insertIndex)];
+    } else {
+      tracks = [...tracks, newTrack];
+    }
+  }
+
+  tracks = tracks.map((track) =>
     track.id === operation.trackId ? { ...track, items: [...track.items, item] } : track,
   );
   const inverseOperations: VideoOperation[] = [createDeleteInverse(operation, [item.id])];
@@ -1076,10 +1104,18 @@ function applySplitItem(document: VideoProjectDocument, operation: SplitItemOper
 
 function applyDeleteItem(document: VideoProjectDocument, operation: DeleteItemOperation): OperationApplication {
   const itemIds = new Set(operation.itemIds);
-  const tracks = document.tracks.map((track) => ({
+  const tracksAfterDelete = document.tracks.map((track) => ({
     ...track,
     items: track.items.filter((item) => !itemIds.has(item.id)),
   }));
+
+  // Clean up empty dedicated overlay tracks (those auto-created per element).
+  // Keep the default "o1" overlay track even when empty.
+  const tracks = tracksAfterDelete.filter((track) => {
+    if (track.kind !== "overlay") return true;
+    if (track.id === "o1") return true;
+    return track.items.length > 0;
+  });
 
   return {
     document: removeTargetedEntries({ ...document, tracks }, itemIds),
@@ -1314,10 +1350,17 @@ function validateAddItem(
   warnings: string[],
 ): void {
   const targetTrack = findTrack(document, trackId);
-  validateTargetTrack(document, targetTrack, trackId, item, errors, warnings);
 
-  if (targetTrack) {
-    validateTrackWritable(targetTrack, errors);
+  // For overlay items targeting a not-yet-existing track, skip track
+  // validation — the track will be auto-created during application.
+  const isAutoCreatedOverlayTrack =
+    !targetTrack && item.type === "overlay";
+
+  if (!isAutoCreatedOverlayTrack) {
+    validateTargetTrack(document, targetTrack, trackId, item, errors, warnings);
+    if (targetTrack) {
+      validateTrackWritable(targetTrack, errors);
+    }
   }
 
   if (findItem(document, item.id)) {
@@ -1341,11 +1384,32 @@ function validateAddItem(
     errors.push("Item must reference media.");
   }
 
+  // Build potential document including the auto-created track for validation.
+  let potentialTracks = document.tracks;
+  if (isAutoCreatedOverlayTrack) {
+    const overlayCount = potentialTracks.filter((track) => track.kind === "overlay").length;
+    const newTrack: VideoTrack = {
+      id: trackId,
+      kind: "overlay",
+      label: `O${overlayCount + 1}`,
+      locked: false,
+      hidden: false,
+      muted: false,
+      items: [],
+    };
+    const insertIndex = potentialTracks.findIndex((track) => track.kind === "audio" || track.kind === "text");
+    if (insertIndex >= 0) {
+      potentialTracks = [...potentialTracks.slice(0, insertIndex), newTrack, ...potentialTracks.slice(insertIndex)];
+    } else {
+      potentialTracks = [...potentialTracks, newTrack];
+    }
+  }
+
   validatePotentialDocument(
     document,
     {
       ...document,
-      tracks: document.tracks.map((track) =>
+      tracks: potentialTracks.map((track) =>
         track.id === trackId ? { ...track, items: [...track.items, item] } : track,
       ),
     },

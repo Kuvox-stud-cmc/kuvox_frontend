@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Outlet } from "react-router";
 
+import { DashboardGuidedTour } from "~/components/dashboard/dashboard-guided-tour";
 import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
 import { HeaderBar, type HeaderNotifications } from "~/routes/dashboard/header-bar";
@@ -244,6 +245,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
         {/* New Project CTA */}
         <button
           type="button"
+          data-tour="dashboard-new-project"
           onClick={() => {
             setCreateOpen(true);
             if (isMobile) setMobileOpen(false);
@@ -334,6 +336,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
+      <DashboardGuidedTour userId={user.id} />
       <CreateProjectModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
@@ -343,6 +346,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
       {!isMobile && (
         <aside
           ref={sidebarRef}
+          data-tour="dashboard-sidebar"
           className={`relative hidden md:flex flex-shrink-0 flex-col bg-surface-container-lowest ${
             isDragging ? "" : "transition-[width] duration-300 ease-in-out"
           }`}
@@ -375,7 +379,10 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
             aria-label="Close navigation"
           />
           {/* Drawer */}
-          <aside className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-surface-container-lowest shadow-2xl animate-slide-in-left">
+          <aside
+            data-tour="dashboard-sidebar"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-surface-container-lowest shadow-2xl animate-slide-in-left"
+          >
             {sidebarContent}
           </aside>
         </>

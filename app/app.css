@@ -392,6 +392,21 @@ body {
   animation: slide-in-left 0.25s ease-out both;
 }
 
+@keyframes tour-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-tour-pop {
+  animation: tour-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @keyframes reveal-truncated-text {
   0%,
   15% {
@@ -430,6 +445,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .animate-tour-pop {
+    animation: none;
+  }
+
   .truncated-reveal:hover > span,
   .group:hover .truncated-reveal > span,
   .truncated-reveal:focus-visible > span {

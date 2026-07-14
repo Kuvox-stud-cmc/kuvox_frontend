@@ -39,7 +39,7 @@ import {
   queueVideoEditorPerformanceMetric,
 } from "~/lib/editor/video-performance.client";
 import { createEditorCorrelationId, logVideoEditorEvent } from "~/lib/editor/editor-observability.client";
-import type { VideoCrop, VideoProjectDocument, VideoProjectSettings, VideoTextStyle, VideoTransform, VideoTransition } from "~/lib/editor/video-document";
+import type { VideoCrop, VideoMediaReference, VideoProjectDocument, VideoProjectSettings, VideoTextStyle, VideoTimelineItem, VideoTransform, VideoTransition } from "~/lib/editor/video-document";
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   currentTimeChanged,
@@ -89,6 +89,7 @@ type ResizeCorner = VisualResizeCorner;
 type TextTransformPreview = Record<string, VideoTransform>;
 type VisualTransformPreview = Record<string, VideoTransform>;
 type VisualCropPreview = Record<string, { crop: VideoCrop; transform: VideoTransform }>;
+type ResolvedMediaDimensions = { mediaWidth?: number; mediaHeight?: number };
 type HTMLVideoElementWithFrameCallback = HTMLVideoElement & {
   requestVideoFrameCallback: (callback: () => void) => number;
   cancelVideoFrameCallback?: (handle: number) => void;
@@ -116,6 +117,7 @@ type VisualGesture = {
   startPointer: { x: number; y: number };
   documentTransform: VideoTransform;
   renderedTransform: VideoTransform;
+  latestDocumentTransform: VideoTransform;
   mediaWidth?: number;
   mediaHeight?: number;
   corner?: ResizeCorner;
@@ -141,6 +143,13 @@ const defaultStageSize: StageSize = { width: 960, height: 540 };
 const mediaClockEndEpsilon = 0.01;
 const visualMoveDragThreshold = 5;
 const decodedImageCache = new Map<string, HTMLImageElement>();
+
+/** Items that support transform gestures (move, resize, rotate) in the preview. */
+function isVisualTimelineItem(
+  item: VideoTimelineItem,
+): item is Extract<VideoTimelineItem, { transform: VideoTransform }> {
+  return item.type === "video" || item.type === "image" || item.type === "overlay";
+}
 
 function findActiveTransition(document: VideoProjectDocument, currentTime: number): VideoTransition | null {
   for (const transition of document.transitions) {
@@ -427,7 +436,10 @@ export function PreviewPanel({
   }, [dispatch]);
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest">
+    <main
+      data-tour="preview-panel"
+      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest"
+    >
       <video ref={videoRefA} data-preview-video-slot="a" className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
       <video ref={videoRefB} data-preview-video-slot="b" className="pointer-events-none absolute h-px w-px opacity-0" playsInline preload="auto" />
       {activeAudio.map((audioPlan) => (
@@ -867,19 +879,25 @@ function ProgramMonitorStage({
   }, [cancelVisualGesture, selectToolActive, selectedItemIds]);
 
   useEffect(() => {
-    const cancelPendingVisualClick = (event: PointerEvent) => {
+    const cancelPendingVisualClick = (event: PointerEvent | MouseEvent) => {
       const gesture = visualGestureRef.current;
-      if (!gesture || gesture.activated || event.pointerId !== gesture.pointerId) return;
+      const eventPointerId = "pointerId" in event && typeof event.pointerId === "number" ? event.pointerId : undefined;
+      if (!gesture || gesture.activated) return;
+      if (eventPointerId !== undefined && eventPointerId !== gesture.pointerId) return;
       cancelVisualGesture();
     };
     const cancelVisualOnBlur = () => cancelVisualGesture();
 
     window.addEventListener("pointerup", cancelPendingVisualClick, true);
     window.addEventListener("pointercancel", cancelPendingVisualClick, true);
+    window.addEventListener("mouseup", cancelPendingVisualClick, true);
+    window.addEventListener("click", cancelPendingVisualClick, true);
     window.addEventListener("blur", cancelVisualOnBlur);
     return () => {
       window.removeEventListener("pointerup", cancelPendingVisualClick, true);
       window.removeEventListener("pointercancel", cancelPendingVisualClick, true);
+      window.removeEventListener("mouseup", cancelPendingVisualClick, true);
+      window.removeEventListener("click", cancelPendingVisualClick, true);
       window.removeEventListener("blur", cancelVisualOnBlur);
     };
   }, [cancelVisualGesture]);
@@ -898,6 +916,7 @@ function ProgramMonitorStage({
     kind: VisualGesture["kind"] = "move",
     corner?: ResizeCorner,
     handlePlacement?: InteractiveHandlePlacement,
+    mediaDimensions?: ResolvedMediaDimensions,
   ) => {
     if (!selectToolActive || event.evt.isPrimary === false) return;
     if (event.evt.pointerType === "mouse" && event.evt.button !== 0) return;
@@ -910,7 +929,7 @@ function ProgramMonitorStage({
     if (!track || track.locked || track.hidden) return;
 
     const documentItem = track.items.find((item) => item.id === visual.item.id);
-    if (!documentItem || (documentItem.type !== "video" && documentItem.type !== "image")) return;
+    if (!documentItem || !isVisualTimelineItem(documentItem)) return;
     const pointer = event.target.getStage()?.getPointerPosition();
     if (!pointer) return;
 
@@ -937,8 +956,9 @@ function ProgramMonitorStage({
       startPointer: handlePlacement ? applyHandlePointerOffset(pointer, handlePlacement) : pointer,
       documentTransform: { ...documentItem.transform },
       renderedTransform: { ...visual.item.transform },
-      mediaWidth: visual.media.width,
-      mediaHeight: visual.media.height,
+      latestDocumentTransform: { ...documentItem.transform },
+      mediaWidth: mediaDimensions?.mediaWidth ?? visual.media.width,
+      mediaHeight: mediaDimensions?.mediaHeight ?? visual.media.height,
       corner,
       handlePlacement,
     };
@@ -956,12 +976,6 @@ function ProgramMonitorStage({
       );
       if (distance < visualMoveDragThreshold) return;
       gesture.activated = true;
-      try {
-        gesture.pointerContainer.setPointerCapture(gesture.pointerId);
-        gesture.pointerCaptured = true;
-      } catch {
-        // The drag can continue inside the preview even if capture is unavailable.
-      }
     }
     const next = transformsForVisualGesture({
       gesture,
@@ -971,6 +985,7 @@ function ProgramMonitorStage({
       settings,
       visualScalesLinked,
     });
+    gesture.latestDocumentTransform = next.document;
     setVisualPreview({
       [gesture.itemId]: next.rendered,
     });
@@ -991,7 +1006,11 @@ function ProgramMonitorStage({
       settings,
       visualScalesLinked,
     });
-    const nextTransform = roundVisualTransformForCommit(next.document);
+    const committedTransform =
+      gesture.kind === "move" && !sameTransform(gesture.latestDocumentTransform, gesture.documentTransform)
+        ? gesture.latestDocumentTransform
+        : next.document;
+    const nextTransform = roundVisualTransformForCommit(committedTransform);
     if (gesture.pointerCaptured) {
       try {
         gesture.pointerContainer.releasePointerCapture(gesture.pointerId);
@@ -1003,6 +1022,37 @@ function ProgramMonitorStage({
       onCommitVisualTransform(gesture.itemId, nextTransform);
     }
   }, [clearVisualPreview, frameBounds, onCommitVisualTransform, settings, visualScalesLinked]);
+
+  const commitLatestVisualGesture = useCallback((pointerId?: number) => {
+    const gesture = visualGestureRef.current;
+    if (!gesture || !gesture.activated) return;
+    if (pointerId !== undefined && pointerId !== gesture.pointerId) return;
+    visualGestureRef.current = null;
+    clearVisualPreview(gesture.itemId);
+    if (gesture.pointerCaptured) {
+      try {
+        gesture.pointerContainer.releasePointerCapture(gesture.pointerId);
+      } catch {
+        // The pointer may already be released by the browser.
+      }
+    }
+    const nextTransform = roundVisualTransformForCommit(gesture.latestDocumentTransform);
+    if (!sameTransform(nextTransform, gesture.documentTransform)) {
+      onCommitVisualTransform(gesture.itemId, nextTransform);
+    }
+  }, [clearVisualPreview, onCommitVisualTransform]);
+
+  useEffect(() => {
+    const commitActiveVisualOnWindowPointerUp = (event: PointerEvent) => {
+      const target = event.target;
+      const gesture = visualGestureRef.current;
+      if (gesture && target instanceof Node && gesture.pointerContainer.contains(target)) return;
+      commitLatestVisualGesture(typeof event.pointerId === "number" ? event.pointerId : undefined);
+    };
+
+    window.addEventListener("pointerup", commitActiveVisualOnWindowPointerUp, true);
+    return () => window.removeEventListener("pointerup", commitActiveVisualOnWindowPointerUp, true);
+  }, [commitLatestVisualGesture]);
 
   const handleCropGestureStart = useCallback((
     event: Konva.KonvaEventObject<PointerEvent>,
@@ -1127,7 +1177,7 @@ function ProgramMonitorStage({
     }
   }, [frameBounds, onCommitTextTransform, settings]);
 
-  const hasActiveVisual = Boolean(plan?.visuals.length);
+  const hasActiveVisual = Boolean(plan && (plan.visuals.length > 0 || plan.overlays.length > 0));
   const selectedVisual = useMemo(() => {
     if (selectedItemIds.length !== 1) return null;
     const selectedId = selectedItemIds[0];
@@ -1190,7 +1240,7 @@ function ProgramMonitorStage({
         cancelCropGesture();
       }}
     >
-      <Layer>
+      <Layer listening={false}>
         <Rect x={0} y={0} width={stageSize.width} height={stageSize.height} fill="#050505" />
         <Rect
           {...frameBounds}
@@ -1219,7 +1269,9 @@ function ProgramMonitorStage({
                 previewTransform={visualPreview[visual.item.id]}
                 cropPreview={cropPreview[visual.item.id]}
                 cropModeActive={cropModeActive && selectedVisual?.item.id === visual.item.id}
-                onGestureStart={handleVisualGestureStart}
+                onGestureStart={(event, visualItem, mediaDimensions) =>
+                  handleVisualGestureStart(event, visualItem, "move", undefined, undefined, mediaDimensions)
+                }
               />
             ))
           ) : (
@@ -1237,7 +1289,9 @@ function ProgramMonitorStage({
               visualPreviewTransform={visualPreview[overlay.item.id]}
               cropPreview={cropPreview[overlay.item.id]}
               cropModeActive={cropModeActive && selectedVisual?.item.id === overlay.item.id}
-              onVisualGestureStart={handleVisualGestureStart}
+              onVisualGestureStart={(event, visualItem, mediaDimensions) =>
+                handleVisualGestureStart(event, visualItem, "move", undefined, undefined, mediaDimensions)
+              }
               previewTransform={textPreview[overlay.item.id]}
               onTextGestureStart={handleTextGestureStart}
             />
@@ -1309,6 +1363,7 @@ function VisualNode({
   onGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+    mediaDimensions?: ResolvedMediaDimensions,
   ) => void;
 }) {
   const groupRef = useRef<Konva.Group>(null);
@@ -1364,18 +1419,19 @@ function VisualNode({
   });
   const transform = cropPreview?.transform ?? previewTransform ?? visual.item.transform;
   const crop = cropPreview?.crop ?? visual.item.crop;
+  const dimensions = mediaDimensionsForGeometry(visual.media, visual.objectUrl, image);
   const geometry = computeCenterOriginMediaGeometry({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
-    mediaWidth: visual.media.width,
-    mediaHeight: visual.media.height,
+    mediaWidth: dimensions.mediaWidth,
+    mediaHeight: dimensions.mediaHeight,
     transform,
     crop,
   });
   const sourceCrop = computeCroppedSourceGeometry(
-    visual.media.width ?? settings.width,
-    visual.media.height ?? settings.height,
+    dimensions.mediaWidth ?? settings.width,
+    dimensions.mediaHeight ?? settings.height,
     crop,
   );
   const densityX = sourceCrop.width > 0 ? geometry.width / sourceCrop.width : 0;
@@ -1388,7 +1444,7 @@ function VisualNode({
       ref={groupRef}
       name={`preview-visual-${visual.item.id}`}
       listening={interactive}
-      onPointerDown={(event) => onGestureStart(event, visual)}
+      onPointerDown={(event) => onGestureStart(event, visual, dimensions)}
     >
       <Group
         x={geometry.center.x}
@@ -1407,8 +1463,8 @@ function VisualNode({
                 image={sourceImage}
                 x={-geometry.width / 2 - sourceCrop.x * densityX}
                 y={-geometry.height / 2 - sourceCrop.y * densityY}
-                width={(visual.media.width ?? settings.width) * densityX}
-                height={(visual.media.height ?? settings.height) * densityY}
+                width={(dimensions.mediaWidth ?? settings.width) * densityX}
+                height={(dimensions.mediaHeight ?? settings.height) * densityY}
                 opacity={opacity * 0.3}
                 listening={false}
               />
@@ -1458,6 +1514,7 @@ function OverlayNode({
   onVisualGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+    mediaDimensions?: ResolvedMediaDimensions,
   ) => void;
   previewTransform?: VideoTransform;
   onTextGestureStart: (
@@ -1621,6 +1678,7 @@ function MediaOverlayNode({
   onGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
+    mediaDimensions?: ResolvedMediaDimensions,
   ) => void;
 }) {
   const image = useLoadedImage(overlay.objectUrl, () => {
@@ -1635,18 +1693,19 @@ function MediaOverlayNode({
   });
   const transform = cropPreview?.transform ?? previewTransform ?? overlay.item.transform;
   const crop = cropPreview?.crop ?? overlay.item.crop;
+  const dimensions = mediaDimensionsForGeometry(overlay.media, overlay.objectUrl, image);
   const geometry = computeCenterOriginMediaGeometry({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
-    mediaWidth: overlay.media.width,
-    mediaHeight: overlay.media.height,
+    mediaWidth: dimensions.mediaWidth,
+    mediaHeight: dimensions.mediaHeight,
     transform,
     crop,
   });
   const sourceCrop = computeCroppedSourceGeometry(
-    overlay.media.width ?? settings.width,
-    overlay.media.height ?? settings.height,
+    dimensions.mediaWidth ?? settings.width,
+    dimensions.mediaHeight ?? settings.height,
     crop,
   );
   const densityX = sourceCrop.width > 0 ? geometry.width / sourceCrop.width : 0;
@@ -1656,7 +1715,7 @@ function MediaOverlayNode({
     <Group
       name={`preview-visual-${overlay.item.id}`}
       listening={interactive}
-      onPointerDown={(event) => onGestureStart(event, overlay)}
+      onPointerDown={(event) => onGestureStart(event, overlay, dimensions)}
     >
       <Group
         x={geometry.center.x}
@@ -1675,8 +1734,8 @@ function MediaOverlayNode({
                 image={image}
                 x={-geometry.width / 2 - sourceCrop.x * densityX}
                 y={-geometry.height / 2 - sourceCrop.y * densityY}
-                width={(overlay.media.width ?? settings.width) * densityX}
-                height={(overlay.media.height ?? settings.height) * densityY}
+                width={(dimensions.mediaWidth ?? settings.width) * densityX}
+                height={(dimensions.mediaHeight ?? settings.height) * densityY}
                 opacity={overlay.item.opacity * 0.3}
                 listening={false}
               />
@@ -1719,15 +1778,18 @@ function VisualTransformOverlay({
     kind?: VisualGesture["kind"],
     corner?: ResizeCorner,
     placement?: InteractiveHandlePlacement,
+    mediaDimensions?: ResolvedMediaDimensions,
   ) => void;
 }) {
+  const image = useLoadedImage(visual.item.type === "video" ? null : visual.objectUrl);
   const transform = previewTransform ?? visual.item.transform;
+  const dimensions = mediaDimensionsForGeometry(visual.media, visual.objectUrl, image);
   const geometry = computeCenterOriginMediaGeometry({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
-    mediaWidth: visual.media.width,
-    mediaHeight: visual.media.height,
+    mediaWidth: dimensions.mediaWidth,
+    mediaHeight: dimensions.mediaHeight,
     transform,
     crop: visual.item.crop,
   });
@@ -1775,7 +1837,7 @@ function VisualTransformOverlay({
           stroke="#050505"
           strokeWidth={1}
           cornerRadius={2}
-          onPointerDown={(event) => onGestureStart(event, visual, "resize", corner, placement)}
+          onPointerDown={(event) => onGestureStart(event, visual, "resize", corner, placement, dimensions)}
         />
       ))}
       <Circle
@@ -1786,7 +1848,7 @@ function VisualTransformOverlay({
         fill="#c0c1ff"
         stroke="#050505"
         strokeWidth={1}
-        onPointerDown={(event) => onGestureStart(event, visual, "rotate", undefined, rotationPlacement)}
+        onPointerDown={(event) => onGestureStart(event, visual, "rotate", undefined, rotationPlacement, dimensions)}
       />
     </Group>
   );
@@ -1813,14 +1875,16 @@ function VisualCropOverlay({
     placement?: InteractiveHandlePlacement,
   ) => void;
 }) {
+  const image = useLoadedImage(visual.item.type === "video" ? null : visual.objectUrl);
+  const dimensions = mediaDimensionsForGeometry(visual.media, visual.objectUrl, image);
   const crop = preview?.crop ?? visual.item.crop;
   const transform = preview?.transform ?? visual.item.transform;
   const geometry = computeCenterOriginMediaGeometry({
     frameBounds,
     frameWidth: settings.width,
     frameHeight: settings.height,
-    mediaWidth: visual.media.width,
-    mediaHeight: visual.media.height,
+    mediaWidth: dimensions.mediaWidth,
+    mediaHeight: dimensions.mediaHeight,
     transform,
     crop,
   });
@@ -1896,7 +1960,7 @@ function EmptyFrame({ frameBounds }: { frameBounds: PreviewRect }) {
   const calculatedFontSize = Math.floor(frameBounds.height * 0.10);
   return (
     <>
-      <Rect {...frameBounds} fillLinearGradientStartPoint={{ x: frameBounds.x, y: frameBounds.y }} fillLinearGradientEndPoint={{ x: frameBounds.x + frameBounds.width, y: frameBounds.y + frameBounds.height }} fillLinearGradientColorStops={[0, "#111111", 0.55, "#1b2426", 1, "#191919"]} />
+      <Rect {...frameBounds} fillLinearGradientStartPoint={{ x: frameBounds.x, y: frameBounds.y }} fillLinearGradientEndPoint={{ x: frameBounds.x + frameBounds.width, y: frameBounds.y + frameBounds.height }} fillLinearGradientColorStops={[0, "#111111", 0.55, "#1b2426", 1, "#191919"]} listening={false} />
       <Text
         text="No active visual"
         x={frameBounds.x}
@@ -1907,6 +1971,7 @@ function EmptyFrame({ frameBounds }: { frameBounds: PreviewRect }) {
         fontFamily="Roboto"
         fontSize={calculatedFontSize}
         fontStyle="bold"
+        listening={false}
       />
     </>
   );
@@ -2875,6 +2940,35 @@ function useLoadedImage(url: string | null, onError?: () => void): HTMLImageElem
   }, [url]);
 
   return image;
+}
+
+function mediaDimensionsForGeometry(
+  media: VideoMediaReference,
+  objectUrl: string | null,
+  image: HTMLImageElement | null,
+): ResolvedMediaDimensions {
+  const decodedWidth = positiveImageDimension(image?.naturalWidth || image?.width);
+  const decodedHeight = positiveImageDimension(image?.naturalHeight || image?.height);
+  const metadataWidth = positiveImageDimension(media.width);
+  const metadataHeight = positiveImageDimension(media.height);
+
+  if (isDirectSvgPreviewUrl(objectUrl) && decodedWidth && decodedHeight) {
+    return { mediaWidth: decodedWidth, mediaHeight: decodedHeight };
+  }
+
+  return {
+    mediaWidth: metadataWidth ?? decodedWidth,
+    mediaHeight: metadataHeight ?? decodedHeight,
+  };
+}
+
+function positiveImageDimension(value: number | undefined): number | undefined {
+  return value && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function isDirectSvgPreviewUrl(url: string | null): boolean {
+  if (!url) return false;
+  return /^data:image\/svg\+xml/i.test(url) || /^https:\/\/api\.iconify\.design\//i.test(url);
 }
 
 function logMediaObjectFailure(

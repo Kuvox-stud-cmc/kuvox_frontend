@@ -49,6 +49,7 @@ export function HeaderBar({
         {onMenuToggle && (
           <button
             type="button"
+            data-tour="dashboard-mobile-menu"
             onClick={onMenuToggle}
             className={`${headerActionButton} md:hidden`}
             aria-label="Open navigation menu"
@@ -58,7 +59,9 @@ export function HeaderBar({
         )}
 
         {/* ── Search Dropdown ─────────────────────────────────────────────── */}
-        <SearchDropdown />
+        <div data-tour="dashboard-search" className="min-w-0 flex-1">
+          <SearchDropdown />
+        </div>
       </div>
 
       {/* ── Action icons + profile ──────────────────────────────────────── */}
