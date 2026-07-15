@@ -327,7 +327,7 @@ export const RoomContent = forwardRef<RoomContentHandle, RoomContentProps>(
           >
             {room.id === "lobby" && (
               <>
-                <a href="#" className="btn-primary">
+                <a href="/signup" className="btn-primary">
                   Start Free
                 </a>
                 <a href="#" className="btn-secondary">
