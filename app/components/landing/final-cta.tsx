@@ -59,13 +59,13 @@ export function FinalCTA() {
           className={`${isVisible ? "animate-fade-rise-delay-2" : "final-cta-before-enter"} mt-12 flex flex-col justify-center gap-4 sm:flex-row`}
         >
           <a
-            href="#"
+            href="/signup"
             className="liquid-glass final-glass-button px-14 py-5 text-base font-medium text-white"
           >
             Start Free
           </a>
           <a
-            href="#"
+            href="/about"
             className="liquid-glass final-glass-button final-glass-button-muted px-14 py-5 text-base font-medium text-white/80"
           >
             Learn More
