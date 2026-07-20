@@ -44,10 +44,23 @@ Output lands in `build/` (client + server bundles).
 Configuration is loaded from environment variables (or a `.env` file in
 development). Key variables:
 
-| Variable       | Description                         | Default                  |
-| -------------- | ----------------------------------- | ------------------------ |
-| `VITE_API_URL` | Base URL of the ASP.NET backend     | `http://localhost:5000`  |
-| `VITE_WS_URL`  | WebSocket URL for real-time updates | `ws://localhost:5000/ws` |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `VITE_API_URL` | Base URL of the ASP.NET backend | `http://localhost:5280` |
+| `VITE_AI_SERVICE_URL` | Base URL of the AI service | `http://localhost:8000` |
+| `SESSION_SECRET` | Signs the HTTP-only BFF session cookie | development-only value |
+| `KUVOX_BFF_COALESCING_ENABLED` | Enable bounded process-local duplicate-read coalescing | `false` |
+| `KUVOX_BFF_COALESCING_RESOURCES` | Allowlisted coalescing resource classes | `auth_me,studio_memberships,retrieval_project_media` |
+| `KUVOX_BFF_COALESCING_MAX_IN_FLIGHT` | Maximum shared in-flight entries per process | `256` |
+| `KUVOX_BFF_COALESCING_DEADLINE_MS` | Hard deadline for shared upstream work | `5000` |
+| `KUVOX_BFF_METRICS_ENABLED` | Expose the private frontend `/metrics` endpoint | `false` |
+| `WIDGET_TOKEN` | Browser-visible `widget:chat` token used only by the floating widget; restrict it with Widget Allowed origins | none |
+| `CACANODE_API_URL` | CacaNode API base used by server-side Contact Support | none |
+| `CACANODE_API_TOKEN` | Server-only `api:chat` token for Contact Support chat and ticket submission | none |
+
+Coalescing stores only active promises and never stores completed responses. The
+registry and low-cardinality metrics are process-local; replicas do not depend on
+each other for correctness. Roll back by setting `KUVOX_BFF_COALESCING_ENABLED=false`.
 
 ## Media Processing
 

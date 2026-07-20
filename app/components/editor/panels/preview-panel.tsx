@@ -275,7 +275,13 @@ export function PreviewPanel({
   const activeVisualVideoObjectUrls = plan?.visuals.flatMap((visual) =>
     visual.item.type === "video" && visual.objectUrl ? [visual.objectUrl] : []
   ) ?? [];
-  const primaryClockAudio = activeVideo ? null : activeAudio[0] ?? null;
+  const hasVisibleTimelineVideo = document?.tracks.some((track) =>
+    !track.hidden && track.items.some((item) => item.type === "video")
+  ) ?? false;
+  // In a video project, keep empty gaps on the monotonic window clock. Promoting an
+  // already-playing audio element can rewind the playhead by its normal A/V drift and
+  // reactivate the clip that just ended. Audio remains the clock for audio-only projects.
+  const primaryClockAudio = activeVideo || hasVisibleTimelineVideo ? null : activeAudio[0] ?? null;
   const mediaClockActive = Boolean(activeVideo || primaryClockAudio);
   const stageSize = useMemo(
     () => fitStageToArea(previewAreaSize, document?.settings),
@@ -353,6 +359,7 @@ export function PreviewPanel({
     onTimeChange: (time) => dispatch(playbackClockTimeChanged(time)),
     onEnd: () => dispatch(playbackPaused()),
     onError: (message) => {
+      if (!activeVideo) return;
       logMediaObjectFailure(document?.projectId, activeVideo?.media.id, activeVideo?.item.id, activeVideo?.objectVariant, "video", message);
       setMediaErrors((errors) => ({ ...errors, video: message }));
       dispatch(playbackPaused());
@@ -1296,7 +1303,11 @@ function ProgramMonitorStage({
                 clockVideo={visual.item.id === activeVideoId}
                 videoElement={visual.item.id === activeVideoId
                   ? activeVideoElement
-                  : videoElementForSource(videoElements, visual.item.type === "video" ? visual.objectUrl : null)}
+                  : videoElementForSource(
+                    videoElements,
+                    visual.item.type === "video" ? visual.objectUrl : null,
+                    activeVideoElement,
+                  )}
                 playing={playing}
                 frameBounds={frameBounds}
                 settings={settings}
@@ -2194,10 +2205,13 @@ function videoRefForSource(
 function videoElementForSource(
   elements: Array<HTMLVideoElement | null>,
   objectUrl: string | null,
+  excludedElement?: HTMLVideoElement | null,
 ): HTMLVideoElement | null {
   if (!objectUrl || typeof window === "undefined") return null;
   const resolvedUrl = new URL(objectUrl, window.location.href).href;
-  return elements.find((element) => element?.src === resolvedUrl) ?? null;
+  return elements.find((element) =>
+    element !== excludedElement && element?.src === resolvedUrl
+  ) ?? null;
 }
 
 function useLayerVideoElement({
@@ -2510,8 +2524,12 @@ function useVideoElementSync({
 
     if (!objectUrl) {
       video.pause();
-      video.removeAttribute("src");
-      video.load();
+      if (!playing) {
+        video.removeAttribute("src");
+        video.load();
+      }
+      // While playback is active, keep the decoded source attached as the playhead crosses
+      // a timeline gap. Unloading can emit a late media error that pauses project playback.
       lastSourceKeyRef.current = null;
       pendingSeekSourceTimeRef.current = null;
       return;
@@ -2532,7 +2550,7 @@ function useVideoElementSync({
       requestClockSeek(video, sourceTimeRef.current, pendingSeekSourceTimeRef.current !== null);
     }
     lastSourceKeyRef.current = sourceKey;
-  }, [itemId, muted, objectUrl, ref, speed, volume]);
+  }, [itemId, muted, objectUrl, playing, ref, speed, volume]);
 
   useEffect(() => {
     const video = ref.current;
@@ -2644,7 +2662,6 @@ function useVideoElementSync({
     }
 
     let frameId = 0;
-    let videoFrameId = 0;
     const video = ref.current;
     if (!video) {
       return undefined;
@@ -2686,27 +2703,9 @@ function useVideoElementSync({
       }
     };
 
-    if ("requestVideoFrameCallback" in video) {
-      const requestVideoFrameCallback = (video as HTMLVideoElementWithFrameCallback).requestVideoFrameCallback.bind(video);
-      const cancelVideoFrameCallback = (video as HTMLVideoElementWithFrameCallback).cancelVideoFrameCallback?.bind(video);
-      let cancelled = false;
-      const onFrame = () => {
-        if (cancelled) {
-          return;
-        }
-        if (publish()) {
-          videoFrameId = requestVideoFrameCallback(onFrame);
-        }
-      };
-      videoFrameId = requestVideoFrameCallback(onFrame);
-      return () => {
-        cancelled = true;
-        if (cancelVideoFrameCallback) {
-          cancelVideoFrameCallback(videoFrameId);
-        }
-      };
-    }
-
+    // Drive timeline progression from the window clock even when the browser exposes
+    // requestVideoFrameCallback. Hidden media elements can stop producing video-frame
+    // callbacks at edit boundaries, which would otherwise strand playback before a gap.
     frameId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frameId);
   }, [item, objectUrl, playing, ref, timelineDuration]);

@@ -4,9 +4,13 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import tls from "node:tls";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createCookieSessionStorage } from "react-router";
+import {
+  coalesceJsonRequest,
+  renderCoalescingMetrics,
+} from "./coalescing.mjs";
 
 loadLocalEnv();
 
@@ -43,6 +47,28 @@ export function installProxyHandlers(appOrServer, maybeServer) {
   const app = maybeServer ? appOrServer : appOrServer.middlewares;
   const server = maybeServer || appOrServer.httpServer;
 
+  app.use("/metrics", (req, res, next) => {
+    if (incomingPathname(req, "/metrics") !== "/metrics") {
+      next();
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    if (!metricsEnabled()) {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.setHeader("Allow", "GET");
+      res.statusCode = 405;
+      res.end();
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    res.end(renderCoalescingMetrics());
+  });
+
   app.use("/bff/media/upload", async (req, res) => {
     await proxyHttp(req, res, "/api/media");
   });
@@ -50,9 +76,10 @@ export function installProxyHandlers(appOrServer, maybeServer) {
   app.use("/bff/projects", async (req, res, next) => {
     const pathname = incomingPathname(req, "/bff/projects");
     const imageCompositionRoute = parseProjectImageCompositionRoute(pathname);
+    const editorBootstrapRoute = parseProjectEditorBootstrapRoute(pathname);
     const projectMediaRoute = parseProjectMediaRoute(pathname);
     const videoTimelineRoute = parseProjectVideoTimelineRoute(pathname);
-    const route = imageCompositionRoute ?? projectMediaRoute ?? videoTimelineRoute;
+    const route = editorBootstrapRoute ?? imageCompositionRoute ?? projectMediaRoute ?? videoTimelineRoute;
     if (!route) {
       next();
       return;
@@ -70,18 +97,36 @@ export function installProxyHandlers(appOrServer, maybeServer) {
   app.use("/bff/media", async (req, res, next) => {
     const pathname = incomingPathname(req, "/bff/media");
     const objectRoute = parseMediaObjectRoute(pathname);
-    if (!objectRoute) {
+    const libraryRoute = parseMediaLibraryRoute(pathname);
+    const route = objectRoute ?? libraryRoute;
+    if (!route) {
       next();
       return;
     }
 
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      res.setHeader("Allow", "GET, HEAD");
+    if (!route.methods.includes(req.method)) {
+      res.setHeader("Allow", route.methods.join(", "));
       sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
       return;
     }
 
-    await proxyHttp(req, res, objectRoute.targetPath);
+    await proxyHttp(req, res, route.targetPath);
+  });
+
+  app.use("/bff/albums", async (req, res, next) => {
+    const route = parseAlbumPickerRoute(incomingPathname(req, "/bff/albums"));
+    if (!route) {
+      next();
+      return;
+    }
+
+    if (!route.methods.includes(req.method)) {
+      res.setHeader("Allow", route.methods.join(", "));
+      sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
+      return;
+    }
+
+    await proxyHttp(req, res, route.targetPath);
   });
 
   app.use("/bff/timelines", async (req, res, next) => {
@@ -108,6 +153,17 @@ export function installProxyHandlers(appOrServer, maybeServer) {
     const pathname = incomingPathname(req, "/bff/ai");
     const retrievalRoute = parseAiRetrievalRoute(pathname);
     if (retrievalRoute) {
+      if (!mediaRetrievalEnabled()) {
+        sendJson(
+          res,
+          503,
+          { error: "Media retrieval is disabled." },
+          undefined,
+          proxyCorrelation(req),
+        );
+        return;
+      }
+
       if (req.method !== "POST") {
         res.setHeader("Allow", "POST");
         sendJson(res, 405, { error: "Method not allowed." }, undefined, proxyCorrelation(req));
@@ -280,20 +336,20 @@ async function handleAiVideoEditorRetrieval(req, res) {
   }
 
   try {
-    const projectMedia = await fetchJsonFromApi(
-      `/api/projects/${encodeURIComponent(projectId)}/media?pageSize=500`,
+    const caller = requestAbortController(req, res);
+    const projectMedia = await fetchAllProjectMediaForRetrieval(
+      projectId,
       auth.token,
       correlation,
+      caller.signal,
+    ).finally(caller.cleanup);
+    const trustedRequest = buildTrustedVideoRetrievalRequest(body, projectMedia);
+    const mediaIds = trustedRequest.mediaIds;
+    const aiResponse = await fetchJsonFromAiService(
+      "/retrieval/video-editor",
+      trustedRequest,
+      correlation,
     );
-    const mediaIds = trustedVideoMediaIds(projectMedia);
-    const aiResponse = await fetchJsonFromAiService("/retrieval/video-editor", {
-      projectId,
-      mediaIds,
-      query,
-      modalities: normalizeModalities(body?.modalities),
-      topK: normalizeTopK(body?.topK),
-      expandGraph: body?.expandGraph !== false,
-    }, correlation);
 
     logProxyEvent("info", {
       event: "bff.ai.retrieval",
@@ -303,7 +359,6 @@ async function handleAiVideoEditorRetrieval(req, res) {
       durationMs: Math.round(performance.now() - start),
       requestId: correlation.requestId,
       editorCorrelationId: correlation.editorCorrelationId,
-      projectId,
       mediaCount: mediaIds.length,
       topK: normalizeTopK(body?.topK),
       modalities: normalizeModalities(body?.modalities),
@@ -319,14 +374,38 @@ async function handleAiVideoEditorRetrieval(req, res) {
       durationMs: Math.round(performance.now() - start),
       requestId: correlation.requestId,
       editorCorrelationId: correlation.editorCorrelationId,
-      projectId,
       error: message,
     });
     sendJson(res, 502, { error: message }, auth.setCookie, correlation);
   }
 }
 
-async function fetchJsonFromApi(pathname, token, correlation) {
+async function fetchAllProjectMediaForRetrieval(projectId, token, correlation, signal) {
+  const encodedProjectId = encodeURIComponent(projectId);
+  const fetchPage = (page) => {
+    const path = `/api/projects/${encodedProjectId}/media?page=${page}&pageSize=100`;
+    return coalesceJsonRequest({
+      resource: "retrieval_project_media",
+      method: "GET",
+      origin: API_URL,
+      path,
+      token,
+      signal,
+      upstream: ({ signal: upstreamSignal }) => fetchJsonFromApi(path, token, correlation, upstreamSignal),
+    });
+  };
+
+  const first = await fetchPage(1);
+  const items = Array.isArray(first?.items) ? [...first.items] : [];
+  const totalPages = Math.max(1, Number(first?.totalPages ?? 1));
+  for (let page = 2; page <= totalPages; page += 1) {
+    const next = await fetchPage(page);
+    if (Array.isArray(next?.items)) items.push(...next.items);
+  }
+  return { ...first, items };
+}
+
+async function fetchJsonFromApi(pathname, token, correlation, signal) {
   const target = new URL(API_URL);
   target.pathname = pathname;
   target.search = "";
@@ -337,6 +416,7 @@ async function fetchJsonFromApi(pathname, token, correlation) {
   }
   const response = await fetch(target, {
     method: "GET",
+    signal,
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
@@ -465,7 +545,36 @@ function parseMediaObjectRoute(pathname) {
 
   return {
     targetPath: `/api/media/${mediaId}/object/${variant}`,
+    methods: ["GET", "HEAD"],
   };
+}
+
+export function parseMediaLibraryRoute(pathname) {
+  if (pathname === "/bff/media/library") {
+    return { targetPath: "/api/media", methods: ["GET"] };
+  }
+  if (pathname === "/bff/media/shared") {
+    return { targetPath: "/api/media/shared", methods: ["GET"] };
+  }
+  return null;
+}
+
+export function parseAlbumPickerRoute(pathname) {
+  if (pathname === "/bff/albums/library") {
+    return { targetPath: "/api/albums", methods: ["GET"] };
+  }
+  if (pathname === "/bff/albums/shared") {
+    return { targetPath: "/api/albums/shared", methods: ["GET"] };
+  }
+
+  const mediaMatch = /^\/bff\/albums\/([^/]+)\/media$/.exec(pathname);
+  if (mediaMatch) {
+    return {
+      targetPath: `/api/albums/${mediaMatch[1]}/media`,
+      methods: ["GET"],
+    };
+  }
+  return null;
 }
 
 function parseProjectImageCompositionRoute(pathname) {
@@ -477,6 +586,18 @@ function parseProjectImageCompositionRoute(pathname) {
   return {
     targetPath: `/api/projects/${match[1]}/image-composition`,
     methods: ["GET", "PUT"],
+  };
+}
+
+export function parseProjectEditorBootstrapRoute(pathname) {
+  const match = /^\/bff\/projects\/([^/]+)\/editor-bootstrap$/.exec(pathname);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    targetPath: `/api/projects/${match[1]}/editor-bootstrap`,
+    methods: ["GET"],
   };
 }
 
@@ -570,9 +691,12 @@ function parseAiRetrievalRoute(pathname) {
   };
 }
 
-function trustedVideoMediaIds(projectMediaResponse) {
+export function trustedVideoMediaScope(projectMediaResponse) {
   const items = Array.isArray(projectMediaResponse?.items) ? projectMediaResponse.items : [];
-  return items
+  const byMediaId = new Map();
+  const mediaIds = new Set();
+  let cacheable = true;
+  for (const item of items
     .filter((item) =>
       item &&
       typeof item === "object" &&
@@ -581,8 +705,65 @@ function trustedVideoMediaIds(projectMediaResponse) {
       String(item.status ?? "").toLowerCase() === "ready" &&
       typeof item.mediaId === "string" &&
       item.mediaId.length > 0,
-    )
-    .map((item) => item.mediaId);
+    )) {
+    const mediaId = item.mediaId.trim().toLowerCase();
+    if (!mediaId) {
+      continue;
+    }
+    mediaIds.add(mediaId);
+    const revision = positiveRevision(item.searchRevision);
+    if (revision === null) {
+      cacheable = false;
+      continue;
+    }
+    const existing = byMediaId.get(mediaId);
+    if (existing !== undefined && revision !== existing) {
+      cacheable = false;
+    } else if (existing === undefined) {
+      byMediaId.set(mediaId, revision);
+    }
+  }
+
+  const sortedMediaIds = Array.from(mediaIds).sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  if (!cacheable || sortedMediaIds.length === 0 || byMediaId.size !== sortedMediaIds.length) {
+    return { mediaIds: sortedMediaIds, scopeRevision: undefined };
+  }
+  const pairs = sortedMediaIds.map((mediaId) => [mediaId, byMediaId.get(mediaId)]);
+  const canonicalScope = pairs.map(([mediaId, revision]) => `${mediaId}:${revision}`).join("|");
+  return {
+    mediaIds: sortedMediaIds,
+    scopeRevision: createHash("sha256").update(canonicalScope, "utf8").digest("hex"),
+  };
+}
+
+export function buildTrustedVideoRetrievalRequest(browserBody, projectMediaResponse) {
+  const trustedScope = trustedVideoMediaScope(projectMediaResponse);
+  return {
+    projectId: stringOrEmpty(browserBody?.projectId),
+    mediaIds: trustedScope.mediaIds,
+    ...(trustedScope.scopeRevision ? { scopeRevision: trustedScope.scopeRevision } : {}),
+    query: stringOrEmpty(browserBody?.query),
+    modalities: normalizeModalities(browserBody?.modalities),
+    topK: normalizeTopK(browserBody?.topK),
+    expandGraph: browserBody?.expandGraph !== false,
+  };
+}
+
+function positiveRevision(value) {
+  if (typeof value !== "number" && typeof value !== "string") {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!/^[1-9]\d*$/.test(text)) {
+    return null;
+  }
+  try {
+    return BigInt(text);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeModalities(value) {
@@ -606,7 +787,7 @@ function stringOrEmpty(value) {
   return typeof value === "string" ? value : "";
 }
 
-function proxyHeaders(originalHeaders, token, target, correlation) {
+export function proxyHeaders(originalHeaders, token, target, correlation) {
   const headers = { ...originalHeaders };
   delete headers.cookie;
   delete headers.host;
@@ -716,8 +897,11 @@ async function refreshAccessToken(refreshToken) {
   return tokens;
 }
 
-function responseHeaders(upstreamHeaders, setCookie, correlation) {
+export function responseHeaders(upstreamHeaders, setCookie, correlation) {
   const headers = { ...upstreamHeaders };
+  if (!headers["cache-control"]) {
+    headers["cache-control"] = "no-store";
+  }
   headers["x-request-id"] = correlation.requestId;
   headers["x-kuvox-editor-correlation-id"] = correlation.editorCorrelationId;
   if (!setCookie) {
@@ -757,6 +941,7 @@ function sendJson(res, statusCode, body, setCookie, correlation = null) {
   }
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "no-store");
   if (correlation) {
     res.setHeader("x-request-id", correlation.requestId);
     res.setHeader("x-kuvox-editor-correlation-id", correlation.editorCorrelationId);
@@ -780,6 +965,32 @@ function logProxyEvent(level, fields) {
     Object.entries(fields).filter(([key]) => !/authorization|cookie|token|session|secret/i.test(key)),
   );
   console[level === "warn" ? "warn" : "log"]("[kuvox-proxy]", safeFields);
+}
+
+function requestAbortController(req, res) {
+  const controller = new AbortController();
+  const abort = () => {
+    if (!res.writableEnded) {
+      controller.abort(new Error("Caller aborted request."));
+    }
+  };
+  req.once("aborted", abort);
+  res.once("close", abort);
+  return {
+    signal: controller.signal,
+    cleanup() {
+      req.off("aborted", abort);
+      res.off("close", abort);
+    },
+  };
+}
+
+function metricsEnabled() {
+  return String(process.env.KUVOX_BFF_METRICS_ENABLED ?? "false").trim().toLowerCase() === "true";
+}
+
+export function mediaRetrievalEnabled() {
+  return String(process.env.KUVOX_MEDIA_RETRIEVAL_ENABLED ?? "false").trim().toLowerCase() === "true";
 }
 
 function loadLocalEnv() {

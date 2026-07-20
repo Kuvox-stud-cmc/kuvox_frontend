@@ -5,9 +5,10 @@ import { redirect } from "react-router";
 import { EditorSkeleton } from "~/components/editor/editor-skeleton";
 import { ImageEditorWorkspace } from "~/components/editor/image-editor-workspace";
 import { MediaKind, OwnerKind, PERSONAL, ProjectKind, type ProjectDto, type Workspace } from "~/lib/api";
-import { getImageComposition, getProject, listAllMedia } from "~/lib/api.server";
+import { ApiError, getImageComposition, getProject, getProjectEditorBootstrap, listAllMedia } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { normalizeImageCompositionPayload } from "~/lib/editor/image/image-composition-payload";
+import { normalizeProjectEditorBootstrap } from "~/lib/editor/editor-bootstrap";
 import { getSession } from "~/lib/session.server";
 import { makeStore } from "~/store";
 
@@ -30,20 +31,31 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw redirect("/login");
   }
 
-  const project = await getProject(accessToken, projectId);
+  let project: ProjectDto;
+  let composition;
+  try {
+    const bootstrap = normalizeProjectEditorBootstrap(
+      await getProjectEditorBootstrap(accessToken, projectId, 1, 100),
+    );
+    project = bootstrap.project;
+    composition = bootstrap.imageComposition ?? normalizeImageCompositionPayload(null);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+    project = await getProject(accessToken, projectId);
+    composition = normalizeImageCompositionPayload(await getImageComposition(accessToken, projectId));
+  }
   if (project.kind === ProjectKind.Video) {
     throw redirect(`/editor/video/${project.id}`);
   }
 
   const workspace = workspaceFromProject(project);
-  const composition = await getImageComposition(accessToken, projectId);
   try {
     const media = await listAllMedia(accessToken, workspace);
     return {
       projectId,
       project,
       user,
-      imageComposition: normalizeImageCompositionPayload(composition),
+      imageComposition: composition,
       imageMedia: media.filter((item) => item.kind === MediaKind.Image),
       mediaError: null,
     };
@@ -52,7 +64,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       projectId,
       project,
       user,
-      imageComposition: normalizeImageCompositionPayload(composition),
+      imageComposition: composition,
       imageMedia: [],
       mediaError:
         error instanceof Error ? error.message : "Media could not be loaded for this project.",

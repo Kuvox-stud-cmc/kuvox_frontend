@@ -17,6 +17,11 @@ export interface SessionData {
   /** Access-token expiry as an ISO string. */
   expiresAt: string;
   user: SessionUser;
+  supportConversation: {
+    externalUserId: string;
+    sessionId?: string;
+    submittedTicketDraftSignature?: string;
+  };
 }
 
 type SessionFlashData = {

@@ -33,7 +33,10 @@ import {
   mediaDtoToVideoMediaReference,
 } from "~/lib/editor/editor-media";
 import { getVideoTimelineFromBff } from "~/lib/editor/video-timeline-api.client";
+import type { VideoTimelineLoadResult } from "~/lib/editor/video-timeline-api.client";
 import {
+  attachProjectMediaFromBff,
+  getProjectMediaFromBff,
   projectMediaToMediaDto,
 } from "~/lib/editor/project-media-api.client";
 import {
@@ -81,6 +84,7 @@ import { EditorIcon } from "./editor-ui";
 import { EditorModalLayer, EditorPopoverLayer, EditorToast } from "./editor-overlays";
 import { EditorTopBar } from "./editor-top-bar";
 import { MediaLibraryPanel } from "./media-library-panel";
+import { ProjectAddMediaModal } from "./project-add-media-modal";
 import { PreviewPanel } from "./panels/preview-panel";
 import { TimelinePanel } from "./panels/timeline-panel";
 import { ToolRail } from "./tool-rail";
@@ -99,9 +103,9 @@ interface VideoEditorWorkspaceProps {
   media: MediaDto[];
   projectMedia: ProjectMediaDto[];
   mediaLoadError: string | null;
-  mediaRetrying?: boolean;
-  onRetryMediaLoad?: () => void;
   canWrite: boolean;
+  initialTimeline?: VideoTimelineLoadResult;
+  retrievalEnabled: boolean;
 }
 
 type NarrowManualPane = "preview" | "timeline";
@@ -119,9 +123,9 @@ export function VideoEditorWorkspace({
   media,
   projectMedia,
   mediaLoadError,
-  mediaRetrying = false,
-  onRetryMediaLoad,
   canWrite,
+  initialTimeline,
+  retrievalEnabled,
 }: VideoEditorWorkspaceProps) {
   const dispatch = useAppDispatch();
   const editorRootRef = useRef<HTMLDivElement | null>(null);
@@ -130,6 +134,9 @@ export function VideoEditorWorkspace({
   const firstUsableRecorded = useRef(false);
   const [projectMediaRows, setProjectMediaRows] = useState(projectMedia);
   const [attachedProjectMediaIds, setAttachedProjectMediaIds] = useState(() => projectMedia.map((item) => item.mediaId));
+  const [projectMediaLoadError, setProjectMediaLoadError] = useState(mediaLoadError);
+  const [projectMediaRefreshing, setProjectMediaRefreshing] = useState(false);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [draftRecovery, setDraftRecovery] = useState<DraftRecoveryState>({ state: "none" });
   const [narrowManualPane, setNarrowManualPane] = useState<NarrowManualPane>("preview");
   const [responsiveDrawer, setResponsiveDrawer] = useState<ResponsiveManualDrawer>(null);
@@ -149,20 +156,46 @@ export function VideoEditorWorkspace({
     () => buildEditorCacheScopeFromProject(userId, project),
     [project, userId],
   );
-  const live = useLiveMedia(media);
+  const live = useLiveMedia(media, { routeRevalidation: false });
   const studioId = project.ownerKind === OwnerKind.Studio ? project.ownerId : null;
   const syncRetrying: boolean = editor.syncStatus === "syncing";
+  const attachedProjectMediaIdSet = useMemo(
+    () => new Set(attachedProjectMediaIds),
+    [attachedProjectMediaIds],
+  );
+  const mergeAttachedProjectMedia = useCallback((attached: ProjectMediaDto[]) => {
+    setProjectMediaRows((current) => mergeProjectMediaRows(current, attached));
+    setAttachedProjectMediaIds((current) => Array.from(new Set([...current, ...attached.map((item) => item.mediaId)])));
+    dispatch(projectMediaAvailabilityLoaded(attached));
+    attached.flatMap((item) => projectMediaToMediaDto(item) ?? []).forEach((item) => live.mergeMedia(item));
+  }, [dispatch, live]);
+  const refreshProjectMedia = useCallback(async () => {
+    if (projectMediaRefreshing) return;
+    setProjectMediaRefreshing(true);
+    try {
+      const refreshedRows = await getProjectMediaFromBff(project.id);
+      const refreshedMedia = refreshedRows.flatMap((item) => projectMediaToMediaDto(item) ?? []);
+      setProjectMediaRows(refreshedRows);
+      setAttachedProjectMediaIds(refreshedRows.map((item) => item.mediaId));
+      setProjectMediaLoadError(null);
+      dispatch(projectMediaAvailabilityLoaded(refreshedRows));
+      live.replaceMedia(refreshedMedia);
+      await saveMediaAssets(refreshedMedia, cacheScope);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Project media could not be refreshed.";
+      setProjectMediaLoadError(message);
+      dispatch(toastShown(message));
+    } finally {
+      setProjectMediaRefreshing(false);
+    }
+  }, [cacheScope, dispatch, live, project.id, projectMediaRefreshing]);
   const autosave = useVideoAutosave({
     projectId: project.id,
     projectName: project.name,
     cacheScope,
     editor,
     attachedProjectMediaIds,
-    onProjectMediaAttached: (attached) => {
-      setProjectMediaRows((current) => mergeProjectMediaRows(current, attached));
-      setAttachedProjectMediaIds((current) => Array.from(new Set([...current, ...attached.map((item) => item.mediaId)])));
-      dispatch(projectMediaAvailabilityLoaded(attached));
-    },
+    onProjectMediaAttached: mergeAttachedProjectMedia,
   });
   useVideoKeyboardShortcuts(editorRootRef, { onSave: autosave.syncNow });
   useMediaPreparation(project.id);
@@ -172,6 +205,10 @@ export function VideoEditorWorkspace({
     setAttachedProjectMediaIds(projectMedia.map((item) => item.mediaId));
     dispatch(projectMediaAvailabilityLoaded(projectMedia));
   }, [dispatch, projectMedia]);
+
+  useEffect(() => {
+    setProjectMediaLoadError(mediaLoadError);
+  }, [mediaLoadError]);
 
   useEffect(() => {
     if (projectMediaRows.length === 0) return;
@@ -205,7 +242,7 @@ export function VideoEditorWorkspace({
           getVideoTimelineDraft(cacheScope, project.id),
           getVideoTimelineDraftRecord(cacheScope, project.id),
           listPendingSync(cacheScope, project.id),
-          getVideoTimelineFromBff(project.id, { correlationId }),
+          initialTimeline ?? getVideoTimelineFromBff(project.id, { correlationId }),
           listCommandHistory(cacheScope, project.id),
         ]);
 
@@ -339,7 +376,7 @@ export function VideoEditorWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [cacheScope, canWrite, dispatch, media, project, projectMedia]);
+  }, [cacheScope, canWrite, dispatch, initialTimeline, media, project, projectMedia]);
 
   useEffect(() => {
     if (media.length === 0) return;
@@ -477,11 +514,12 @@ export function VideoEditorWorkspace({
       return false;
     }
 
-    const localRow = projectMediaRowFromMedia(item);
-    setProjectMediaRows((current) => mergeProjectMediaRows(current, [localRow]));
-    dispatch(projectMediaAvailabilityLoaded([localRow]));
+    if (!attachedProjectMediaIdSet.has(item.id)) {
+      dispatch(toastShown("Add this media to the project before placing it on the timeline"));
+      return false;
+    }
     return true;
-  }, [canWrite, dispatch]);
+  }, [attachedProjectMediaIdSet, canWrite, dispatch]);
 
   const queuePendingInsertion = useCallback((
     item: MediaDto,
@@ -532,11 +570,16 @@ export function VideoEditorWorkspace({
   }, [editor.playback.currentTime, prepareMediaForTimeline, live.media, queuePendingInsertion]);
 
   const handleUploaded = useCallback(async (item: MediaDto) => {
-    live.mergeMedia(item);
-    await saveMediaAssets([item], cacheScope);
-    dispatch(assetSelected(item.id));
-    dispatch(toastShown("Media imported"));
-  }, [cacheScope, dispatch, live]);
+    try {
+      const attached = await attachProjectMediaFromBff(project.id, [item.id]);
+      mergeAttachedProjectMedia(attached);
+      await saveMediaAssets([item], cacheScope);
+      dispatch(assetSelected(item.id));
+      dispatch(toastShown("Media uploaded and added to the project"));
+    } catch (error) {
+      throw new Error(`The file was uploaded, but could not be attached to this project: ${error instanceof Error ? error.message : "Attachment failed."}`);
+    }
+  }, [cacheScope, dispatch, mergeAttachedProjectMedia, project.id]);
 
   const importDroppedFiles = useCallback(async (files: File[]) => {
     if (!canWrite) {
@@ -658,13 +701,14 @@ export function VideoEditorWorkspace({
               activeTab={activeRailTab}
               media={live.media}
               updatesById={live.updatesById}
-              mediaLoadError={mediaLoadError}
-              mediaRetrying={mediaRetrying}
-              usingCachedMedia={Boolean(mediaLoadError && media.length === 0 && live.media.length > 0)}
+              mediaLoadError={projectMediaLoadError}
+              mediaRetrying={projectMediaRefreshing}
+              usingCachedMedia={Boolean(projectMediaLoadError && media.length === 0 && live.media.length > 0)}
               canPlaceMedia={canWrite}
-              onRetryMediaLoad={onRetryMediaLoad}
+              onRetryMediaLoad={() => void refreshProjectMedia()}
               onAddMedia={addMediaToTimeline}
               onImportFiles={(files) => void importDroppedFiles(files)}
+              onOpenMediaPicker={() => setMediaPickerOpen(true)}
               onRequestClose={closeResponsiveDrawer}
               className={
                 responsiveDrawer === "library"
@@ -673,7 +717,12 @@ export function VideoEditorWorkspace({
               }
             />
           </EditorPanelErrorBoundary>
-          <EditorPanelErrorBoundary label="Preview">
+          <EditorPanelErrorBoundary
+            label="Preview"
+            autoRetryAttempts={2}
+            autoRetryDelayMs={200}
+            fallbackMessage="The preview hit a rendering problem. Your edits are still safe."
+          >
             <PreviewPanel
               onMediaDrop={addDroppedMediaToTimeline}
             />
@@ -686,6 +735,7 @@ export function VideoEditorWorkspace({
                   cacheScope={cacheScope}
                   media={live.media}
                   canPlanCommands={canWrite}
+                  retrievalEnabled={retrievalEnabled}
                 />
               </EditorPanelErrorBoundary>
               <ToolRail
@@ -765,6 +815,17 @@ export function VideoEditorWorkspace({
           onClose={() => dispatch(modalClosed())}
           studioId={studioId}
           onUploaded={handleUploaded}
+        />
+        <ProjectAddMediaModal
+          open={mediaPickerOpen}
+          projectId={project.id}
+          studioId={studioId}
+          attachedMediaIds={attachedProjectMediaIdSet}
+          onClose={() => setMediaPickerOpen(false)}
+          onAttached={(attached) => {
+            mergeAttachedProjectMedia(attached);
+            dispatch(toastShown(`${attached.length} media item${attached.length === 1 ? "" : "s"} added to the project`));
+          }}
         />
         <VideoExportModal
           open={activeModal === "export"}
@@ -1044,40 +1105,6 @@ function mergeProjectMediaRows(current: ProjectMediaDto[], rows: ProjectMediaDto
     byId.set(row.mediaId, row);
   }
   return Array.from(byId.values());
-}
-
-function projectMediaRowFromMedia(media: MediaDto): ProjectMediaDto {
-  return {
-    mediaId: media.id,
-    kind: media.kind,
-    availability: media.status.toLowerCase() === "failed" ? "failed" : media.status.toLowerCase() === "ready" ? "available" : "processing",
-    filename: media.filename,
-    ownerId: media.ownerId,
-    ownerKind: media.ownerKind,
-    status: media.status,
-    storageKey: media.storageKey,
-    sizeBytes: nullableNumber(media.sizeBytes),
-    canonicalStorageKey: media.canonicalStorageKey,
-    proxyStorageKey: media.proxyStorageKey,
-    thumbnailStorageKey: media.thumbnailStorageKey,
-    errorMessage: media.errorMessage,
-    durationSeconds: nullableNumber(media.durationSeconds),
-    width: nullableNumber(media.width),
-    height: nullableNumber(media.height),
-    codec: media.codec,
-    frameRate: nullableNumber(media.frameRate),
-    shotCount: null,
-    createdAt: media.createdAt,
-  };
-}
-
-function nullableNumber(value: string | number | null | undefined): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 function EditorSyncFailureBanner({

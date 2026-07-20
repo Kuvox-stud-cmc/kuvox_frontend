@@ -253,6 +253,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/timelines/render-jobs/{jobId}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
+        patch?: never;
+        trace?: never;
+    };
     "/api/timelines/projects/{projectId}/performance": {
         parameters: {
             query?: never;
@@ -934,6 +992,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -1286,6 +1410,46 @@ export interface paths {
                 };
             };
         };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/editor-bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    mediaPage?: number | string;
+                    mediaPageSize?: number | string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectEditorBootstrapDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -4329,6 +4493,25 @@ export interface components {
         DeleteMediaFromAlbumDto: {
             mediaIds: string[];
         };
+        EditorBootstrapTimelineDto: {
+            /** Format: uuid */
+            projectId: string;
+            /** Format: uuid */
+            timelineId: string;
+            /** Format: uuid */
+            revisionId: string;
+            documentJson: components["schemas"]["JsonElement"];
+            /** Format: int32 */
+            revisionNumber: number | string;
+            /** Format: int32 */
+            documentSchemaVersion: number | string;
+            source: null | string;
+            label: null | string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            updatedByUserId: string;
+        };
         ForgotPasswordRequest: {
             email: string;
         };
@@ -4592,6 +4775,12 @@ export interface components {
             mediaCount: number | string;
             isStarred: boolean;
         };
+        ProjectEditorBootstrapDto: {
+            project: components["schemas"]["ProjectDto"];
+            projectMedia: components["schemas"]["PagedResultOfProjectMediaDto"];
+            videoTimeline: null | components["schemas"]["EditorBootstrapTimelineDto"];
+            imageComposition: null | components["schemas"]["ImageCompositionDto"];
+        };
         ProjectKind: number;
         ProjectMediaDto: {
             /** Format: uuid */
@@ -4621,6 +4810,8 @@ export interface components {
             frameRate: null | number | string;
             /** Format: date-time */
             createdAt: null | string;
+            /** Format: int64 */
+            searchRevision: null | number | string;
         };
         ProjectRole: number;
         ProjectTrashItemDto: {

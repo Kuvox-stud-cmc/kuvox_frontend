@@ -2,6 +2,7 @@ import { Outlet, useLoaderData } from "react-router";
 
 import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
+import { CacanodeChatWidget } from "~/components/integrations/cacanode-chat-widget";
 import { getOptionalUser } from "~/lib/auth.server";
 import { createRequestLogger } from "~/lib/logger.server";
 import type { SessionUser } from "~/lib/session.server";
@@ -21,6 +22,7 @@ export default function MarketingLayout() {
 
   return (
     <div className="bg-surface text-on-surface font-sans min-h-screen flex flex-col">
+      <CacanodeChatWidget />
       <SiteHeader user={user} />
 
       <main

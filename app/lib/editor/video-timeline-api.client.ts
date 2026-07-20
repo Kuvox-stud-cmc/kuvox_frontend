@@ -184,10 +184,20 @@ export function createSaveVideoTimelineRequest(input: {
 export async function readVideoTimelineError(response: Response, fallback: string) {
   try {
     const body = await response.json();
-    return body?.detail || body?.error || fallback;
+    return nestedErrorMessage(body) ?? fallback;
   } catch {
     return fallback;
   }
+}
+
+function nestedErrorMessage(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  return nestedErrorMessage(record.detail)
+    ?? nestedErrorMessage(record.message)
+    ?? nestedErrorMessage(record.error)
+    ?? nestedErrorMessage(record.title);
 }
 
 function videoTimelineUrl(projectId: string) {

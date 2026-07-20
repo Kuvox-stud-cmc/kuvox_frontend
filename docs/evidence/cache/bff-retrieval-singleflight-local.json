@@ -1,0 +1,54 @@
+{
+  "capturedAt": "2026-07-19T09:19:45.384Z",
+  "concurrency": 16,
+  "fixture": {
+    "schemaVersion": 1,
+    "searchRevision": 1
+  },
+  "browserScopeFieldsSupplied": true,
+  "cold": {
+    "statuses": [
+      200
+    ],
+    "responseHashes": [
+      "8a68f2055a6574be390e39d4a6e75304a8a8aec49db95baa748c17d3885c13be"
+    ],
+    "resultCounts": [
+      2
+    ],
+    "metricDeltas": {
+      "kuvox_redis_commands_total{command=\"get\",outcome=\"success\",service=\"ai\"}": 32,
+      "kuvox_redis_commands_total{command=\"set_nx_px\",outcome=\"success\",service=\"ai\"}": 17,
+      "kuvox_redis_commands_total{command=\"mget\",outcome=\"success\",service=\"ai\"}": 3,
+      "kuvox_redis_commands_total{command=\"pipeline_set\",outcome=\"success\",service=\"ai\"}": 1,
+      "kuvox_redis_commands_total{command=\"eval_release\",outcome=\"success\",service=\"ai\"}": 2,
+      "kuvox_redis_commands_total{command=\"set\",outcome=\"success\",service=\"ai\"}": 1,
+      "kuvox_retrieval_stage_calls_total{outcome=\"success\",stage=\"query_encoding\"}": 1,
+      "kuvox_retrieval_stage_calls_total{outcome=\"success\",stage=\"qdrant_search\"}": 2,
+      "kuvox_retrieval_stage_calls_total{outcome=\"success\",stage=\"kuzu_neighbors\"}": 2,
+      "kuvox_single_flight_events_total{component=\"retrieval\",outcome=\"join\",service=\"ai\"}": 15,
+      "kuvox_single_flight_events_total{component=\"retrieval\",outcome=\"leader\",service=\"ai\"}": 1,
+      "kuvox_single_flight_events_total{component=\"query-embedding\",outcome=\"leader\",service=\"ai\"}": 1,
+      "kuvox_single_flight_events_total{component=\"retrieval\",outcome=\"joined_cache_hit\",service=\"ai\"}": 15,
+      "kuvox_retrieval_cache_operations_total{outcome=\"miss\"}": 17,
+      "kuvox_retrieval_cache_operations_total{outcome=\"write\"}": 1,
+      "kuvox_retrieval_cache_operations_total{outcome=\"hit\"}": 15,
+      "kuvox_query_embedding_encoder_inputs_total{outcome=\"miss\"}": 1
+    }
+  },
+  "warm": {
+    "statuses": [
+      200
+    ],
+    "responseHashes": [
+      "8a68f2055a6574be390e39d4a6e75304a8a8aec49db95baa748c17d3885c13be"
+    ],
+    "resultCounts": [
+      2
+    ],
+    "metricDeltas": {
+      "kuvox_redis_commands_total{command=\"get\",outcome=\"success\",service=\"ai\"}": 16,
+      "kuvox_retrieval_cache_operations_total{outcome=\"hit\"}": 16
+    }
+  }
+}

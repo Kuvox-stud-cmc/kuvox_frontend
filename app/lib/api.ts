@@ -305,6 +305,27 @@ export interface ProjectMediaDto {
   frameRate: number | null;
   shotCount?: number | null;
   createdAt: string | null;
+  searchRevision?: number | string | null;
+}
+
+export interface EditorBootstrapTimelineDto {
+  projectId: string;
+  timelineId: string;
+  revisionId: string;
+  documentJson: unknown;
+  revisionNumber: number;
+  documentSchemaVersion: number;
+  source: string | null;
+  label: string | null;
+  updatedAt: string;
+  updatedByUserId: string;
+}
+
+export interface ProjectEditorBootstrapDto {
+  project: ProjectDto;
+  projectMedia: PagedResult<ProjectMediaDto>;
+  videoTimeline: EditorBootstrapTimelineDto | null;
+  imageComposition: ImageCompositionDto | null;
 }
 
 /** Mirrors `Projects.Dtos.ProjectTrashItemDto`. */

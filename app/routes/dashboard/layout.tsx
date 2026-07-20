@@ -4,6 +4,7 @@ import { Link, Outlet } from "react-router";
 import { DashboardGuidedTour } from "~/components/dashboard/dashboard-guided-tour";
 import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
 import { WorkspaceSwitcher } from "~/components/dashboard/workspace-switcher";
+import { CacanodeChatWidget } from "~/components/integrations/cacanode-chat-widget";
 import { HeaderBar, type HeaderNotifications } from "~/routes/dashboard/header-bar";
 import { SidebarNav } from "~/routes/dashboard/sidebar-nav";
 import type { MediaStorageUsageDto, NotificationDto, StudioDto } from "~/lib/api";
@@ -336,6 +337,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
+      <CacanodeChatWidget />
       <DashboardGuidedTour userId={user.id} />
       <CreateProjectModal
         open={createOpen}

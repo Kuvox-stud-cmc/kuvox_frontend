@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-19T10:35:35.678Z",
+  "defaultsRemainDisabled": true,
+  "ssrDuplicateReads": {
+    "route": "/dashboard/reviews",
+    "disabled": {
+      "GET /api/auth/me": 2,
+      "GET /api/auth/me/studios": 2
+    },
+    "enabled": {
+      "GET /api/auth/me": 1,
+      "GET /api/auth/me/studios": 1
+    },
+    "responseHashStable": true
+  },
+  "simultaneousRetrievals": {
+    "requests": 16,
+    "projectMediaLookups": 1,
+    "responseStatuses": [
+      200
+    ],
+    "responseBytes": [
+      86
+    ],
+    "responseHashCount": 1
+  },
+  "isolation": {
+    "differentUsersProjectMediaLookups": 2,
+    "differentSessionsProjectMediaLookups": 2,
+    "identifiersRedacted": true
+  },
+  "metrics": {
+    "activeSample": [
+      "kuvox_bff_coalescing_inflight{resource=\"auth_me\"} 0",
+      "kuvox_bff_coalescing_inflight{resource=\"retrieval_project_media\"} 1",
+      "kuvox_bff_coalescing_inflight{resource=\"studio_memberships\"} 0",
+      "kuvox_bff_coalescing_requests_total{resource=\"auth_me\",outcome=\"joiner\"} 1",
+      "kuvox_bff_coalescing_requests_total{resource=\"auth_me\",outcome=\"leader\"} 1",
+      "kuvox_bff_coalescing_requests_total{resource=\"retrieval_project_media\",outcome=\"joiner\"} 15",
+      "kuvox_bff_coalescing_requests_total{resource=\"retrieval_project_media\",outcome=\"leader\"} 6",
+      "kuvox_bff_coalescing_requests_total{resource=\"studio_memberships\",outcome=\"joiner\"} 1",
+      "kuvox_bff_coalescing_requests_total{resource=\"studio_memberships\",outcome=\"leader\"} 1",
+      "kuvox_bff_coalescing_upstream_total{resource=\"auth_me\",outcome=\"success\"} 1",
+      "kuvox_bff_coalescing_upstream_total{resource=\"retrieval_project_media\",outcome=\"success\"} 5",
+      "kuvox_bff_coalescing_upstream_total{resource=\"studio_memberships\",outcome=\"success\"} 1"
+    ],
+    "boundedFaultSample": [
+      "kuvox_bff_coalescing_inflight{resource=\"auth_me\"} 0",
+      "kuvox_bff_coalescing_inflight{resource=\"retrieval_project_media\"} 0",
+      "kuvox_bff_coalescing_inflight{resource=\"studio_memberships\"} 0",
+      "kuvox_bff_coalescing_requests_total{resource=\"auth_me\",outcome=\"joiner\"} 1",
+      "kuvox_bff_coalescing_requests_total{resource=\"auth_me\",outcome=\"leader\"} 1",
+      "kuvox_bff_coalescing_requests_total{resource=\"retrieval_project_media\",outcome=\"bypass\"} 1",
+      "kuvox_bff_coalescing_requests_total{resource=\"retrieval_project_media\",outcome=\"joiner\"} 15",
+      "kuvox_bff_coalescing_requests_total{resource=\"retrieval_project_media\",outcome=\"leader\"} 8",
+      "kuvox_bff_coalescing_requests_total{resource=\"studio_memberships\",outcome=\"joiner\"} 1",
+      "kuvox_bff_coalescing_requests_total{resource=\"studio_memberships\",outcome=\"leader\"} 1",
+      "kuvox_bff_coalescing_upstream_total{resource=\"auth_me\",outcome=\"success\"} 1",
+      "kuvox_bff_coalescing_upstream_total{resource=\"retrieval_project_media\",outcome=\"failure\"} 1",
+      "kuvox_bff_coalescing_upstream_total{resource=\"retrieval_project_media\",outcome=\"success\"} 7",
+      "kuvox_bff_coalescing_upstream_total{resource=\"retrieval_project_media\",outcome=\"timeout\"} 1",
+      "kuvox_bff_coalescing_upstream_total{resource=\"studio_memberships\",outcome=\"success\"} 1"
+    ]
+  },
+  "validators": {
+    "apiTimeline": {
+      "initialStatus": 200,
+      "conditionalStatus": 304,
+      "conditionalBytes": 0,
+      "advancedStatus": 200,
+      "etagAdvanced": true
+    },
+    "apiImage": {
+      "initialStatus": 200,
+      "conditionalStatus": 304,
+      "conditionalBytes": 0,
+      "advancedStatus": 200,
+      "etagAdvanced": true
+    },
+    "bff": {
+      "timelineConditionalStatus": 304,
+      "timelineConditionalBytes": 0,
+      "imageConditionalStatus": 304,
+      "imageConditionalBytes": 0
+    },
+    "revokedMemberStatuses": {
+      "timelineApi": 403,
+      "imageBff": 403
+    }
+  },
+  "persistentL1Decision": {
+    "decision": "declined",
+    "sequentialWarmProjectMediaLookups": 5,
+    "responseBytes": [
+      86
+    ],
+    "responseHashCount": 1,
+    "latencyMs": [
+      110.51,
+      111.57,
+      115.75,
+      110.05,
+      105.2
+    ],
+    "medianLatencyMs": 110.51,
+    "rationale": "The payload is small and stable; a persistent BFF copy would add invalidation and replica divergence for only the measured network hop."
+  },
+  "cachePolicy": {
+    "publicAssetStatus": 200,
+    "publicAssetCookieIndependent": true,
+    "publicAssetCacheControl": "public, max-age=604800, stale-while-revalidate=86400",
+    "dynamicHtmlStatus": 200,
+    "dynamicHtmlCacheControl": "no-store"
+  }
+}

@@ -12,7 +12,7 @@ export async function getProjectMediaFromBff(
   options: { correlationId?: string } = {},
 ): Promise<ProjectMediaDto[]> {
   const correlationId = options.correlationId ?? createEditorCorrelationId("project-media");
-  const response = await fetch(projectMediaPath(projectId, "?pageSize=500"), {
+  const response = await fetch(projectMediaPath(projectId, "?page=1&pageSize=100"), {
     method: "GET",
     headers: withEditorCorrelationHeaders({ Accept: "application/json" }, correlationId),
   });
@@ -28,6 +28,18 @@ export async function getProjectMediaFromBff(
 
   const body = await response.json();
   const items = Array.isArray(body?.items) ? body.items.map(normalizeProjectMedia) : [];
+  const totalPages = Number(body?.totalPages ?? 1);
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextResponse = await fetch(projectMediaPath(projectId, `?page=${page}&pageSize=100`), {
+      method: "GET",
+      headers: withEditorCorrelationHeaders({ Accept: "application/json" }, correlationId),
+    });
+    if (!nextResponse.ok) {
+      throw new Error(await readVideoTimelineError(nextResponse, "Project media could not be loaded."));
+    }
+    const nextBody = await nextResponse.json();
+    if (Array.isArray(nextBody?.items)) items.push(...nextBody.items.map(normalizeProjectMedia));
+  }
   logVideoEditorEvent("editor.load.success", {
     projectId,
     correlationId,
@@ -133,6 +145,7 @@ function normalizeProjectMedia(value: unknown): ProjectMediaDto {
     frameRate: normalizeNullableNumber(item.frameRate),
     shotCount: normalizeNullableNumber(item.shotCount),
     createdAt: nullableString(item.createdAt),
+    searchRevision: normalizeNullableNumber(item.searchRevision),
   };
 }
 

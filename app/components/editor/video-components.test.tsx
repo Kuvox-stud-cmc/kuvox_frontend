@@ -152,6 +152,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  Reflect.deleteProperty(HTMLVideoElement.prototype, "requestVideoFrameCallback");
+  Reflect.deleteProperty(HTMLVideoElement.prototype, "cancelVideoFrameCallback");
 });
 
 describe("MediaLibraryPanel", () => {
@@ -159,19 +161,23 @@ describe("MediaLibraryPanel", () => {
     const user = userEvent.setup();
     const onRetry = vi.fn();
     const onAddMedia = vi.fn();
+    const onOpenMediaPicker = vi.fn();
     renderWithEditorStore(
       <MediaLibraryPanel
         media={[]}
         mediaLoadError="network"
         onRetryMediaLoad={onRetry}
         onAddMedia={onAddMedia}
+        onOpenMediaPicker={onOpenMediaPicker}
       />,
     );
 
     expect(screen.getByText("Media refresh failed")).toBeInTheDocument();
     expect(screen.getByText("No cached project media is available in this browser.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /retry media/i }));
+    await user.click(screen.getByRole("button", { name: /refresh project media/i }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: /import media/i }));
+    expect(onOpenMediaPicker).toHaveBeenCalledTimes(1);
     cleanup();
 
     const ready = mediaFixture({ id: "clip-ready", filename: "Beach ready.mp4" });
@@ -347,6 +353,22 @@ describe("VideoInspectorPanel", () => {
 });
 
 describe("AiAssistantPanel", () => {
+  it("hides semantic search while retaining local command controls", () => {
+    renderWithEditorStore(
+      <AiAssistantPanel
+        projectId="video-ai"
+        cacheScope={{ userId: "user-1", ownerKind: "user", ownerId: "user-1" }}
+        retrievalEnabled={false}
+      />,
+      { document: createMockVideoProjectDocument("video-ai", "Video AI") },
+    );
+
+    expect(screen.queryByPlaceholderText("Search moments...")).toBeNull();
+    expect(screen.queryByText("Semantic")).toBeNull();
+    expect(screen.getByLabelText("AI edit command")).toBeEnabled();
+    expect(screen.getByText("Suggestions")).toBeInTheDocument();
+  });
+
   it("renders suggestions, reports unsupported commands, applies mocked plans, and blocks read-only semantic placement", async () => {
     const user = userEvent.setup();
     const document = createMockVideoProjectDocument("video-ai", "Video AI");
@@ -696,6 +718,31 @@ describe("PreviewPanel direct visual manipulation", () => {
     }
     fireEvent.pointerDown(visuals.at(-1)!, { clientX: 480, clientY: 270, pointerId: 5, pointerType: "mouse", button: 0 });
     expect(selectEditorState(store.getState()).selection.activeItemId).toBe("tl-city");
+  });
+
+  it("uses independent decoders for overlapping split clips from the same media", async () => {
+    const media = installMediaElementMocks();
+    const document = overlappingSplitVideoDocument();
+    const { store } = renderWithEditorStore(<PreviewPanel />, { document });
+
+    act(() => {
+      store.dispatch(currentTimeChanged(0.5));
+      store.dispatch(playbackToggled());
+    });
+
+    await waitFor(() => {
+      const playbackVideos = Array.from(new Set(
+        playCallsFor(media.play, "VIDEO") as HTMLVideoElement[],
+      ));
+      expect(playbackVideos).toHaveLength(2);
+      const sourceTimes = playbackVideos
+        .map((video) => media.times.get(video))
+        .filter((time): time is number => time !== undefined)
+        .sort((left, right) => left - right);
+      expect(sourceTimes).toHaveLength(2);
+      expect(sourceTimes[0]).toBeCloseTo(0.5, 3);
+      expect(sourceTimes[1]).toBeCloseTo(2.5, 3);
+    });
   });
 
   it("resizes from the opposite corner with one undoable operation and supports Shift-independent scaling", () => {
@@ -1060,6 +1107,7 @@ describe("PreviewPanel media sync", () => {
     await waitFor(() => expect(playCallsFor(media.play, "VIDEO")).toHaveLength(1));
 
     media.times.set(video, 2.05);
+    media.load.mockClear();
     act(() => {
       raf.runNext(performance.now() + 100);
     });
@@ -1068,6 +1116,7 @@ describe("PreviewPanel media sync", () => {
     expect(handoffPlayback.playing).toBe(true);
     expect(handoffPlayback.currentTime).toBeGreaterThan(2);
     expect(handoffPlayback.currentTime).toBeLessThan(2.02);
+    expect(media.load).not.toHaveBeenCalled();
 
     act(() => {
       raf.runNext(performance.now() + 1200);
@@ -1078,6 +1127,55 @@ describe("PreviewPanel media sync", () => {
       store.dispatch(currentTimeChanged(6));
     });
     await waitFor(() => expect(playCallsFor(media.play, "VIDEO")).toHaveLength(2));
+  });
+
+  it("continues through a gap after overlapping split clips despite a drifting audio decoder", async () => {
+    Object.defineProperty(HTMLVideoElement.prototype, "requestVideoFrameCallback", {
+      configurable: true,
+      value: vi.fn(() => 1),
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "cancelVideoFrameCallback", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const media = installMediaElementMocks();
+    const raf = installManualRaf();
+    const document = overlappingSplitGapVideoDocument();
+    const { store, container } = renderWithEditorStore(<PreviewPanel />, { document });
+
+    act(() => {
+      store.dispatch(currentTimeChanged(0));
+      store.dispatch(playbackToggled());
+    });
+    await waitFor(() => expect(playCallsFor(media.play, "VIDEO").length).toBeGreaterThanOrEqual(2));
+    const clockVideo = playCallsFor(media.play, "VIDEO")
+      .find((video) => (video as HTMLVideoElement).dataset.previewVideoSlot) as HTMLVideoElement;
+    expect(clockVideo).toBeDefined();
+
+    media.times.set(clockVideo, 2.05);
+    act(() => {
+      raf.runNext(performance.now() + 100);
+    });
+    await waitFor(() => {
+      expect(selectEditorState(store.getState()).playback.playing).toBe(true);
+      expect(selectEditorState(store.getState()).playback.currentTime).toBeGreaterThan(2);
+    });
+
+    const audio = container.querySelector("audio")!;
+    media.times.set(audio, 3.85);
+    media.times.set(clockVideo, 6.05);
+    act(() => {
+      raf.runNext(performance.now() + 200);
+    });
+    const gapPlayback = selectEditorState(store.getState()).playback;
+    expect(gapPlayback.playing).toBe(true);
+    expect(gapPlayback.currentTime).toBeGreaterThan(4);
+    expect(gapPlayback.currentTime).toBeLessThan(4.02);
+
+    act(() => {
+      raf.runNext(performance.now() + 1200);
+    });
+    expect(selectEditorState(store.getState()).playback.currentTime).toBeGreaterThan(4);
   });
 
   it("continues into an adjacent video after an interrupted source-swap play request", async () => {
@@ -1341,6 +1439,119 @@ function overlappingVisualDocument(): VideoProjectDocument {
       },
       { ...videoTrack, items: [beach] },
       ...base.tracks.filter((track) => track.id !== "v1"),
+    ],
+  };
+}
+
+function overlappingSplitVideoDocument(): VideoProjectDocument {
+  const base = withObjectUrls(createMockVideoProjectDocument("split-overlap", "Split Overlap"));
+  const videoTrack = base.tracks.find((track) => track.kind === "video");
+  const clip = videoTrack?.items.find((item) => item.id === "tl-beach");
+  if (!videoTrack || !clip || clip.type !== "video") {
+    throw new Error("Mock split video fixture is missing.");
+  }
+
+  return {
+    ...base,
+    transitions: [],
+    effects: [],
+    tracks: [
+      {
+        ...videoTrack,
+        id: "v2",
+        label: "V2",
+        items: [{
+          ...clip,
+          id: "tl-beach-b",
+          timelineStart: 0,
+          duration: 2,
+          sourceIn: 2,
+          sourceOut: 4,
+        }],
+      },
+      {
+        ...videoTrack,
+        items: [{
+          ...clip,
+          id: "tl-beach-a",
+          timelineStart: 0,
+          duration: 2,
+          sourceIn: 0,
+          sourceOut: 2,
+        }],
+      },
+    ],
+  };
+}
+
+function overlappingSplitGapVideoDocument(): VideoProjectDocument {
+  const base = withObjectUrls(createMockVideoProjectDocument("split-overlap-gap", "Split Overlap Gap"));
+  const videoTrack = base.tracks.find((track) => track.kind === "video");
+  const audioTrack = base.tracks.find((track) => track.kind === "audio");
+  const beach = videoTrack?.items.find((item) => item.id === "tl-beach");
+  const city = videoTrack?.items.find((item) => item.id === "tl-city");
+  const audio = audioTrack?.items.find((item) => item.id === "tl-audio-main");
+  if (
+    !videoTrack
+    || !audioTrack
+    || !beach
+    || beach.type !== "video"
+    || !city
+    || city.type !== "video"
+    || !audio
+    || audio.type !== "audio"
+  ) {
+    throw new Error("Mock overlapping split gap fixtures are missing.");
+  }
+
+  return {
+    ...base,
+    transitions: [],
+    effects: [],
+    tracks: [
+      {
+        ...videoTrack,
+        id: "v2",
+        label: "V2",
+        items: [
+          {
+            ...beach,
+            id: "tl-beach-a",
+            timelineStart: 0,
+            duration: 2,
+            sourceIn: 0,
+            sourceOut: 2,
+          },
+          {
+            ...city,
+            timelineStart: 8,
+            duration: 2,
+            sourceIn: 0,
+            sourceOut: 2,
+          },
+        ],
+      },
+      {
+        ...videoTrack,
+        items: [{
+          ...beach,
+          id: "tl-beach-b",
+          timelineStart: 0,
+          duration: 4,
+          sourceIn: 2,
+          sourceOut: 6,
+        }],
+      },
+      {
+        ...audioTrack,
+        items: [{
+          ...audio,
+          timelineStart: 0,
+          duration: 10,
+          sourceIn: 0,
+          sourceOut: 10,
+        }],
+      },
     ],
   };
 }

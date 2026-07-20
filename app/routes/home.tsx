@@ -19,6 +19,7 @@ import { ComparisonSection } from "~/components/landing/comparison-section";
 import { LotusPond } from "~/components/landing/lotus-pond";
 import { WhatsNewSection } from "~/components/landing/whats-new-section";
 import { FinalCTA } from "~/components/landing/final-cta";
+import { CacanodeChatWidget } from "~/components/integrations/cacanode-chat-widget";
 
 import { getOptionalUser } from "~/lib/auth.server";
 import { createRequestLogger } from "~/lib/logger.server";
@@ -128,6 +129,7 @@ export default function Home() {
 
   return (
     <main className="landing-demo relative overflow-x-hidden bg-[#1a1612] text-white">
+      <CacanodeChatWidget />
       <Preloader />
       
       {/* Floating glass navigation */}

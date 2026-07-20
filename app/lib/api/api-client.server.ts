@@ -1,5 +1,9 @@
 import { API_URL } from "../config";
 import { logger, type RequestLogger } from "../logger.server";
+import {
+  classifyCoalescingRequest,
+  coalesceJsonRequest,
+} from "../../../server/coalescing.mjs";
 
 export class ApiError extends Error {
   constructor(
@@ -27,6 +31,7 @@ export async function readError(response: Response): Promise<{ message: string; 
 
 export interface AuthStrategy {
   applyHeaders(headers: Headers): void;
+  bearerToken?(): string | null;
 }
 
 export class NoAuth implements AuthStrategy {
@@ -37,6 +42,9 @@ export class BearerAuth implements AuthStrategy {
   constructor(private token: string) {}
   applyHeaders(headers: Headers) {
     headers.set("Authorization", `Bearer ${this.token}`);
+  }
+  bearerToken() {
+    return this.token;
   }
 }
 
@@ -129,13 +137,30 @@ export class ApiClient {
     if (init?.body && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
-    const response = await pipeline(`${this.baseUrl}${path}`, { ...init, headers });
+    const method = (init?.method ?? "GET").toUpperCase();
+    const resource = classifyCoalescingRequest(method, this.baseUrl, path);
+    const token = options?.auth?.bearerToken?.();
+    const execute = async ({ signal }: { signal?: AbortSignal } = {}) => {
+      const response = await pipeline(`${this.baseUrl}${path}`, { ...init, headers, signal });
+      if (!response.ok) {
+        const error = await readError(response);
+        throw new ApiError(response.status, error.message, error.code);
+      }
+      return (await response.json()) as T;
+    };
 
-    if (!response.ok) {
-      const error = await readError(response);
-      throw new ApiError(response.status, error.message, error.code);
+    if (resource && token) {
+      return coalesceJsonRequest<T>({
+        resource,
+        method,
+        origin: this.baseUrl,
+        path,
+        token,
+        signal: init?.signal ?? undefined,
+        upstream: execute,
+      });
     }
-    return (await response.json()) as T;
+    return execute({ signal: init?.signal ?? undefined });
   }
 
   async requestVoid(path: string, init?: RequestInit, options?: RequestOptions): Promise<void> {

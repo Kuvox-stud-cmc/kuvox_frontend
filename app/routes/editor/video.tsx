@@ -5,19 +5,23 @@ import { Link, isRouteErrorResponse, redirect, useRevalidator } from "react-rout
 import { EditorSkeleton } from "~/components/editor/editor-skeleton";
 import { VideoEditorWorkspace } from "~/components/editor/video-editor-workspace";
 import type { HeaderNotifications } from "~/routes/dashboard/header-bar";
-import { OwnerKind, ProjectKind, type MediaDto, type NotificationDto, type ProjectMediaDto, type Workspace } from "~/lib/api";
+import { OwnerKind, ProjectKind, type MediaDto, type NotificationDto, type ProjectMediaDto } from "~/lib/api";
 import {
   ApiError,
   getProject,
+  getProjectEditorBootstrap,
   getStudioClaims,
   getUnreadNotificationCount,
-  listAllMedia,
+  listAllProjectMedia,
   listNotifications,
-  listProjectMedia,
+  listProjectMediaPage,
 } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { classifyEditorRecoveryError } from "~/lib/editor/editor-recovery";
 import { getEditorBootstrap } from "~/lib/editor/editor-cache";
+import { normalizeProjectEditorBootstrap, type NormalizedProjectEditorBootstrap } from "~/lib/editor/editor-bootstrap";
+import { projectMediaToMediaDto } from "~/lib/editor/project-media-api.client";
+import type { VideoTimelineLoadResult } from "~/lib/editor/video-timeline-api.client";
 import { getSession } from "~/lib/session.server";
 import { makeStore } from "~/store";
 
@@ -39,7 +43,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       notifications: { unreadCount: 0, items: [], error: null } satisfies HeaderNotifications,
       mediaLoadError: null,
       canWrite: true,
+      initialTimeline: { status: "not-found" } satisfies VideoTimelineLoadResult,
       loadSource: "server" as const,
+      retrievalEnabled: mediaRetrievalEnabled(),
     };
   }
 
@@ -51,21 +57,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   let project: import("~/lib/api").ProjectDto;
+  let bootstrap: NormalizedProjectEditorBootstrap | null = null;
+  let bootstrapLoadError: string | null = null;
   try {
-    project = await getProject(accessToken, params.projectId);
+    bootstrap = normalizeProjectEditorBootstrap(
+      await getProjectEditorBootstrap(accessToken, params.projectId, 1, 100),
+    );
+    project = bootstrap.project;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) throw error;
-    return {
-      projectId: params.projectId,
-      project: null,
-      user,
-      media: [] as MediaDto[],
-      projectMedia: [] as ProjectMediaDto[],
-      notifications: { unreadCount: 0, items: [], error: "Couldn't load notifications." } satisfies HeaderNotifications,
-      mediaLoadError: error instanceof Error ? error.message : "Project APIs are unavailable.",
-      canWrite: false,
-      loadSource: "unavailable" as const,
-    };
+    bootstrapLoadError = error instanceof Error ? error.message : "Editor bootstrap could not be loaded.";
+    try {
+      project = await getProject(accessToken, params.projectId);
+    } catch (fallbackError) {
+      if (fallbackError instanceof ApiError && fallbackError.status === 404) throw fallbackError;
+      return unavailableVideoLoaderData(params.projectId, user, fallbackError);
+    }
   }
   if (project.kind === ProjectKind.Image) {
     throw redirect(`/editor/image/${project.id}`);
@@ -73,28 +79,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   let media: MediaDto[] = [];
   let projectMedia: ProjectMediaDto[] = [];
-  let mediaLoadError: string | null = null;
+  let mediaLoadError: string | null = bootstrapLoadError;
   const notifications: HeaderNotifications = {
     unreadCount: 0,
     items: [] as NotificationDto[],
     error: null,
   };
   try {
-    const [mediaResult, projectMediaResult, notificationsResult, unreadResult] = await Promise.allSettled([
-      listAllMedia(accessToken, workspaceForProject(project)),
-      listProjectMedia(accessToken, project.id).then((result) => result.items),
+    const [projectMediaResult, notificationsResult, unreadResult] = await Promise.allSettled([
+      bootstrap
+        ? loadRemainingBootstrapProjectMedia(accessToken, project.id, bootstrap.projectMedia)
+        : listAllProjectMedia(accessToken, project.id),
       listNotifications(accessToken, { page: 1, pageSize: 5 }),
       getUnreadNotificationCount(accessToken),
     ] as const);
 
-    if (mediaResult.status === "fulfilled") {
-      media = mediaResult.value;
-    } else {
-      mediaLoadError = mediaResult.reason instanceof Error ? mediaResult.reason.message : String(mediaResult.reason);
-    }
-
     if (projectMediaResult.status === "fulfilled") {
       projectMedia = projectMediaResult.value;
+      media = projectMedia.flatMap((item) => projectMediaToMediaDto(item) ?? []);
+      mediaLoadError = null;
     } else {
       mediaLoadError = projectMediaResult.reason instanceof Error ? projectMediaResult.reason.message : String(projectMediaResult.reason);
     }
@@ -123,7 +126,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     notifications,
     mediaLoadError,
     canWrite: canWriteProject(project, getStudioClaims(accessToken)),
+    initialTimeline: bootstrap?.videoTimeline,
     loadSource: "server" as const,
+    retrievalEnabled: mediaRetrievalEnabled(),
+  };
+}
+
+function unavailableVideoLoaderData(projectId: string, user: Awaited<ReturnType<typeof requireUser>>, error: unknown) {
+  return {
+    projectId,
+    project: null,
+    user,
+    media: [] as MediaDto[],
+    projectMedia: [] as ProjectMediaDto[],
+    notifications: { unreadCount: 0, items: [], error: "Couldn't load notifications." } satisfies HeaderNotifications,
+    mediaLoadError: error instanceof Error ? error.message : "Project APIs are unavailable.",
+    canWrite: false,
+    initialTimeline: undefined,
+    loadSource: "unavailable" as const,
+    retrievalEnabled: mediaRetrievalEnabled(),
   };
 }
 
@@ -206,13 +227,15 @@ export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
   if (!cached.ok) {
     throw new Error(serverData.mediaLoadError || "Project APIs are unavailable and this project has not been cached.");
   }
+  const attachedMediaIds = new Set(cached.value.projectMedia.map((item) => item.mediaId));
 
   return {
     ...serverData,
     project: cached.value.project,
-    media: cached.value.media,
+    media: cached.value.media.filter((item) => attachedMediaIds.has(item.id)),
     projectMedia: cached.value.projectMedia,
     canWrite: cached.value.canWrite,
+    initialTimeline: serverData.initialTimeline,
     mediaLoadError: [serverData.mediaLoadError, ...cached.value.warnings].filter(Boolean).join(" ") || null,
     loadSource: "cache" as const,
   };
@@ -226,7 +249,6 @@ export function HydrateFallback() {
 export default function VideoEditorRoute({ loaderData }: Route.ComponentProps) {
   if (!loaderData.project) throw new Error("Video project metadata is unavailable.");
   const [store] = useState(() => makeStore());
-  const revalidator = useRevalidator();
 
   return (
     <Provider store={store}>
@@ -238,12 +260,16 @@ export default function VideoEditorRoute({ loaderData }: Route.ComponentProps) {
         media={loaderData.media}
         projectMedia={loaderData.projectMedia}
         mediaLoadError={loaderData.mediaLoadError}
-        mediaRetrying={revalidator.state !== "idle"}
-        onRetryMediaLoad={() => revalidator.revalidate()}
         canWrite={loaderData.canWrite}
+        initialTimeline={loaderData.initialTimeline}
+        retrievalEnabled={loaderData.retrievalEnabled}
       />
     </Provider>
   );
+}
+
+function mediaRetrievalEnabled(): boolean {
+  return String(process.env.KUVOX_MEDIA_RETRIEVAL_ENABLED ?? "false").trim().toLowerCase() === "true";
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
@@ -331,8 +357,15 @@ function canWriteProject(
   return role === "Owner" || role === "Admin" || role === "Member" || role === "User";
 }
 
-function workspaceForProject(project: { ownerKind: number; ownerId: string }): Workspace {
-  return project.ownerKind === OwnerKind.Studio
-    ? { kind: "studio", studioId: project.ownerId }
-    : { kind: "personal" };
+async function loadRemainingBootstrapProjectMedia(
+  accessToken: string,
+  projectId: string,
+  firstPage: import("~/lib/api").PagedResult<ProjectMediaDto>,
+): Promise<ProjectMediaDto[]> {
+  const items = [...firstPage.items];
+  for (let page = firstPage.page + 1; page <= firstPage.totalPages; page += 1) {
+    const next = await listProjectMediaPage(accessToken, projectId, page, firstPage.pageSize);
+    items.push(...next.items);
+  }
+  return items;
 }

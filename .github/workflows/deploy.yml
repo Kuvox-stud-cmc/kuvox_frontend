@@ -155,7 +155,7 @@ jobs:
           host: ${{ vars.DROPLET_HOST }}
           username: ${{ vars.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          source: docker-compose.prod.yml,infra/seaweedfs/s3.json
+          source: docker-compose.prod.yml,infra/seaweedfs/s3.json,deploy/redis/redis.conf,deploy/redis/entrypoint-single.sh
           target: /opt/kuvox
 
       - name: Deploy to Droplet
@@ -166,6 +166,7 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             cd /opt/kuvox
+            docker compose -f docker-compose.prod.yml up -d redis-api redis-ai
             docker compose -f docker-compose.prod.yml pull kuvox-frontend
             docker compose -f docker-compose.prod.yml up -d kuvox-frontend
             docker image prune -f

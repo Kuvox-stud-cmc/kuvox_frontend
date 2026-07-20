@@ -24,6 +24,7 @@ interface EditorIconButtonProps {
   disabled?: boolean;
   filled?: boolean;
   className?: string;
+  iconClassName?: string;
   onClick?: () => void;
 }
 
@@ -34,6 +35,7 @@ export function EditorIconButton({
   disabled = false,
   filled = false,
   className = "",
+  iconClassName = "",
   onClick,
 }: EditorIconButtonProps) {
   return (
@@ -50,7 +52,7 @@ export function EditorIconButton({
           : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
       } ${className}`}
     >
-      <EditorIcon className="text-[20px]" filled={filled}>
+      <EditorIcon className={`text-[20px] ${iconClassName}`} filled={filled}>
         {icon}
       </EditorIcon>
     </button>

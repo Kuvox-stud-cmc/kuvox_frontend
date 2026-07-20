@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 import { installProxyHandlers } from "./server/proxy.mjs";
 
 export default defineConfig({
+  envPrefix: ["VITE_", "WIDGET_"],
   plugins: [
     {
       name: "kuvox-bff-proxy",

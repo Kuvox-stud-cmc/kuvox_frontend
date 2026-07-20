@@ -19,6 +19,7 @@ export interface MediaRealtimeUpdate {
 
 export interface LiveMediaOptions {
   kind?: number;
+  routeRevalidation?: boolean;
 }
 
 export function useLiveMedia(initialMedia: MediaDto[], options: LiveMediaOptions = {}) {
@@ -28,22 +29,24 @@ export function useLiveMedia(initialMedia: MediaDto[], options: LiveMediaOptions
   const optimisticAddedAtRef = useRef<Record<string, number>>({});
   const [media, setMedia] = useState(initialMedia);
   const [updatesById, setUpdatesById] = useState<Record<string, MediaRealtimeUpdate>>({});
+  const routeRevalidation = options.routeRevalidation !== false;
 
   const revalidateIfIdle = useCallback(() => {
-    if (revalidator.state === "idle") {
+    if (routeRevalidation && revalidator.state === "idle") {
       revalidator.revalidate();
     }
-  }, [revalidator]);
+  }, [revalidator, routeRevalidation]);
 
-  useEffect(() => {
-    const loaderIds = new Set(initialMedia.map((item) => item.id));
+  const replaceMedia = useCallback((nextMedia: MediaDto[]) => {
+    const filtered = options.kind === undefined
+      ? nextMedia
+      : nextMedia.filter((item) => item.kind === options.kind);
+    const loaderIds = new Set(filtered.map((item) => item.id));
     const now = Date.now();
     loaderIdsRef.current = loaderIds;
 
     for (const id of Object.keys(optimisticAddedAtRef.current)) {
-      if (loaderIds.has(id)) {
-        delete optimisticAddedAtRef.current[id];
-      }
+      if (loaderIds.has(id)) delete optimisticAddedAtRef.current[id];
     }
 
     setMedia((current) => {
@@ -52,22 +55,22 @@ export function useLiveMedia(initialMedia: MediaDto[], options: LiveMediaOptions
         const addedAt = optimisticAddedAtRef.current[item.id];
         return Boolean(addedAt && now - addedAt < OPTIMISTIC_TTL_MS && isMediaInProgress(item));
       });
-
-      return [...preserved, ...initialMedia];
+      return [...preserved, ...filtered];
     });
 
     setUpdatesById((current) => {
       const next: Record<string, MediaRealtimeUpdate> = {};
-      const ids = new Set([
-        ...initialMedia.map((item) => item.id),
-        ...Object.keys(optimisticAddedAtRef.current),
-      ]);
+      const ids = new Set([...loaderIds, ...Object.keys(optimisticAddedAtRef.current)]);
       for (const [id, update] of Object.entries(current)) {
         if (ids.has(id)) next[id] = update;
       }
       return next;
     });
-  }, [initialSignature]);
+  }, [options.kind]);
+
+  useEffect(() => {
+    replaceMedia(initialMedia);
+  }, [initialSignature, replaceMedia]);
 
   useEffect(() => {
     const connection = connectMediaRealtime((update) => {
@@ -84,7 +87,7 @@ export function useLiveMedia(initialMedia: MediaDto[], options: LiveMediaOptions
   }, [options.kind, revalidateIfIdle]);
 
   useEffect(() => {
-    if (!media.some(isMediaInProgress)) return;
+    if (!routeRevalidation || !media.some(isMediaInProgress)) return;
 
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === "visible" && revalidator.state === "idle") {
@@ -93,11 +96,12 @@ export function useLiveMedia(initialMedia: MediaDto[], options: LiveMediaOptions
     }, 10000);
 
     return () => window.clearInterval(intervalId);
-  }, [media, revalidator]);
+  }, [media, revalidator, routeRevalidation]);
 
   return {
     media,
     updatesById,
+    replaceMedia,
     mergeMedia: (next: MediaDto) => {
       if (options.kind !== undefined && next.kind !== options.kind) return;
 

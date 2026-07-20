@@ -25,7 +25,6 @@ import {
   libraryTabChanged,
   libraryWidthChanged,
   mediaAssetAddedToTimeline,
-  modalOpened,
   searchQueryChanged,
   selectCurrentTimeSeconds,
   selectLibraryPanelState,
@@ -89,6 +88,7 @@ export interface MediaLibraryPanelProps {
   resizable?: boolean;
   onRequestClose?: () => void;
   onImportFiles?: (files: File[]) => void;
+  onOpenMediaPicker?: () => void;
 }
 export function MediaLibraryPanel({
   activeTab,
@@ -104,6 +104,7 @@ export function MediaLibraryPanel({
   resizable = true,
   onRequestClose,
   onImportFiles,
+  onOpenMediaPicker,
 }: MediaLibraryPanelProps) {
   const dispatch = useAppDispatch();
   const [kindFilter, setKindFilter] = useState<LibraryKindFilter>("all");
@@ -237,12 +238,22 @@ export function MediaLibraryPanel({
                 type="button"
                 aria-label="Add media"
                 data-tour="import-media"
-                onClick={() => dispatch(modalOpened("import-media"))}
+                onClick={onOpenMediaPicker}
                 className="flex h-[30px] items-center gap-1 rounded-[5px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-container-high hover:border-on-surface-variant focus:outline-none"
               >
                 <EditorIcon className="text-[14px]">add</EditorIcon>
                 Import
               </button>
+              {onRetryMediaLoad ? (
+                <EditorIconButton
+                  icon="refresh"
+                  label="Refresh project media"
+                  disabled={mediaRetrying}
+                  className="h-[30px] w-[30px]"
+                  iconClassName={mediaRetrying ? "animate-spin motion-reduce:animate-none" : ""}
+                  onClick={onRetryMediaLoad}
+                />
+              ) : null}
               <EditorIconButton
                 icon="close"
                 label="Close media library"
@@ -318,28 +329,7 @@ export function MediaLibraryPanel({
             </select>
           </div>
 
-          {mediaLoadError ? (
-            <div className="flex min-h-9 shrink-0 items-center justify-between gap-2 border-b border-outline-variant bg-error-container/40 px-3 py-2 text-label-md text-on-error-container">
-              <span className="min-w-0 truncate">
-                {usingCachedMedia
-                  ? "Media refresh failed. Showing cached media."
-                  : "Media refresh failed. Project media could not be loaded."}
-              </span>
-              {onRetryMediaLoad ? (
-                <button
-                  type="button"
-                  disabled={mediaRetrying}
-                  onClick={onRetryMediaLoad}
-                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[4px] bg-on-error-container px-2 text-[11px] font-semibold text-error-container hover:opacity-90 disabled:pointer-events-none disabled:opacity-45"
-                >
-                  <EditorIcon className="text-[14px]">
-                    {mediaRetrying ? "progress_activity" : "refresh"}
-                  </EditorIcon>
-                  {mediaRetrying ? "Retrying" : "Retry media"}
-                </button>
-              ) : null}
-            </div>
-          ) : failedOrProcessingAssets > 0 ? (
+          {failedOrProcessingAssets > 0 ? (
             <div className="min-h-9 shrink-0 border-b border-outline-variant bg-surface-container-low px-3 py-2 text-label-md text-on-surface-variant">
               {failedOrProcessingAssets} item{failedOrProcessingAssets === 1 ? "" : "s"} processing or failed in
               this tab.
@@ -361,7 +351,7 @@ export function MediaLibraryPanel({
             {visibleAssets.length === 0 ? (
               <MediaLibraryEmptyState
                 state={emptyState}
-                onImport={() => dispatch(modalOpened("import-media"))}
+                onImport={() => onOpenMediaPicker?.()}
               />
             ) : null}
           </div>

@@ -48,9 +48,16 @@ interface AiAssistantPanelProps {
   cacheScope: EditorCacheScope;
   media?: MediaDto[];
   canPlanCommands?: boolean;
+  retrievalEnabled?: boolean;
 }
 
-export function AiAssistantPanel({ projectId, cacheScope, media = [], canPlanCommands = true }: AiAssistantPanelProps) {
+export function AiAssistantPanel({
+  projectId,
+  cacheScope,
+  media = [],
+  canPlanCommands = true,
+  retrievalEnabled = true,
+}: AiAssistantPanelProps) {
   const dispatch = useAppDispatch();
   const [semanticQuery, setSemanticQuery] = useState("");
   const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
@@ -426,6 +433,7 @@ export function AiAssistantPanel({ projectId, cacheScope, media = [], canPlanCom
 
       <div className="shrink-0 border-t border-outline-variant bg-surface-container-lowest p-2.5">
         <div className={workspaceExpanded ? "max-h-[320px] overflow-y-auto pr-1" : "hidden"}>
+        {retrievalEnabled ? (
         <div className="mb-3 overflow-hidden rounded-[6px] border border-outline-variant bg-surface-container-low">
           <div className="flex items-center justify-between gap-2 border-b border-outline-variant bg-surface-container px-3 py-2">
             <span className="text-label-sm font-semibold uppercase tracking-widest text-on-surface-variant">
@@ -522,6 +530,7 @@ export function AiAssistantPanel({ projectId, cacheScope, media = [], canPlanCom
             ) : null}
           </div>
         </div>
+        ) : null}
 
         <div className="mb-3 overflow-hidden rounded-[6px] border border-outline-variant bg-surface-container-low">
           <div className="border-b border-outline-variant bg-surface-container px-3 py-2">

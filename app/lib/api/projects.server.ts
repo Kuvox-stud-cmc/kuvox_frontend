@@ -8,6 +8,7 @@ import type {
   ShareRequest,
   ItemAccessMemberDto,
   ImageCompositionDto,
+  ProjectEditorBootstrapDto,
   SaveImageCompositionRequest,
 } from "../api";
 import { BaseApiModule } from "./base.server";
@@ -23,8 +24,44 @@ export class ProjectsApi extends BaseApiModule {
     return this.get<ProjectDto>(token, `${API_ROUTES.PROJECTS}/${id}`, log);
   }
 
+  getEditorBootstrap(
+    token: string,
+    id: string,
+    mediaPage = 1,
+    mediaPageSize = 100,
+    log?: RequestLogger,
+  ): Promise<ProjectEditorBootstrapDto> {
+    const query = new URLSearchParams({ mediaPage: String(mediaPage), mediaPageSize: String(mediaPageSize) });
+    return this.get<ProjectEditorBootstrapDto>(
+      token,
+      `${API_ROUTES.PROJECTS}/${id}/editor-bootstrap?${query}`,
+      log,
+    );
+  }
+
+  listProjectMediaPage(
+    token: string,
+    id: string,
+    page = 1,
+    pageSize = 100,
+    log?: RequestLogger,
+  ): Promise<PagedResult<ProjectMediaDto>> {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    return this.get<PagedResult<ProjectMediaDto>>(token, `${API_ROUTES.PROJECTS}/${id}/media?${query}`, log);
+  }
+
+  async listAllProjectMedia(token: string, id: string, log?: RequestLogger): Promise<ProjectMediaDto[]> {
+    const first = await this.listProjectMediaPage(token, id, 1, 100, log);
+    const items = [...first.items];
+    for (let page = 2; page <= first.totalPages; page += 1) {
+      const next = await this.listProjectMediaPage(token, id, page, 100, log);
+      items.push(...next.items);
+    }
+    return items;
+  }
+
   listProjectMedia(token: string, id: string, log?: RequestLogger): Promise<PagedResult<ProjectMediaDto>> {
-    return this.get<PagedResult<ProjectMediaDto>>(token, `${API_ROUTES.PROJECTS}/${id}/media?pageSize=500`, log);
+    return this.listProjectMediaPage(token, id, 1, 100, log);
   }
 
   attachProjectMedia(token: string, id: string, mediaIds: string[], log?: RequestLogger): Promise<ProjectMediaDto[]> {
@@ -100,7 +137,10 @@ export const projectsApi = new ProjectsApi(apiClient);
 // Backward compatible exports
 export const listProjects = (t: string, w: Workspace, l?: RequestLogger) => projectsApi.listProjects(t, w, l);
 export const getProject = (t: string, id: string, l?: RequestLogger) => projectsApi.getProject(t, id, l);
+export const getProjectEditorBootstrap = (t: string, id: string, p = 1, s = 100, l?: RequestLogger) => projectsApi.getEditorBootstrap(t, id, p, s, l);
 export const listProjectMedia = (t: string, id: string, l?: RequestLogger) => projectsApi.listProjectMedia(t, id, l);
+export const listProjectMediaPage = (t: string, id: string, p = 1, s = 100, l?: RequestLogger) => projectsApi.listProjectMediaPage(t, id, p, s, l);
+export const listAllProjectMedia = (t: string, id: string, l?: RequestLogger) => projectsApi.listAllProjectMedia(t, id, l);
 export const attachProjectMedia = (t: string, id: string, m: string[], l?: RequestLogger) => projectsApi.attachProjectMedia(t, id, m, l);
 export const createProject = (t: string, w: Workspace, i: { kind: number; name: string; description?: string | null }, l?: RequestLogger) => projectsApi.createProject(t, w, i, l);
 export const listSharedProjects = (t: string, l?: RequestLogger) => projectsApi.listSharedProjects(t, l);
