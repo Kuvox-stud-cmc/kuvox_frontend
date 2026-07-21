@@ -41,6 +41,7 @@ function main(): void {
   assertSourceTimeMapsBackToTimelineTime();
   assertSourceAndTimelineTimeRoundTrip();
   assertActiveAudioPlansResolveAndMixAtPlayhead();
+  assertLinkedAudioOwnsEmbeddedPlayback();
   assertAudioSoloMuteAndFadePlanning();
   assertImageAndTextOverlaysResolveInActiveRange();
   assertTopTrackControlsVisualPriority();
@@ -461,6 +462,28 @@ function assertActiveAudioPlansResolveAndMixAtPlayhead(): void {
   assert.equal(linked?.sourceTime, 6);
   assert.equal(music?.sourceTime, 3);
   assert.equal(music?.effectiveVolume, 0.4);
+}
+
+function assertLinkedAudioOwnsEmbeddedPlayback(): void {
+  const document = withPreviewUrls(createMockVideoProjectDocument("preview-linked", "Preview linked"));
+  const linked = createProgramMonitorPlan({ document, currentTime: 8 });
+  assert.equal(linked.activeVideo?.item.id, "tl-beach");
+  assert.equal(linked.activeVideo?.audioMuted, true);
+
+  const unlinked = createProgramMonitorPlan({ document, currentTime: 25 });
+  assert.equal(unlinked.activeVideo?.item.id, "tl-city");
+  assert.equal(unlinked.activeVideo?.audioMuted, false);
+
+  const city = document.tracks[0].items.find((item) => item.id === "tl-city");
+  assert.ok(city?.type === "video");
+  city.properties = {
+    audioSettings: {
+      fadeIn: { value: 4 },
+      fadeOut: { value: 4 },
+    },
+  };
+  const fading = createProgramMonitorPlan({ document, currentTime: city.timelineStart + 2, previewVolume: 0.8 });
+  assert.equal(fading.activeVideo?.audioVolume, 0.4);
 }
 
 function assertAudioSoloMuteAndFadePlanning(): void {

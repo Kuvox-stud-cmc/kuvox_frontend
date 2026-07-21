@@ -11,6 +11,13 @@ import { roundTime } from "./editor-timeline";
 import { evaluateVisualState } from "./video-evaluation";
 import { videoStackOrderMap } from "./video-stack";
 import {
+  resolveVideoVisualStyle,
+  VIDEO_FILTER_PRESETS,
+  videoPropertyHasKeyframes,
+  videoPropertyValue,
+  type VideoResolvedVisualStyle,
+} from "./video-adjustments";
+import {
   validateVideoProjectDocument,
   type VideoCrop,
   type VideoAnimatableValue,
@@ -24,7 +31,8 @@ import {
 
 export type VideoExportPreset = "h264-720p" | "h264-1080p" | "h264-4k" | "prores-master";
 export type VideoExportFormat = "mp4" | "mov";
-export type VideoExportResolution = "1280x720" | "1920x1080" | "3840x2160" | "current";
+export type VideoExportResolution = "720p" | "1080p" | "2160p" | "current";
+export type LegacyVideoExportResolution = "1280x720" | "1920x1080" | "3840x2160";
 export type VideoExportQuality = "draft" | "standard" | "high";
 export type VideoRenderJobStatus =
   | "idle"
@@ -151,7 +159,14 @@ export interface VideoRenderVisualItem {
   transform: VideoRenderTransform;
   crop: VideoRenderCrop;
   opacity: number;
+  fades: VideoRenderFades;
+  style: VideoResolvedVisualStyle;
   animation?: VideoRenderAnimation;
+}
+
+export interface VideoRenderFades {
+  fadeInDuration: number;
+  fadeOutDuration: number;
 }
 
 export interface VideoRenderAudioItem {
@@ -165,10 +180,9 @@ export interface VideoRenderAudioItem {
   speed: number;
   volume: number;
   muted: boolean;
-  fades: {
-    fadeInDuration: number;
-    fadeOutDuration: number;
-  };
+  fades: VideoRenderFades;
+  sourceOwner: "embedded-video" | "audio-item";
+  linkedGroupId?: string;
   layerOrder: number;
 }
 
@@ -181,14 +195,19 @@ export interface VideoRenderTextOverlay {
   style: VideoTextStyle;
   transform: VideoRenderTransform;
   opacity: number;
+  fades: VideoRenderFades;
   layerOrder: number;
   stackOrder: number;
   animation?: Omit<VideoRenderAnimation, "crop">;
 }
 
 export interface VideoRenderManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   projectId: string;
+  logicalCanvas: {
+    width: number;
+    height: number;
+  };
   settings: VideoExportSettings;
   durationSeconds: number;
   mediaSources: VideoRenderMediaSource[];
@@ -225,7 +244,8 @@ export class VideoRenderRequestError extends Error {
 
 const exportPresets = ["h264-720p", "h264-1080p", "h264-4k", "prores-master"] as const;
 const exportFormats = ["mp4", "mov"] as const;
-const exportResolutions = ["1280x720", "1920x1080", "3840x2160", "current"] as const;
+const exportResolutions = ["720p", "1080p", "2160p", "current"] as const;
+const legacyExportResolutions = ["1280x720", "1920x1080", "3840x2160"] as const;
 const exportQualities = ["draft", "standard", "high"] as const;
 const exportFrameRates = [24, 25, 30, 60] as const;
 
@@ -244,7 +264,7 @@ export function createDefaultVideoExportSettings(
   return {
     preset,
     format: preset === "prores-master" ? "mov" : "mp4",
-    resolution: resolutionForDimensions(dimensions.width, dimensions.height, document),
+    resolution: resolutionForPreset(preset),
     width: dimensions.width,
     height: dimensions.height,
     frameRate,
@@ -253,17 +273,38 @@ export function createDefaultVideoExportSettings(
   };
 }
 
+function resolutionForPreset(preset: VideoExportPreset): VideoExportResolution {
+  if (preset === "h264-720p") return "720p";
+  if (preset === "h264-4k") return "2160p";
+  if (preset === "prores-master") return "current";
+  return "1080p";
+}
+
 export function resolveVideoExportDimensions(
   document: VideoProjectDocument | null | undefined,
-  resolution: VideoExportResolution,
+  resolution: VideoExportResolution | LegacyVideoExportResolution,
 ): { width: number; height: number } {
-  if (resolution === "1280x720") return { width: 1280, height: 720 };
-  if (resolution === "1920x1080") return { width: 1920, height: 1080 };
-  if (resolution === "3840x2160") return { width: 3840, height: 2160 };
-  return {
-    width: positiveIntegerOrFallback(document?.settings.width, 1920),
-    height: positiveIntegerOrFallback(document?.settings.height, 1080),
-  };
+  const normalized = normalizeVideoExportResolution(resolution) ?? "current";
+  const logicalWidth = positiveIntegerOrFallback(document?.settings.width, 1920);
+  const logicalHeight = positiveIntegerOrFallback(document?.settings.height, 1080);
+  const shortEdge = normalized === "720p"
+    ? 720
+    : normalized === "1080p"
+      ? 1080
+      : normalized === "2160p"
+        ? 2160
+        : logicalWidth >= logicalHeight
+          ? logicalHeight
+          : logicalWidth;
+  return evenDimensionsForAspect(logicalWidth, logicalHeight, shortEdge);
+}
+
+export function normalizeVideoExportResolution(value: unknown): VideoExportResolution | null {
+  if (isOneOf(value, exportResolutions)) return value;
+  if (!isOneOf(value, legacyExportResolutions)) return null;
+  if (value === "1280x720") return "720p";
+  if (value === "1920x1080") return "1080p";
+  return "2160p";
 }
 
 export function validateVideoExport(
@@ -288,7 +329,7 @@ export function validateVideoExport(
     return { ok: false, errors, warnings };
   }
 
-  validateSettings(settings, errors);
+  validateSettings(settings, validation.document, errors);
 
   const mediaById = new Map(media.map((item) => [item.id, item]));
   const projectMediaById = new Map((projectMedia ?? []).map((item) => [item.mediaId, item]));
@@ -353,7 +394,7 @@ export function buildVideoRenderManifest(input: {
     return { ok: false, errors, warnings: [] };
   }
 
-  validateSettings(input.settings, errors);
+  validateSettings(input.settings, validation.document, errors);
   const result = buildVideoRenderManifestFromValidDocument(
     validation.document,
     input.media,
@@ -390,6 +431,12 @@ function buildVideoRenderManifestFromValidDocument(
   const textOverlays: VideoRenderTextOverlay[] = [];
   let hasVisibleVisualMediaBackedItem = false;
   const stackOrderByItemId = videoStackOrderMap(document);
+  const explicitAudioOwnershipGroups = new Set(
+    document.tracks
+      .filter((track) => !track.hidden)
+      .flatMap((track) => track.items)
+      .flatMap((item) => item.type === "audio" && item.linkedGroupId ? [item.linkedGroupId] : []),
+  );
 
   for (const transition of document.transitions) {
     errors.push({
@@ -445,6 +492,18 @@ function buildVideoRenderManifestFromValidDocument(
         continue;
       }
 
+      const propertyError = unsupportedPropertyState(item);
+      if (propertyError) {
+        errors.push({
+          severity: "error",
+          code: "unsupported-item-state",
+          itemId: item.id,
+          trackId: track.id,
+          message: propertyError,
+        });
+        continue;
+      }
+
       if (item.type === "text") {
         textOverlays.push({
           itemId: item.id,
@@ -455,6 +514,7 @@ function buildVideoRenderManifestFromValidDocument(
           style: { ...item.style },
           transform: renderTransform(item.transform),
           opacity: 1,
+          fades: visualFades(item),
           layerOrder: item.layerOrder,
           stackOrder: stackOrderByItemId.get(item.id) ?? 0,
           ...animationForItem(item),
@@ -531,6 +591,8 @@ function buildVideoRenderManifestFromValidDocument(
             fadeInDuration: roundTime(item.fades.fadeInDuration),
             fadeOutDuration: roundTime(item.fades.fadeOutDuration),
           },
+          sourceOwner: "audio-item",
+          ...(item.linkedGroupId ? { linkedGroupId: item.linkedGroupId } : {}),
           layerOrder: trackIndex,
         });
         continue;
@@ -556,8 +618,33 @@ function buildVideoRenderManifestFromValidDocument(
         stackOrder: stackOrderByItemId.get(item.id) ?? 0,
         transform: renderTransform(item.transform),
         opacity: roundTime(item.opacity),
+        fades: visualFades(item),
+        style: resolveVideoVisualStyle(item),
         ...animationForItem(item),
       });
+
+      if (
+        item.type === "video"
+        && !track.muted
+        && (!item.linkedGroupId || !explicitAudioOwnershipGroups.has(item.linkedGroupId))
+      ) {
+        audioItems.push({
+          itemId: item.id,
+          trackId: track.id,
+          mediaId: item.mediaId,
+          timelineStart: roundTime(item.timelineStart),
+          duration: roundTime(item.duration),
+          sourceIn: roundTime(item.sourceIn),
+          sourceOut: roundTime(item.sourceOut),
+          speed: roundTime(item.speed),
+          volume: 1,
+          muted: false,
+          fades: embeddedVideoAudioFades(item),
+          sourceOwner: "embedded-video",
+          ...(item.linkedGroupId ? { linkedGroupId: item.linkedGroupId } : {}),
+          layerOrder: trackIndex,
+        });
+      }
 
       validateAnimatedFrames(item, documentMedia, settings.frameRate, track.id, errors);
     }
@@ -590,8 +677,12 @@ function buildVideoRenderManifestFromValidDocument(
     errors: [],
     warnings,
     manifest: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       projectId: document.projectId,
+      logicalCanvas: {
+        width: document.settings.width,
+        height: document.settings.height,
+      },
       settings: { ...settings },
       durationSeconds,
       mediaSources: [...mediaSourcesById.values()].sort((a, b) => a.mediaId.localeCompare(b.mediaId)),
@@ -729,7 +820,11 @@ export function isRenderBackendUnavailable(errorOrResponse: unknown): boolean {
   return false;
 }
 
-function validateSettings(settings: VideoExportSettings, errors: VideoExportValidationIssue[]): void {
+function validateSettings(
+  settings: VideoExportSettings,
+  document: VideoProjectDocument,
+  errors: VideoExportValidationIssue[],
+): void {
   if (!isOneOf(settings.preset, exportPresets)) {
     errors.push({ severity: "error", code: "invalid-preset", message: "Choose a supported export preset." });
   }
@@ -738,12 +833,25 @@ function validateSettings(settings: VideoExportSettings, errors: VideoExportVali
     errors.push({ severity: "error", code: "invalid-format", message: "Choose MP4 or MOV." });
   }
 
-  if (!isOneOf(settings.resolution, exportResolutions)) {
+  if (!normalizeVideoExportResolution(settings.resolution)) {
     errors.push({ severity: "error", code: "invalid-resolution", message: "Choose a supported export resolution." });
   }
 
   if (!Number.isInteger(settings.width) || settings.width <= 0 || !Number.isInteger(settings.height) || settings.height <= 0) {
     errors.push({ severity: "error", code: "invalid-dimensions", message: "Export dimensions must be positive whole pixels." });
+  } else if (settings.width % 2 !== 0 || settings.height % 2 !== 0) {
+    errors.push({ severity: "error", code: "invalid-dimensions", message: "Export dimensions must use even pixel values." });
+  } else if (!dimensionsPreserveAspect(
+    settings.width,
+    settings.height,
+    document.settings.width,
+    document.settings.height,
+  )) {
+    errors.push({
+      severity: "error",
+      code: "aspect-mismatch",
+      message: "Export dimensions must preserve the saved document aspect ratio.",
+    });
   }
 
   if (!exportFrameRates.includes(settings.frameRate as never)) {
@@ -945,6 +1053,32 @@ function renderCrop(crop: VideoCrop): VideoRenderCrop {
   };
 }
 
+function visualFades(item: Exclude<VideoTimelineItem, { type: "audio" }>): VideoRenderFades {
+  return {
+    fadeInDuration: roundTime(nonNegativeProperty(item, "animation", "fadeIn", 0)),
+    fadeOutDuration: roundTime(nonNegativeProperty(item, "animation", "fadeOut", 0)),
+  };
+}
+
+function embeddedVideoAudioFades(
+  item: Extract<VideoTimelineItem, { type: "video" }>,
+): VideoRenderFades {
+  return {
+    fadeInDuration: roundTime(nonNegativeProperty(item, "audioSettings", "fadeIn", 0)),
+    fadeOutDuration: roundTime(nonNegativeProperty(item, "audioSettings", "fadeOut", 0)),
+  };
+}
+
+function nonNegativeProperty(
+  item: VideoTimelineItem,
+  groupName: string,
+  propertyName: string,
+  fallback: number,
+): number {
+  const value = videoPropertyValue(item, groupName, propertyName, fallback);
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : fallback;
+}
+
 function animationForItem(item: Exclude<VideoTimelineItem, { type: "audio" }>): { animation?: VideoRenderAnimation } {
   const transform = normalizeAnimationProperties(item.advanced?.transform, ["x", "y", "scaleX", "scaleY", "rotation"]);
   const crop = item.type === "text"
@@ -985,7 +1119,7 @@ function unsupportedAdvancedState(item: VideoTimelineItem): string | null {
   if (!advanced || Object.keys(advanced).length === 0) return null;
   if (advanced.trackingTargets?.length) return `Tracking metadata on ${item.id} is not supported by export.`;
   if (advanced.autoReframe) return `Auto-reframe metadata on ${item.id} is not supported by export.`;
-  if (advanced.color) return `Color processing on ${item.id} is not supported by export.`;
+  if (hasNonDefaultAdvancedColor(advanced.color)) return `Color processing on ${item.id} is not supported by export.`;
   if (advanced.freezeFrames?.length) return `Freeze frames on ${item.id} are not supported by export.`;
   if (advanced.timeRemap) return `Time remapping on ${item.id} is not supported by export.`;
   if (advanced.transform?.anchorX || advanced.transform?.anchorY) return `Anchor animation on ${item.id} is not supported by export.`;
@@ -1000,6 +1134,196 @@ function unsupportedAdvancedState(item: VideoTimelineItem): string | null {
     return `Advanced state on ${item.id} must contain supported transform, crop, or opacity keyframes.`;
   }
   return null;
+}
+
+function hasNonDefaultAdvancedColor(
+  color: NonNullable<NonNullable<VideoTimelineItem["advanced"]>["color"]> | undefined,
+): boolean {
+  if (!color) return false;
+  if (color.rgbMatrix && color.rgbMatrix.some((value, index) => value !== (index % 4 === 0 ? 1 : 0))) {
+    return true;
+  }
+  if (color.hsl && Object.values(color.hsl).some((band) =>
+    band.hue !== 0 || band.saturation !== 0 || band.lightness !== 0
+  )) {
+    return true;
+  }
+  if (color.curves) {
+    return Object.values(color.curves).some((points) =>
+      points.length !== 2
+      || points[0]?.x !== 0
+      || points[0]?.y !== 0
+      || points[1]?.x !== 1
+      || points[1]?.y !== 1
+    );
+  }
+  return false;
+}
+
+function unsupportedPropertyState(item: VideoTimelineItem): string | null {
+  const itemLabel = `Timeline item ${item.id}`;
+  const propertyBag = (item as any).properties;
+  if (propertyBag?.effects && typeof propertyBag.effects === "object" && Object.keys(propertyBag.effects).length > 0) {
+    return `${itemLabel} uses an item effect that is not supported by export.`;
+  }
+  const supportedStyleProperties = [
+    ["adjust", "exposure"],
+    ["adjust", "brightness"],
+    ["adjust", "contrast"],
+    ["adjust", "temperature"],
+    ["adjust", "tint"],
+    ["adjust", "saturation"],
+    ["adjust", "vibrance"],
+    ["color", "lift"],
+    ["color", "gamma"],
+    ["color", "gain"],
+    ["filters", item.type === "video" ? "builtIn" : "filterType"],
+    ["filters", "lutLibrary"],
+    ["filters", "intensity"],
+    ["filters", "blend"],
+  ] as const;
+  if (supportedStyleProperties.some(([group, property]) => videoPropertyHasKeyframes(item, group, property))) {
+    return `${itemLabel} has animated color or filter controls, which are not supported by export.`;
+  }
+
+  if (item.type === "video" || item.type === "image" || item.type === "overlay") {
+    const presetProperty = item.type === "video" ? "builtIn" : "filterType";
+    for (const propertyName of [presetProperty, "lutLibrary"] as const) {
+      const selected = videoPropertyValue(item, "filters", propertyName, "Original");
+      if (
+        typeof selected === "string"
+        && !["", "None", "Cool", ...VIDEO_FILTER_PRESETS].includes(selected)
+      ) {
+        return `${itemLabel} uses unsupported filter ${selected}.`;
+      }
+    }
+
+    const unsupportedAdjustments: Array<[string, number]> = [
+      ["highlights", 100],
+      ["shadows", 100],
+      ["whites", 0],
+      ["blacks", 0],
+      ["sharpness", 0],
+      ["clarity", 0],
+    ];
+    if (unsupportedAdjustments.some(([name, fallback]) =>
+      numericPropertyDiffers(item, "adjust", name, fallback)
+      || videoPropertyHasKeyframes(item, "adjust", name)
+    )) {
+      return `${itemLabel} uses tonal detail controls that are not supported by export.`;
+    }
+
+    if (
+      numericPropertyDiffers(item, "color", "vignette", 0)
+      || numericPropertyDiffers(item, "color", "grain", 0)
+      || videoPropertyHasKeyframes(item, "color", "vignette")
+      || videoPropertyHasKeyframes(item, "color", "grain")
+    ) {
+      return `${itemLabel} uses vignette or grain, which is not supported by export.`;
+    }
+
+    if (hasNonDefaultMask(item)) {
+      return `${itemLabel} uses a mask, which is not supported by export.`;
+    }
+
+    if (
+      Boolean(videoPropertyValue(item, "speedSettings", "reverse", false))
+      || stringPropertyDiffers(item, "speedSettings", "speedCurve", "Linear")
+      || videoPropertyValue(item, "speedSettings", "pitchCorrection", true) === false
+    ) {
+      return `${itemLabel} uses reverse, nonlinear speed, or pitch handling that is not supported by export.`;
+    }
+
+    if (hasUnsupportedEntranceExitAnimation(item)) {
+      return `${itemLabel} uses an entrance or exit animation that is not supported by export.`;
+    }
+  }
+
+  if (item.type === "video" && hasUnsupportedVideoAudioState(item)) {
+    return `${itemLabel} uses advanced audio processing that is not supported by export.`;
+  }
+
+  if (item.type === "audio" && hasUnsupportedAudioState(item)) {
+    return `${itemLabel} uses advanced audio processing that is not supported by export.`;
+  }
+
+  if (item.type === "text") {
+    const preset = videoPropertyValue(item, "animation", "preset", "None");
+    if ((typeof preset === "string" && !["", "None"].includes(preset)) || (item.style.animType && item.style.animType !== "None")) {
+      return `${itemLabel} uses an entrance or exit animation that is not supported by export.`;
+    }
+  }
+
+  return null;
+}
+
+function hasNonDefaultMask(item: VideoTimelineItem): boolean {
+  const stringDefaults: Array<[string, string]> = [
+    ["shape", "None"],
+    ["maskType", "None"],
+  ];
+  const numberDefaults: Array<[string, number]> = [
+    ["top", 0],
+    ["bottom", 0],
+    ["left", 0],
+    ["right", 0],
+    ["cornerRadius", 0],
+    ["feather", 0],
+    ["expansion", 0],
+    ["maskFeather", 10],
+    ["maskSize", 50],
+  ];
+  return stringDefaults.some(([name, fallback]) => stringPropertyDiffers(item, "mask", name, fallback))
+    || numberDefaults.some(([name, fallback]) => numericPropertyDiffers(item, "mask", name, fallback))
+    || Boolean(videoPropertyValue(item, "mask", "invert", false));
+}
+
+function hasUnsupportedEntranceExitAnimation(item: VideoTimelineItem): boolean {
+  const preset = videoPropertyValue(item, "animation", "presets", "None");
+  return (typeof preset === "string" && !["", "None"].includes(preset))
+    || numericPropertyDiffers(item, "animation", "scaleAnim", 0)
+    || numericPropertyDiffers(item, "animation", "rotationAnim", 0);
+}
+
+function hasUnsupportedVideoAudioState(item: VideoTimelineItem): boolean {
+  return numericPropertyDiffers(item, "audioSettings", "balance", 0)
+    || Boolean(videoPropertyValue(item, "audioSettings", "normalize", false))
+    || Boolean(videoPropertyValue(item, "audioSettings", "noiseRem", false))
+    || Boolean(videoPropertyValue(item, "audioSettings", "voiceEnhance", false))
+    || stringPropertyDiffers(item, "audioSettings", "eq", "Flat")
+    || Boolean(videoPropertyValue(item, "audioSettings", "compressor", false))
+    || Boolean(videoPropertyValue(item, "audioSettings", "limiter", false));
+}
+
+function hasUnsupportedAudioState(item: VideoTimelineItem): boolean {
+  return Boolean(videoPropertyValue(item, "noiseReduction", "enabled", false))
+    || numericPropertyDiffers(item, "noiseReduction", "level", 50)
+    || stringPropertyDiffers(item, "eq", "preset", "Flat")
+    || numericPropertyDiffers(item, "eq", "low", 0)
+    || numericPropertyDiffers(item, "eq", "mid", 0)
+    || numericPropertyDiffers(item, "eq", "high", 0)
+    || numericPropertyDiffers(item, "speedSettings", "speedMultiplier", 1)
+    || videoPropertyValue(item, "speedSettings", "pitchCorrection", true) === false;
+}
+
+function numericPropertyDiffers(
+  item: VideoTimelineItem,
+  groupName: string,
+  propertyName: string,
+  fallback: number,
+): boolean {
+  const value = videoPropertyValue(item, groupName, propertyName, fallback);
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value - fallback) > 0.000001;
+}
+
+function stringPropertyDiffers(
+  item: VideoTimelineItem,
+  groupName: string,
+  propertyName: string,
+  fallback: string,
+): boolean {
+  const value = videoPropertyValue(item, groupName, propertyName, fallback);
+  return typeof value === "string" && value !== "" && value !== fallback;
 }
 
 function validateAnimatedFrames(
@@ -1116,22 +1440,43 @@ function dimensionsForPreset(
   preset: VideoExportPreset,
   document: VideoProjectDocument | null | undefined,
 ): { width: number; height: number } {
-  if (preset === "h264-720p") return { width: 1280, height: 720 };
-  if (preset === "h264-4k") return { width: 3840, height: 2160 };
+  if (preset === "h264-720p") return resolveVideoExportDimensions(document, "720p");
+  if (preset === "h264-4k") return resolveVideoExportDimensions(document, "2160p");
   if (preset === "prores-master") return resolveVideoExportDimensions(document, "current");
-  return { width: 1920, height: 1080 };
+  return resolveVideoExportDimensions(document, "1080p");
 }
 
-function resolutionForDimensions(
+function evenDimensionsForAspect(
+  logicalWidth: number,
+  logicalHeight: number,
+  shortEdge: number,
+): { width: number; height: number } {
+  const aspect = logicalWidth / logicalHeight;
+  if (aspect >= 1) {
+    const height = nearestPositiveEven(shortEdge);
+    return { width: nearestPositiveEven(height * aspect), height };
+  }
+  const width = nearestPositiveEven(shortEdge);
+  return { width, height: nearestPositiveEven(width / aspect) };
+}
+
+function nearestPositiveEven(value: number): number {
+  const rounded = Math.max(2, Math.round(value));
+  if (rounded % 2 === 0) return rounded;
+  const lower = rounded - 1;
+  const upper = rounded + 1;
+  return Math.abs(value - lower) <= Math.abs(upper - value) ? lower : upper;
+}
+
+function dimensionsPreserveAspect(
   width: number,
   height: number,
-  document: VideoProjectDocument | null | undefined,
-): VideoExportResolution {
-  if (width === 1280 && height === 720) return "1280x720";
-  if (width === 1920 && height === 1080) return "1920x1080";
-  if (width === 3840 && height === 2160) return "3840x2160";
-  if (width === document?.settings.width && height === document.settings.height) return "current";
-  return "current";
+  logicalWidth: number,
+  logicalHeight: number,
+): boolean {
+  if (logicalWidth <= 0 || logicalHeight <= 0) return false;
+  const crossProductError = Math.abs(width * logicalHeight - height * logicalWidth);
+  return crossProductError <= Math.max(logicalWidth, logicalHeight);
 }
 
 function normalizeRenderStatus(

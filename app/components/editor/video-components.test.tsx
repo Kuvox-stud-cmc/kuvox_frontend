@@ -112,6 +112,7 @@ vi.mock("react-konva", async () => {
     Line: Node,
     Text: ({ text }: { text?: string }) => <span>{text}</span>,
     Image: Node,
+    Shape: Node,
   };
 });
 
@@ -712,10 +713,9 @@ describe("PreviewPanel direct visual manipulation", () => {
       store.dispatch(playbackToggled());
     });
     await waitFor(() => expect(playCallsFor(media.play, "VIDEO")).toHaveLength(2));
-    for (const video of playCallsFor(media.play, "VIDEO") as HTMLVideoElement[]) {
-      expect(video.muted).toBe(false);
-      expect(video.volume).toBe(1);
-    }
+    const playingVideos = playCallsFor(media.play, "VIDEO") as HTMLVideoElement[];
+    expect(playingVideos.map((video) => video.muted).sort()).toEqual([false, true]);
+    for (const video of playingVideos) expect(video.volume).toBe(1);
     fireEvent.pointerDown(visuals.at(-1)!, { clientX: 480, clientY: 270, pointerId: 5, pointerType: "mouse", button: 0 });
     expect(selectEditorState(store.getState()).selection.activeItemId).toBe("tl-city");
   });

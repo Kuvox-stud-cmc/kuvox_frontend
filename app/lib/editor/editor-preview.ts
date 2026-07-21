@@ -14,6 +14,7 @@ import type {
 import { audioItemRole, computeAudioFadeGain, effectiveAudioVolume, type AudioItemRole } from "./editor-audio";
 import { evaluateVideoSourceTime, evaluateVisualState } from "./video-evaluation";
 import { videoStackOrderMap } from "./video-stack";
+import { videoPropertyValue } from "./video-adjustments";
 
 export type PreviewObjectVariant = "proxy" | "canonical" | "raw";
 export type PreviewQualityPreference = VideoPreviewQuality | PreviewObjectVariant;
@@ -158,6 +159,12 @@ export function createProgramMonitorPlan({
   const soloedAudioTracks = new Set(soloedAudioTrackIds);
   const hasSoloedAudioTrack = soloedAudioTracks.size > 0;
   const stackOrderByItemId = videoStackOrderMap(document);
+  const explicitAudioOwnershipGroups = new Set(
+    document.tracks
+      .filter((track) => !track.hidden)
+      .flatMap((track) => track.items)
+      .flatMap((item) => item.type === "audio" && item.linkedGroupId ? [item.linkedGroupId] : []),
+  );
 
   document.tracks.forEach((track, trackIndex) => {
     if (track.hidden) {
@@ -222,6 +229,10 @@ export function createProgramMonitorPlan({
 
         const object = choosePreviewObjectUrl(media, previewQuality);
         warnIfMissingObject(object.url, item, media, warnings);
+        const explicitAudioOwnsPlayback = Boolean(
+          item.linkedGroupId && explicitAudioOwnershipGroups.has(item.linkedGroupId),
+        );
+        const embeddedFadeGain = computeEmbeddedVideoAudioFadeGain(item, currentTime);
         visualCandidates.push({
           item: evaluatedVisualItem(item, currentTime),
           trackIndex,
@@ -230,8 +241,11 @@ export function createProgramMonitorPlan({
           objectVariant: object.variant,
           sourceTime: evaluateVideoSourceTime(item, currentTime),
           stackOrder: stackOrderByItemId.get(item.id) ?? 0,
-          audioMuted: previewMuted || track.muted || (hasSoloedAudioTrack && !soloedAudioTracks.has(track.id)),
-          audioVolume: Math.max(0, Math.min(1, previewVolume)),
+          audioMuted: previewMuted
+            || track.muted
+            || explicitAudioOwnsPlayback
+            || (hasSoloedAudioTrack && !soloedAudioTracks.has(track.id)),
+          audioVolume: Math.max(0, Math.min(1, previewVolume * embeddedFadeGain)),
         });
         continue;
       }
@@ -366,6 +380,24 @@ function previewAnimationOpacity(item: VideoTimelineItem, currentTime: number, b
     : 1;
 
   return Math.max(0, Math.min(1, baseOpacity * fadeInGain * fadeOutGain));
+}
+
+function computeEmbeddedVideoAudioFadeGain(
+  item: VideoClipTimelineItem,
+  currentTime: number,
+): number {
+  const fadeInValue = videoPropertyValue(item, "audioSettings", "fadeIn", 0);
+  const fadeOutValue = videoPropertyValue(item, "audioSettings", "fadeOut", 0);
+  const fadeIn = typeof fadeInValue === "number" && Number.isFinite(fadeInValue) ? Math.max(0, fadeInValue) : 0;
+  const fadeOut = typeof fadeOutValue === "number" && Number.isFinite(fadeOutValue) ? Math.max(0, fadeOutValue) : 0;
+  if (fadeIn <= 0 && fadeOut <= 0) return 1;
+  const itemTime = Math.max(0, Math.min(item.duration, currentTime - item.timelineStart));
+  const fadeInGain = fadeIn > 0 ? Math.min(1, itemTime / Math.min(fadeIn, item.duration)) : 1;
+  const fadeOutWindow = Math.min(fadeOut, item.duration);
+  const fadeOutGain = fadeOut > 0 && itemTime > item.duration - fadeOutWindow
+    ? Math.max(0, (item.duration - itemTime) / Math.max(fadeOutWindow, 0.001))
+    : 1;
+  return Math.min(fadeInGain, fadeOutGain);
 }
 
 function numericProperty(item: VideoTimelineItem, groupName: string, propertyName: string, fallback: number): number {

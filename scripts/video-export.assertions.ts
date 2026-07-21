@@ -6,6 +6,7 @@ import {
   isRenderBackendUnavailable,
   normalizeVideoRenderJob,
   requestVideoRenderJob,
+  resolveVideoExportDimensions,
   validateVideoExport,
   VideoRenderRequestError,
   type VideoExportSettings,
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
   assertMissingLoadedProjectMediaIsBlocked();
   assertProcessingAndFailedMediaAreBlocked();
   assertSupportedTimelinePasses();
+  assertAdaptiveResolutionsPreserveProjectAspect();
   assertEffectsAndTransitionsAreBlocked();
   assertRenderJobNormalization();
   await assertRenderRequestBodyStaysStable();
@@ -126,11 +128,38 @@ function assertSupportedTimelinePasses(): void {
   const result = validateVideoExport(document, readyMediaForDocument(document), settings(document));
   assert.equal(result.ok, true);
   assert.equal(result.errors.length, 0);
-  assert.equal(result.manifest?.schemaVersion, 2);
+  assert.equal(result.manifest?.schemaVersion, 3);
+  assert.deepEqual(result.manifest?.logicalCanvas, {
+    width: document.settings.width,
+    height: document.settings.height,
+  });
   assert.equal(result.manifest?.projectId, document.projectId);
   const image = result.manifest?.visualItems.find((item) => item.itemId === "image-1");
   assert.ok(image);
   assert.deepEqual(image.crop, { top: 0, right: 0, bottom: 0, left: 0 });
+}
+
+function assertAdaptiveResolutionsPreserveProjectAspect(): void {
+  const cases = [
+    [1920, 1080, { width: 1280, height: 720 }],
+    [1080, 1920, { width: 720, height: 1280 }],
+    [1080, 1080, { width: 720, height: 720 }],
+    [1440, 1080, { width: 960, height: 720 }],
+    [2520, 1080, { width: 1680, height: 720 }],
+  ] as const;
+  for (const [width, height, expected] of cases) {
+    const document = createEmptyVideoProjectDocument({ id: `aspect-${width}-${height}`, name: "Aspect" });
+    document.settings.width = width;
+    document.settings.height = height;
+    const dimensions = resolveVideoExportDimensions(document, "720p");
+    assert.deepEqual(dimensions, expected);
+    assert.equal(dimensions.width % 2, 0);
+    assert.equal(dimensions.height % 2, 0);
+  }
+  const portrait = createEmptyVideoProjectDocument({ id: "legacy-portrait", name: "Legacy portrait" });
+  portrait.settings.width = 1080;
+  portrait.settings.height = 1920;
+  assert.deepEqual(resolveVideoExportDimensions(portrait, "1280x720"), { width: 720, height: 1280 });
 }
 
 function assertEffectsAndTransitionsAreBlocked(): void {

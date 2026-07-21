@@ -19,12 +19,24 @@ function main(): void {
   assertManifestIncludesRenderableSubset();
   assertMissingCanonicalSourceBlocksExport();
   assertUnsupportedFeaturesBlockManifest();
+  assertUnsupportedNonDefaultControlsBlockManifest();
   assertSupportedAnimationIsNormalized();
   assertMissingDimensionsBlockExport();
 }
 
 function assertManifestIncludesRenderableSubset(): void {
   const document = renderableDocument();
+  const styledBeach = document.tracks[0].items.find((item) => item.id === "tl-beach");
+  if (styledBeach?.type !== "video") throw new Error("Expected beach video fixture");
+  styledBeach.properties = {
+    adjust: { exposure: { value: 12 }, temperature: { value: 8 } },
+    filters: {
+      builtIn: { value: "Cinematic" },
+      intensity: { value: 50 },
+      blend: { value: 80 },
+    },
+    animation: { fadeIn: { value: 1.25 }, fadeOut: { value: 2.5 } },
+  };
   const media = readyMediaForDocument(document);
   const result = buildVideoRenderManifest({
     document,
@@ -34,8 +46,12 @@ function assertManifestIncludesRenderableSubset(): void {
 
   assert.equal(result.ok, true);
   const manifest = result.manifest;
-  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.schemaVersion, 3);
   assert.equal(manifest.projectId, document.projectId);
+  assert.deepEqual(manifest.logicalCanvas, {
+    width: document.settings.width,
+    height: document.settings.height,
+  });
   assert.equal(manifest.settings.destinationLabel, "Renderable h264-1080p");
   assert.equal(manifest.durationSeconds, 66.4);
   assert.deepEqual(manifest.mediaSources.map((source) => source.mediaId), [
@@ -59,6 +75,10 @@ function assertManifestIncludesRenderableSubset(): void {
   assert.equal(beach.sourceOut, 21);
   assert.equal(beach.speed, 1);
   assert.deepEqual(beach.crop, { top: 0, right: 0, bottom: 0, left: 0 });
+  assert.deepEqual(beach.fades, { fadeInDuration: 1.25, fadeOutDuration: 2.5 });
+  assert.equal(beach.style.registryVersion, 1);
+  assert.equal(beach.style.preset, "Cinematic");
+  assert.equal(beach.style.adjustments.exposure, 10.4);
   assert.equal(typeof beach.stackOrder, "number");
 
   const city = manifest.visualItems.find((item) => item.itemId === "tl-city");
@@ -66,9 +86,21 @@ function assertManifestIncludesRenderableSubset(): void {
   const image = manifest.visualItems.find((item) => item.type === "image" && item.itemId === "image-1");
   assert.ok(image);
   assert.deepEqual(image.crop, { top: 0, right: 0, bottom: 0, left: 0 });
-  assert.ok(manifest.audioItems.some((item) => item.itemId === "tl-audio-main" && item.volume === 1));
+  assert.ok(manifest.audioItems.some((item) =>
+    item.itemId === "tl-audio-main"
+    && item.volume === 1
+    && item.sourceOwner === "audio-item"
+    && item.linkedGroupId === "linked-beach"
+  ));
+  assert.equal(manifest.audioItems.some((item) => item.itemId === "tl-beach" && item.sourceOwner === "embedded-video"), false);
+  assert.ok(manifest.audioItems.some((item) => item.itemId === "tl-city" && item.sourceOwner === "embedded-video"));
+  assert.ok(manifest.audioItems.some((item) => item.itemId === "tl-mountain" && item.sourceOwner === "embedded-video"));
   assert.equal(manifest.audioItems.some((item) => item.itemId === "muted-audio"), false);
-  assert.ok(manifest.textOverlays.some((item) => item.itemId === "tl-caption" && item.text === "Welcome to summer"));
+  assert.ok(manifest.textOverlays.some((item) =>
+    item.itemId === "tl-caption"
+    && item.text === "Welcome to summer"
+    && item.fades.fadeInDuration === 0
+  ));
   assert.equal(manifest.visualItems.some((item) => item.itemId === "hidden-video"), false);
   assert.ok(result.warnings.some((issue) => issue.code === "hidden-track-excluded"));
   assert.ok(result.warnings.some((issue) => issue.code === "muted-audio-item-excluded"));
@@ -82,6 +114,28 @@ function assertManifestIncludesRenderableSubset(): void {
   const validation = validateVideoExport(document, media, settings(document));
   assert.equal(validation.ok, true);
   assert.deepEqual(validation.manifest, manifest);
+}
+
+function assertUnsupportedNonDefaultControlsBlockManifest(): void {
+  const scenarios = [
+    { label: "mask", properties: { mask: { shape: { value: "Circle" } } } },
+    { label: "grain", properties: { color: { grain: { value: 20 } } } },
+    { label: "reverse", properties: { speedSettings: { reverse: { value: true } } } },
+    { label: "audio DSP", properties: { audioSettings: { compressor: { value: true } } } },
+  ];
+  for (const scenario of scenarios) {
+    const document = renderableDocument();
+    const beach = document.tracks[0].items.find((item) => item.id === "tl-beach");
+    if (beach?.type !== "video") throw new Error("Expected beach fixture");
+    beach.properties = scenario.properties as never;
+    const result = buildVideoRenderManifest({
+      document,
+      media: readyMediaForDocument(document),
+      settings: settings(document),
+    });
+    assert.equal(result.ok, false, scenario.label);
+    assert.ok(result.errors.some((issue) => issue.code === "unsupported-item-state"), scenario.label);
+  }
 }
 
 function assertSupportedAnimationIsNormalized(): void {

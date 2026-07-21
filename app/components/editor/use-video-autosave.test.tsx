@@ -286,7 +286,7 @@ describe("useVideoAutosave export synchronization", () => {
     });
     const store = makeStore();
     const { result, rerender } = renderAutosave(initialEditor, store);
-    const saving = result.current.syncNow();
+    const saving = result.current.flushForExport();
     await act(async () => undefined);
     const newerDocument = { ...document, updatedAt: "2026-07-11T00:00:01.000Z", history: { ...document.history, revision: document.history.revision + 1 } };
     rerender(editorState({ ...initialEditor, document: newerDocument, syncStatus: "dirty" }));

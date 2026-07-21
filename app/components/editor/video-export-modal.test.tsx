@@ -39,7 +39,7 @@ vi.mock("~/lib/editor/video-export", () => ({
   createDefaultVideoExportSettings: () => ({
     preset: "h264-1080p",
     format: "mp4",
-    resolution: "1920x1080",
+    resolution: "1080p",
     width: 1920,
     height: 1080,
     frameRate: 30,

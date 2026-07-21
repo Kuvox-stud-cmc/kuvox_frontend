@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type Konva from "konva";
-import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from "react-konva";
+import { Circle, Group, Layer, Line, Rect, Shape, Stage, Text } from "react-konva";
 
 import {
   applyHandlePointerOffset,
@@ -69,6 +69,11 @@ import {
   videoOperationApplied,
 } from "~/store/slices/editor-slice";
 import { updateTransformCropOperation, type UpdateTextOperation } from "~/lib/editor/video-operations";
+import {
+  resolveVideoVisualStyle,
+  videoVisualStyleCssFilter,
+  type VideoStyledVisualItem,
+} from "~/lib/editor/video-adjustments";
 
 import { EditorIcon, EditorIconButton } from "../editor-ui";
 import { getActiveDraggedMedia } from "~/lib/editor/editor-media";
@@ -495,7 +500,6 @@ export function PreviewPanel({
             style={{
               width: stageSize.width,
               height: stageSize.height,
-              filter: getPreviewCSSFilter(activeEffect, activePreviewItem),
             }}
             onDragOver={(event) => {
               if (!Array.from(event.dataTransfer.types).includes("application/x-kuvox-media-id")) return;
@@ -1299,6 +1303,7 @@ function ProgramMonitorStage({
               <VisualNode
                 key={visual.item.id}
                 visual={visual}
+                effect={effectForPreviewItem(plan.document, visual.item.id)}
                 projectId={plan.document.projectId}
                 clockVideo={visual.item.id === activeVideoId}
                 videoElement={visual.item.id === activeVideoId
@@ -1327,6 +1332,7 @@ function ProgramMonitorStage({
             <OverlayNode
               key={overlay.item.id}
               overlay={overlay}
+              effect={effectForPreviewItem(plan.document, overlay.item.id)}
               projectId={plan.document.projectId}
               frameBounds={frameBounds}
               settings={settings}
@@ -1383,6 +1389,7 @@ function ProgramMonitorStage({
 
 function VisualNode({
   visual,
+  effect,
   projectId,
   clockVideo,
   videoElement,
@@ -1396,6 +1403,7 @@ function VisualNode({
   onGestureStart,
 }: {
   visual: PreviewVisualPlan;
+  effect: string | null;
   projectId: string;
   clockVideo: boolean;
   videoElement: HTMLVideoElement | null;
@@ -1504,9 +1512,11 @@ function VisualNode({
         ) : (
           <>
             {cropModeActive ? (
-              <KonvaImage
+              <StyledPreviewImage
                 name={`preview-crop-ghost-${visual.item.id}`}
                 image={sourceImage}
+                item={visual.item}
+                effect={effect}
                 x={-geometry.width / 2 - sourceCrop.x * densityX}
                 y={-geometry.height / 2 - sourceCrop.y * densityY}
                 width={(dimensions.mediaWidth ?? settings.width) * densityX}
@@ -1515,8 +1525,10 @@ function VisualNode({
                 listening={false}
               />
             ) : null}
-            <KonvaImage
+            <StyledPreviewImage
               image={sourceImage}
+              item={visual.item}
+              effect={effect}
               x={-geometry.width / 2}
               y={-geometry.height / 2}
               width={geometry.width}
@@ -1534,8 +1546,75 @@ function VisualNode({
   );
 }
 
+function StyledPreviewImage({
+  image,
+  item,
+  effect,
+  x,
+  y,
+  width,
+  height,
+  cropX = 0,
+  cropY = 0,
+  cropWidth,
+  cropHeight,
+  opacity = 1,
+  listening = true,
+  name,
+}: {
+  image: HTMLImageElement | HTMLVideoElement;
+  item: VideoStyledVisualItem;
+  effect: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  cropX?: number;
+  cropY?: number;
+  cropWidth?: number;
+  cropHeight?: number;
+  opacity?: number;
+  listening?: boolean;
+  name?: string;
+}) {
+  const filter = getPreviewCSSFilter(effect, item);
+  const sourceWidth = cropWidth ?? positiveImageDimension("videoWidth" in image ? image.videoWidth : image.naturalWidth) ?? width;
+  const sourceHeight = cropHeight ?? positiveImageDimension("videoHeight" in image ? image.videoHeight : image.naturalHeight) ?? height;
+  return (
+    <Shape
+      name={name}
+      opacity={opacity}
+      listening={listening}
+      fill="#000"
+      sceneFunc={(context) => {
+        context.save();
+        context.filter = filter;
+        context.drawImage(
+          image,
+          cropX,
+          cropY,
+          Math.max(1, sourceWidth),
+          Math.max(1, sourceHeight),
+          x,
+          y,
+          width,
+          height,
+        );
+        context.restore();
+      }}
+      hitFunc={(context, shape) => {
+        context.beginPath();
+        context.rect(x, y, width, height);
+        context.closePath();
+        context.fillShape(shape);
+      }}
+    />
+  );
+}
+
 function OverlayNode({
   overlay,
+  effect,
   projectId,
   frameBounds,
   settings,
@@ -1549,6 +1628,7 @@ function OverlayNode({
   onTextGestureStart,
 }: {
   overlay: PreviewOverlayPlan;
+  effect: string | null;
   projectId: string;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
@@ -1587,6 +1667,7 @@ function OverlayNode({
   return (
     <MediaOverlayNode
       overlay={overlay}
+      effect={effect}
       projectId={projectId}
       frameBounds={frameBounds}
       settings={settings}
@@ -1630,6 +1711,8 @@ function TextOverlayNode({
   const frameScale = frameBounds.width / settings.width;
   const handleSize = Math.max(8, 10 * frameScale);
   const handleOffset = handleSize / 2;
+  const textScale = Math.max(0.1, transform.scaleY);
+  const shadowScale = frameScale * Math.max(0.1, (Math.abs(transform.scaleX) + Math.abs(transform.scaleY)) / 2);
 
   return (
     <Group
@@ -1657,13 +1740,18 @@ function TextOverlayNode({
         width={bounds.width}
         height={bounds.height}
         fontFamily={overlay.item.style.fontFamily}
-        fontSize={overlay.item.style.fontSize * frameScale * Math.max(0.1, transform.scaleY)}
+        fontSize={overlay.item.style.fontSize * frameScale * textScale}
         fill={overlay.item.style.color}
         fontStyle={fontStyleForText(overlay.item.style)}
         align={overlay.item.style.textAlign ?? "center"}
         verticalAlign="middle"
-        shadowColor="black"
-        shadowBlur={10}
+        wrap="word"
+        stroke={overlay.item.style.strokeColor ?? overlay.item.style.color}
+        strokeWidth={(overlay.item.style.strokeWidth ?? 0) * frameScale * textScale}
+        shadowColor={overlay.item.style.shadowColor ?? "black"}
+        shadowBlur={(overlay.item.style.shadowBlur ?? 10) * shadowScale}
+        shadowOffsetX={(overlay.item.style.shadowOffsetX ?? 0) * frameScale * Math.max(0.1, Math.abs(transform.scaleX))}
+        shadowOffsetY={(overlay.item.style.shadowOffsetY ?? 0) * frameScale * textScale}
         shadowOpacity={0.55}
       />
       {selected ? (
@@ -1704,6 +1792,7 @@ function TextOverlayNode({
 
 function MediaOverlayNode({
   overlay,
+  effect,
   projectId,
   frameBounds,
   settings,
@@ -1714,6 +1803,7 @@ function MediaOverlayNode({
   onGestureStart,
 }: {
   overlay: PreviewMediaOverlayPlan;
+  effect: string | null;
   projectId: string;
   frameBounds: PreviewRect;
   settings: VideoProjectSettings;
@@ -1775,9 +1865,11 @@ function MediaOverlayNode({
         ) : (
           <>
             {cropModeActive ? (
-              <KonvaImage
+              <StyledPreviewImage
                 name={`preview-crop-ghost-${overlay.item.id}`}
                 image={image}
+                item={overlay.item}
+                effect={effect}
                 x={-geometry.width / 2 - sourceCrop.x * densityX}
                 y={-geometry.height / 2 - sourceCrop.y * densityY}
                 width={(dimensions.mediaWidth ?? settings.width) * densityX}
@@ -1786,8 +1878,10 @@ function MediaOverlayNode({
                 listening={false}
               />
             ) : null}
-            <KonvaImage
+            <StyledPreviewImage
               image={image}
+              item={overlay.item}
+              effect={effect}
               x={-geometry.width / 2}
               y={-geometry.height / 2}
               width={geometry.width}
@@ -3290,52 +3384,15 @@ function getPreviewCSSFilter(effect: string | null, item: PreviewEditableVisualI
   if (effectFilter !== "none") parts.push(effectFilter);
 
   if (item) {
-    const preset = previewStringProperty(item, "filters", item.type === "video" ? "builtIn" : "filterType", "None");
-    const lut = previewStringProperty(item, "filters", "lutLibrary", "None");
-    const intensity = previewNumberProperty(item, "filters", "intensity", 100);
-    const blend = previewNumberProperty(item, "filters", "blend", 100);
-    const presetFilter = getCSSFilterForEffect(preset !== "None" ? preset : lut);
-    if (presetFilter !== "none" && intensity > 0 && blend > 0) parts.push(presetFilter);
-
-    const exposure = previewNumberProperty(item, "adjust", "exposure", 0);
-    const brightness = previewNumberProperty(item, "adjust", "brightness", 100);
-    const contrast = previewNumberProperty(item, "adjust", "contrast", 100);
-    const highlights = previewNumberProperty(item, "adjust", "highlights", 100);
-    const shadows = previewNumberProperty(item, "adjust", "shadows", 100);
-    const whites = previewNumberProperty(item, "adjust", "whites", 0);
-    const blacks = previewNumberProperty(item, "adjust", "blacks", 0);
-    const temperature = previewNumberProperty(item, "adjust", "temperature", 0);
-    const tint = previewNumberProperty(item, "adjust", "tint", 0);
-    const saturation = previewNumberProperty(item, "adjust", "saturation", 100);
-    const vibrance = previewNumberProperty(item, "adjust", "vibrance", 100);
-    const lift = previewNumberProperty(item, "color", "lift", 0);
-    const gamma = previewNumberProperty(item, "color", "gamma", 0);
-    const gain = previewNumberProperty(item, "color", "gain", 0);
-
-    const brightnessValue = clampPreviewValue(
-      brightness / 100 + exposure / 240 + lift / 320 + whites / 520 - blacks / 520 + (shadows - 100) / 700,
-      0.08,
-      3,
-    );
-    const contrastValue = clampPreviewValue(
-      contrast / 100 + gamma / 260 + gain / 420 + (highlights - 100) / 700 - (shadows - 100) / 900,
-      0.08,
-      3,
-    );
-    const saturationValue = clampPreviewValue(saturation / 100 + (vibrance - 100) / 260 + gain / 340, 0, 3.5);
-    const hueRotation = clampPreviewValue((temperature * -0.18) + (tint * 0.22), -45, 45);
-    const sepia = clampPreviewValue(Math.max(0, temperature) / 420, 0, 0.28);
-
-    parts.push(
-      `brightness(${formatFilterNumber(brightnessValue)})`,
-      `contrast(${formatFilterNumber(contrastValue)})`,
-      `saturate(${formatFilterNumber(saturationValue)})`,
-    );
-    if (Math.abs(hueRotation) > 0.01) parts.push(`hue-rotate(${formatFilterNumber(hueRotation)}deg)`);
-    if (sepia > 0) parts.push(`sepia(${formatFilterNumber(sepia)})`);
+    const styleFilter = videoVisualStyleCssFilter(resolveVideoVisualStyle(item));
+    if (styleFilter !== "none") parts.push(styleFilter);
   }
 
   return parts.length ? parts.join(" ") : "none";
+}
+
+function effectForPreviewItem(document: VideoProjectDocument, itemId: string): string | null {
+  return document.effects.find((effect) => effect.enabled && effect.targetItemIds.includes(itemId))?.type ?? null;
 }
 
 function getVisualPreviewOverlay(effect: string | null, item: PreviewEditableVisualItem | null): {

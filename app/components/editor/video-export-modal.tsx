@@ -47,9 +47,9 @@ const formats: Array<{ value: VideoExportFormat; label: string }> = [
 ];
 
 const resolutions: Array<{ value: VideoExportResolution; label: string }> = [
-  { value: "1280x720", label: "1280 x 720" },
-  { value: "1920x1080", label: "1920 x 1080" },
-  { value: "3840x2160", label: "3840 x 2160" },
+  { value: "720p", label: "720p (adaptive)" },
+  { value: "1080p", label: "1080p (adaptive)" },
+  { value: "2160p", label: "2160p (adaptive)" },
   { value: "current", label: "Current document" },
 ];
 
@@ -76,7 +76,11 @@ export function VideoExportModal({
   const [status, setStatus] = useState<VideoRenderJobStatus>("idle");
   const [validation, setValidation] = useState<VideoExportValidationResult | null>(null);
   const [job, setJob] = useState<VideoRenderJob | null>(null);
-  const [renderRequest, setRenderRequest] = useState<{ timelineId: string; revisionNumber: number } | null>(null);
+  const [renderRequest, setRenderRequest] = useState<{
+    timelineId: string;
+    revisionNumber: number;
+    documentSignature: string;
+  } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const wasOpen = useRef(false);
   const actionInFlight = useRef(false);
@@ -182,7 +186,12 @@ export function VideoExportModal({
       }
 
       let sync: { timelineId: string; revisionNumber: number };
-      if (reuseSyncedRevision && renderRequest) {
+      const currentDocumentSignature = exportDocumentSignature(document);
+      if (
+        reuseSyncedRevision
+        && renderRequest
+        && renderRequest.documentSignature === currentDocumentSignature
+      ) {
         sync = renderRequest;
       } else {
         setStatus("syncing");
@@ -193,7 +202,7 @@ export function VideoExportModal({
           return;
         }
         sync = { timelineId: synced.timelineId, revisionNumber: synced.revisionNumber };
-        setRenderRequest(sync);
+        setRenderRequest({ ...sync, documentSignature: currentDocumentSignature });
       }
 
       try {
@@ -368,6 +377,11 @@ export function VideoExportModal({
     </div>
   );
 
+}
+
+function exportDocumentSignature(document: VideoProjectDocument | null): string {
+  if (!document) return "missing";
+  return `${document.projectId ?? "unknown"}:${document.history?.revision ?? "unknown"}:${document.updatedAt ?? "unknown"}`;
 }
 
 function SelectField({
