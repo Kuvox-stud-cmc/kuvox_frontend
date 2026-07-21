@@ -7,8 +7,29 @@ import {
   ScrollRestoration,
 } from "react-router";
 
+import {
+  CacanodeWidgetConfigProvider,
+  type CacanodeWidgetConfig,
+} from "~/components/integrations/cacanode-chat-widget";
+
 import type { Route } from "./+types/root";
 import "./app.css";
+
+export function loader() {
+  const runtimeScriptSrc = typeof process !== "undefined"
+    ? process.env.WIDGET_SCRIPT_SRC?.trim()
+    : undefined;
+  const runtimeToken = typeof process !== "undefined"
+    ? process.env.WIDGET_TOKEN?.trim()
+    : undefined;
+
+  return {
+    cacanodeWidget: {
+      scriptSrc: runtimeScriptSrc || import.meta.env.WIDGET_SCRIPT_SRC?.trim() || null,
+      token: runtimeToken || import.meta.env.WIDGET_TOKEN?.trim() || null,
+    } satisfies CacanodeWidgetConfig,
+  };
+}
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -57,8 +78,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
-  return <Outlet />;
+export default function App({ loaderData }: Route.ComponentProps) {
+  return (
+    <CacanodeWidgetConfigProvider value={loaderData.cacanodeWidget}>
+      <Outlet />
+    </CacanodeWidgetConfigProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

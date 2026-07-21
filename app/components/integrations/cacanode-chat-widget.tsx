@@ -1,6 +1,30 @@
-import { useEffect } from "react";
+import { createContext, useContext, useEffect, type ReactNode } from "react";
 
 const WIDGET_SCRIPT_SELECTOR = "script[data-kuvox-cacanode-chat]";
+
+export interface CacanodeWidgetConfig {
+  scriptSrc: string | null;
+  token: string | null;
+}
+
+const CacanodeWidgetConfigContext = createContext<CacanodeWidgetConfig>({
+  scriptSrc: null,
+  token: null,
+});
+
+export function CacanodeWidgetConfigProvider({
+  value,
+  children,
+}: {
+  value: CacanodeWidgetConfig;
+  children: ReactNode;
+}) {
+  return (
+    <CacanodeWidgetConfigContext.Provider value={value}>
+      {children}
+    </CacanodeWidgetConfigContext.Provider>
+  );
+}
 
 function removeWidgetFrames(widgetOrigin: string) {
   document.querySelectorAll<HTMLIFrameElement>('iframe[title="Customer support chat"]').forEach((frame) => {
@@ -17,12 +41,14 @@ function removeWidgetFrames(widgetOrigin: string) {
 
 /** Loads CacaNode chat only while the containing route layout is mounted. */
 export function CacanodeChatWidget() {
-  useEffect(() => {
-    const scriptSrc = import.meta.env.WIDGET_SCRIPT_SRC?.trim();
-    const token = import.meta.env.WIDGET_TOKEN?.trim();
-    if (!scriptSrc || !token) return undefined;
+  const { scriptSrc, token } = useContext(CacanodeWidgetConfigContext);
 
-    const widgetUrl = new URL(scriptSrc, window.location.href);
+  useEffect(() => {
+    const normalizedScriptSrc = scriptSrc?.trim();
+    const normalizedToken = token?.trim();
+    if (!normalizedScriptSrc || !normalizedToken) return undefined;
+
+    const widgetUrl = new URL(normalizedScriptSrc, window.location.href);
     let script = document.querySelector<HTMLScriptElement>(WIDGET_SCRIPT_SELECTOR);
     let active = true;
 
@@ -30,7 +56,7 @@ export function CacanodeChatWidget() {
       script = document.createElement("script");
       script.async = true;
       script.src = widgetUrl.href;
-      script.dataset.token = token;
+      script.dataset.token = normalizedToken;
       script.dataset.kuvoxCacanodeChat = "true";
       document.body.appendChild(script);
     }
@@ -47,7 +73,7 @@ export function CacanodeChatWidget() {
       script.remove();
       removeWidgetFrames(widgetUrl.origin);
     };
-  }, []);
+  }, [scriptSrc, token]);
 
   return null;
 }

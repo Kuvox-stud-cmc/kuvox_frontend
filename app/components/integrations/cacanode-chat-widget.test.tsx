@@ -2,25 +2,36 @@
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { CacanodeChatWidget } from "./cacanode-chat-widget";
+import {
+  CacanodeChatWidget,
+  CacanodeWidgetConfigProvider,
+  type CacanodeWidgetConfig,
+} from "./cacanode-chat-widget";
 
-beforeEach(() => {
-  vi.stubEnv("WIDGET_SCRIPT_SRC", "http://localhost/widget/v1/cacanode-chat.js");
-  vi.stubEnv("WIDGET_TOKEN", "ccn_it_test");
-});
+const configuredWidget: CacanodeWidgetConfig = {
+  scriptSrc: "http://localhost/widget/v1/cacanode-chat.js",
+  token: "ccn_it_test",
+};
+
+function renderWidget(value: CacanodeWidgetConfig = configuredWidget) {
+  return render(
+    <CacanodeWidgetConfigProvider value={value}>
+      <CacanodeChatWidget />
+    </CacanodeWidgetConfigProvider>,
+  );
+}
 
 afterEach(() => {
   cleanup();
   document.body.replaceChildren();
-  vi.unstubAllEnvs();
 });
 
 describe("CacanodeChatWidget", () => {
   it("loads the configured widget script once", () => {
-    const first = render(<CacanodeChatWidget />);
-    const second = render(<CacanodeChatWidget />);
+    const first = renderWidget();
+    const second = renderWidget();
 
     const scripts = document.querySelectorAll<HTMLScriptElement>("script[data-kuvox-cacanode-chat]");
     expect(scripts).toHaveLength(1);
@@ -43,7 +54,7 @@ describe("CacanodeChatWidget", () => {
     widgetFrame.src = "http://localhost/widget/widget.html";
     document.body.appendChild(widgetFrame);
 
-    const view = render(<CacanodeChatWidget />);
+    const view = renderWidget();
     view.unmount();
 
     expect(document.querySelector('iframe[src="http://localhost/widget/widget.html"]')).not.toBeInTheDocument();
@@ -52,9 +63,7 @@ describe("CacanodeChatWidget", () => {
   });
 
   it("stays disabled when widget configuration is incomplete", () => {
-    vi.stubEnv("WIDGET_TOKEN", "");
-
-    render(<CacanodeChatWidget />);
+    renderWidget({ ...configuredWidget, token: null });
 
     expect(document.querySelector("script[data-kuvox-cacanode-chat]")).not.toBeInTheDocument();
   });

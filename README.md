@@ -54,6 +54,7 @@ development). Key variables:
 | `KUVOX_BFF_COALESCING_MAX_IN_FLIGHT` | Maximum shared in-flight entries per process | `256` |
 | `KUVOX_BFF_COALESCING_DEADLINE_MS` | Hard deadline for shared upstream work | `5000` |
 | `KUVOX_BFF_METRICS_ENABLED` | Expose the private frontend `/metrics` endpoint | `false` |
+| `WIDGET_SCRIPT_SRC` | Public CacaNode widget script URL, injected by the frontend server at runtime | none |
 | `WIDGET_TOKEN` | Browser-visible `widget:chat` token used only by the floating widget; restrict it with Widget Allowed origins | none |
 | `CACANODE_API_URL` | CacaNode API base used by server-side Contact Support | none |
 | `CACANODE_API_TOKEN` | Server-only `api:chat` token for Contact Support chat and ticket submission | none |
