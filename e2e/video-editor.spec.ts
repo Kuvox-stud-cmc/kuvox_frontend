@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("overlay elements drag directly in preview and persist after the next click", async ({ page }) => {
-  await page.goto("/editor/video/e2e-video-project");
+  await openFixtureVideoEditor(page);
   await page.getByRole("button", { name: "Elements" }).click();
   await page.getByTitle("Drag or click to add Watercolor Blue to timeline").click();
   await expect(page.getByLabel(/timeline item, Watercolor Blue/i)).toBeVisible();
@@ -53,7 +53,7 @@ test("timeline shows a session-only preparing block before committing media", as
     await route.fulfill({ status: 204 });
   });
 
-  await page.goto("/editor/video/e2e-video-project");
+  await openFixtureVideoEditor(page);
   await page.getByRole("button", { name: /beach ready/i }).click();
   await expect(page.getByLabel(/beach ready\.mp4, preparing/i)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("timeline-preparing.png") });
@@ -131,7 +131,7 @@ test("local timeline recovery syncs once and exports the exact saved revision", 
     await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Timeline unavailable" }) });
   });
 
-  await page.goto("/editor/video/e2e-video-project");
+  await openFixtureVideoEditor(page);
   await page.getByRole("button", { name: /beach ready/i }).click();
   await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
   await expect(page.getByText(/Saved locally/)).toBeVisible();
@@ -144,6 +144,7 @@ test("local timeline recovery syncs once and exports the exact saved revision", 
   expect(pendingBeforeRefresh.map((record) => record.kind)).toEqual(expect.arrayContaining(["timelineDraft", "projectMediaAttach"]));
 
   await page.reload();
+  await waitForFixtureVideoEditor(page);
   await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
   const afterRefresh = await readCanonicalTimelineDraft(page, "e2e-video-project");
   expect(afterRefresh).toEqual(beforeRefresh);
@@ -161,7 +162,7 @@ test("local timeline recovery syncs once and exports the exact saved revision", 
 });
 
 test("video editor route loads, edits timeline, recovers IndexedDB autosave, applies AI, and handles export backend outage", async ({ page }) => {
-  await page.goto("/editor/video/e2e-video-project");
+  await openFixtureVideoEditor(page);
 
   await expect(page.getByText("E2E Video Project")).toBeVisible();
   await expect(page.getByRole("button", { name: /beach ready/i })).toBeVisible();
@@ -191,6 +192,7 @@ test("video editor route loads, edits timeline, recovers IndexedDB autosave, app
   await page.getByLabel(/video timeline item/i).first().click();
   await page.getByRole("button", { name: /delete selected/i }).click();
   await page.reload();
+  await waitForFixtureVideoEditor(page);
   await expect(page.getByText(/Saved locally|Synced/)).toBeVisible();
   await expect(page.getByText("Empty timeline")).toBeVisible();
 
@@ -243,9 +245,12 @@ test("render jobs complete over the shared websocket without status polling", as
     await route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
   });
 
-  await page.goto("/editor/video/e2e-video-project");
+  await openFixtureVideoEditor(page);
   await page.getByRole("button", { name: /beach ready/i }).click();
-  await expect(page.getByLabel(/video timeline item, beach ready/i)).toBeVisible();
+  const preparingItem = page.getByLabel(/beach ready\.mp4, preparing/i);
+  const readyItem = page.getByLabel(/video timeline item, beach ready/i);
+  await expect(preparingItem.or(readyItem).first()).toBeVisible();
+  await expect(readyItem).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: /export video/i }).click();
   await page.getByRole("button", { name: /create render job/i }).click();
   await expect(page.getByText("Queued", { exact: true })).toBeVisible();
@@ -278,7 +283,7 @@ test("render jobs complete over the shared websocket without status polling", as
 
 test("manual editor adapts across phone, tablet, and desktop layouts", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/editor/video/e2e-video-project");
+  await openFixtureVideoEditor(page);
 
   const responsiveControls = page.locator("[data-responsive-manual-controls]");
   await expect(responsiveControls).toBeVisible();
@@ -323,6 +328,17 @@ test("manual editor adapts across phone, tablet, and desktop layouts", async ({ 
   await expect(inspectorPanel).toBeVisible();
   await expect(page.locator("[data-video-editor-root]")).toHaveCSS("overflow", "hidden");
 });
+
+async function openFixtureVideoEditor(page: Page) {
+  await page.goto("/editor/video/e2e-video-project");
+  await waitForFixtureVideoEditor(page);
+}
+
+async function waitForFixtureVideoEditor(page: Page) {
+  const editor = page.locator("[data-video-editor-root]");
+  await expect(editor).toHaveAttribute("data-editor-project-id", "e2e-video-project", { timeout: 15_000 });
+  await expect(editor).toHaveAttribute("data-editor-document-status", "ready", { timeout: 15_000 });
+}
 
 async function installBffMocks(page: Page) {
   await page.route("**/bff/projects/e2e-video-project/video-timeline", async (route) => {

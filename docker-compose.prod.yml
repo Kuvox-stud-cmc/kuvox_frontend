@@ -79,6 +79,8 @@ services:
         condition: service_healthy
       redis-api:
         condition: service_healthy
+      seaweedfs-bootstrap:
+        condition: service_completed_successfully
     networks:
       - kuvox
 
@@ -89,9 +91,14 @@ services:
       - "127.0.0.1:8000:8000"
     env_file: .env
     environment:
+      KUVOX_HOST: "0.0.0.0"
+      KUVOX_PORT: "8000"
+      KUVOX_ENVIRONMENT: "${KUVOX_ENVIRONMENT:-production}"
       KUVOX_RUN_WORKERS: "${KUVOX_RUN_WORKERS:-true}"
       KUVOX_MEDIA_INGESTION_ENABLED: "${KUVOX_MEDIA_INGESTION_ENABLED:-false}"
       KUVOX_MEDIA_RETRIEVAL_ENABLED: "${KUVOX_MEDIA_RETRIEVAL_ENABLED:-false}"
+      KUVOX_QDRANT_HOST: "qdrant"
+      KUVOX_QDRANT_PORT: "6333"
       KUVOX_REDIS_URL: "redis://redis-ai:6379/0"
       KUVOX_REDIS_USERNAME: "kuvox-ai"
       KUVOX_REDIS_PASSWORD: "${REDIS_AI_PASSWORD:?Set REDIS_AI_PASSWORD in .env}"
@@ -118,6 +125,12 @@ services:
       KUVOX_SINGLE_FLIGHT_LOCK_TTL_SECONDS: "${KUVOX_SINGLE_FLIGHT_LOCK_TTL_SECONDS:-30}"
       KUVOX_SINGLE_FLIGHT_WAIT_SECONDS: "${KUVOX_SINGLE_FLIGHT_WAIT_SECONDS:-15}"
       KUVOX_SINGLE_FLIGHT_POLL_MILLISECONDS: "${KUVOX_SINGLE_FLIGHT_POLL_MILLISECONDS:-50}"
+      KUVOX_RABBITMQ_URL: "amqp://${RABBITMQ_DEFAULT_USER:-kuvox}:${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env}@rabbitmq:5672/"
+      KUVOX_S3_ENDPOINT_URL: "http://seaweedfs-s3:8333"
+      KUVOX_MEDIA_WORK_DIR: "/tmp/kuvox-media"
+      KUVOX_INGESTION_WORK_DIR: "/tmp/kuvox-ingestion"
+      KUVOX_KUZU_DB_PATH: "./data/kuzu"
+      KUVOX_MODEL_DIR: "./data/models"
     volumes:
       # Persists the embedded Kuzu graph DB + model files across redeploys.
       - kuzu-data:/app/data
@@ -134,6 +147,8 @@ services:
         condition: service_started
       seaweedfs-filer:
         condition: service_started
+      seaweedfs-bootstrap:
+        condition: service_completed_successfully
     networks:
       - kuvox
 
@@ -273,6 +288,44 @@ services:
       - ./infra/seaweedfs:/etc/seaweedfs:ro
     depends_on:
       - seaweedfs-filer
+    networks:
+      - kuvox
+
+  seaweedfs-bootstrap:
+    image: minio/mc:latest
+    restart: "no"
+    environment:
+      SEAWEEDFS_BOOTSTRAP_ACCESS_KEY: "${SEAWEEDFS_BOOTSTRAP_ACCESS_KEY:-kuvox-bootstrap}"
+      SEAWEEDFS_BOOTSTRAP_SECRET_KEY: "${SEAWEEDFS_BOOTSTRAP_SECRET_KEY:?Set SEAWEEDFS_BOOTSTRAP_SECRET_KEY in .env}"
+      SEAWEEDFS_RAW_BUCKET: "${SEAWEEDFS_RAW_BUCKET:-kuvox-raw}"
+      SEAWEEDFS_CANONICAL_BUCKET: "${SEAWEEDFS_CANONICAL_BUCKET:-kuvox-canonical}"
+      SEAWEEDFS_PROXY_BUCKET: "${SEAWEEDFS_PROXY_BUCKET:-kuvox-proxy}"
+      SEAWEEDFS_THUMBNAILS_BUCKET: "${SEAWEEDFS_THUMBNAILS_BUCKET:-kuvox-thumbnails}"
+      SEAWEEDFS_TEMP_BUCKET: "${SEAWEEDFS_TEMP_BUCKET:-kuvox-temp}"
+      SEAWEEDFS_RENDER_BUCKET: "${SEAWEEDFS_RENDER_BUCKET:-kuvox-renders}"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: |
+      attempts=0
+      until mc alias set kuvox http://seaweedfs-s3:8333 "$${SEAWEEDFS_BOOTSTRAP_ACCESS_KEY}" "$${SEAWEEDFS_BOOTSTRAP_SECRET_KEY}" >/dev/null 2>&1; do
+        attempts=$$((attempts + 1))
+        if [ "$$attempts" -ge 30 ]; then
+          echo "SeaweedFS S3 did not become ready in time." >&2
+          exit 1
+        fi
+        sleep 2
+      done
+      for bucket in \
+        "$${SEAWEEDFS_RAW_BUCKET}" \
+        "$${SEAWEEDFS_CANONICAL_BUCKET}" \
+        "$${SEAWEEDFS_PROXY_BUCKET}" \
+        "$${SEAWEEDFS_THUMBNAILS_BUCKET}" \
+        "$${SEAWEEDFS_TEMP_BUCKET}" \
+        "$${SEAWEEDFS_RENDER_BUCKET}"; do
+        mc mb --ignore-existing "kuvox/$$bucket"
+      done
+    depends_on:
+      seaweedfs-s3:
+        condition: service_started
     networks:
       - kuvox
 

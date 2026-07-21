@@ -153,6 +153,7 @@ export function VideoEditorWorkspace({
   const videoHistory = useAppSelector(selectVideoHistoryState);
   const { activeModal, activePopover } = useAppSelector(selectOverlayState);
   const { height: timelineHeight, open: timelineOpen } = useAppSelector(selectTimelinePanelState);
+  const editorReady = editor.documentStatus === "ready" && document !== null;
   const cacheScope = useMemo(
     () => buildEditorCacheScopeFromProject(userId, project),
     [project, userId],
@@ -515,12 +516,17 @@ export function VideoEditorWorkspace({
       return false;
     }
 
+    if (!editorReady) {
+      dispatch(toastShown("Wait for the editor to finish loading before placing media"));
+      return false;
+    }
+
     if (!attachedProjectMediaIdSet.has(item.id) && !isBuiltInEditorElementMedia(item)) {
       dispatch(toastShown("Add this media to the project before placing it on the timeline"));
       return false;
     }
     return true;
-  }, [attachedProjectMediaIdSet, canWrite, dispatch]);
+  }, [attachedProjectMediaIdSet, canWrite, dispatch, editorReady]);
 
   const queuePendingInsertion = useCallback((
     item: MediaDto,
@@ -617,6 +623,8 @@ export function VideoEditorWorkspace({
     <div
       ref={editorRootRef}
       data-video-editor-root
+      data-editor-document-status={editor.documentStatus}
+      data-editor-project-id={editor.projectId ?? ""}
       data-editor-shortcuts="scope"
       tabIndex={-1}
       className="video-editor-theme flex h-dvh w-full flex-col overflow-hidden bg-background pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-on-background"
