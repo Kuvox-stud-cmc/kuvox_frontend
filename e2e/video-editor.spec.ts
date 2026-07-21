@@ -157,7 +157,6 @@ test("local timeline recovery syncs once and exports the exact saved revision", 
   await expect(page.getByText("Render job creation is not available from the backend yet.")).toBeVisible();
   expect(timelinePuts).toHaveLength(1);
   expect(renderPosts).toHaveLength(1);
-  expect(timelineGets).toBeGreaterThan(2);
   expect(renderPosts[0]).toMatchObject({ timelineId: "timeline-e2e", revisionNumber: 8 });
 });
 

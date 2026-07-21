@@ -4,6 +4,7 @@ import { MediaKind, OwnerKind, type MediaDto } from "../app/lib/api";
 import {
   buildAddMediaToTimelineOperation,
   hydrateMediaDurationFromBrowserMetadata,
+  isBuiltInEditorElementMedia,
   isMediaReadyForTimeline,
   mediaDtoToVideoMediaReference,
   mediaLibraryKind,
@@ -20,6 +21,7 @@ import {
 async function main(): Promise<void> {
   assertMediaReferenceMapping();
   assertReadinessClassification();
+  assertBuiltInEditorElementClassification();
   assertVideoImageAndAudioOperations();
   assertIconifyElementsUseTightInitialBounds();
   assertIconifyElementsCreateDedicatedOverlayTracks();
@@ -62,6 +64,24 @@ function assertReadinessClassification(): void {
   assert.equal(isMediaReadyForTimeline(mediaDto({ status: "Ready" })), true);
   assert.equal(isMediaReadyForTimeline(mediaDto({ status: "Processing" })), false);
   assert.equal(isMediaReadyForTimeline(mediaDto({ status: "Failed", errorMessage: "bad" })), false);
+}
+
+function assertBuiltInEditorElementClassification(): void {
+  assert.equal(isBuiltInEditorElementMedia(mediaDto({
+    id: "el_watercolor_blue_test",
+    ownerId: "elements-library",
+    kind: MediaKind.Image,
+  })), true);
+  assert.equal(isBuiltInEditorElementMedia(mediaDto({
+    id: "el_user_media_test",
+    ownerId: "user-1",
+    kind: MediaKind.Image,
+  })), false);
+  assert.equal(isBuiltInEditorElementMedia(mediaDto({
+    id: "ordinary-media-id",
+    ownerId: "elements-library",
+    kind: MediaKind.Image,
+  })), false);
 }
 
 function assertVideoImageAndAudioOperations(): void {

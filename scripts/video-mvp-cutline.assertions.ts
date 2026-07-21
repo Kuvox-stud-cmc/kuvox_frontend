@@ -6,8 +6,9 @@ const read = (path: string) => readFileSync(path, "utf8");
 const route = read("app/routes/editor/video.tsx");
 assert.match(route, /\/editor\/image\/\$\{project\.id\}/, "video route must redirect image projects.");
 assert.match(route, /getProject\(/, "video route must load project metadata.");
-assert.match(route, /listAllMedia\(/, "video route must load media metadata.");
-assert.match(route, /listProjectMedia\(/, "video route must load project-media metadata.");
+assert.match(route, /getProjectEditorBootstrap\(/, "video route must load the editor bootstrap.");
+assert.match(route, /listAllProjectMedia\(/, "video route must load project-media metadata when bootstrap is unavailable.");
+assert.match(route, /listProjectMediaPage\(/, "video route must load remaining paginated project media.");
 assert.match(route, /KUVOX_E2E_FIXTURES/, "video route must expose only gated E2E fixtures.");
 
 const document = read("app/lib/editor/video-document.ts");

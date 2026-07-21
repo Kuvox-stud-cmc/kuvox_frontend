@@ -71,6 +71,10 @@ export function mediaLibraryKind(media: MediaDto): MediaLibraryKind {
   return "clips";
 }
 
+export function isBuiltInEditorElementMedia(media: MediaDto): boolean {
+  return media.ownerId === "elements-library" && media.id.startsWith("el_");
+}
+
 export async function hydrateMediaDurationFromBrowserMetadata(media: MediaDto): Promise<MediaDto> {
   if (media.kind === MediaKind.Image || durationForMedia(media) !== null) {
     return media;

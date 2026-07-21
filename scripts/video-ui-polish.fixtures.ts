@@ -28,7 +28,8 @@ export const videoUiPolishMarkers = {
   emptyStates: [
     "No project media",
     "No filter matches",
-    "Media refresh failed. Showing cached media.",
+    "Media refresh failed",
+    "No cached project media is available in this browser.",
     "processing or failed",
     "Empty timeline",
     "No active visual",

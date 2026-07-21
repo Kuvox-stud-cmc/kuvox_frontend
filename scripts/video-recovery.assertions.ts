@@ -105,7 +105,7 @@ function assertRouteAndPanelBoundaries(): void {
   assert.match(route, /export function ErrorBoundary/);
   assert.match(route, /data-editor-video-route-error-boundary/);
   assert.match(workspace, /EditorPanelErrorBoundary label="Media library"/);
-  assert.match(workspace, /EditorPanelErrorBoundary label="Preview"/);
+  assert.match(workspace, /EditorPanelErrorBoundary\s+label="Preview"/);
   assert.match(workspace, /EditorPanelErrorBoundary label="Assistant"/);
   assert.match(workspace, /EditorPanelErrorBoundary label="Inspector"/);
   assert.match(workspace, /EditorPanelErrorBoundary label="Timeline"/);
@@ -118,7 +118,7 @@ function assertMediaAndRenderRetryUi(): void {
   const workspace = read("app/components/editor/video-editor-workspace.tsx");
   const exportModal = read("app/components/editor/video-export-modal.tsx");
 
-  assert.match(mediaLibrary, /Retry media/);
+  assert.match(mediaLibrary, /Refresh project media/);
   assert.match(mediaLibrary, /mediaRetrying/);
   assert.match(workspace, /onRetryMediaLoad/);
   assert.match(exportModal, /Retry render job/);

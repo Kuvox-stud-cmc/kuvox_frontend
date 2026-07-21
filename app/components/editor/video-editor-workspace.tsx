@@ -30,6 +30,7 @@ import {
 } from "~/lib/editor/editor-observability.client";
 import type { DraftRecoveryState } from "~/lib/editor/editor-recovery";
 import {
+  isBuiltInEditorElementMedia,
   mediaDtoToVideoMediaReference,
 } from "~/lib/editor/editor-media";
 import { getVideoTimelineFromBff } from "~/lib/editor/video-timeline-api.client";
@@ -514,7 +515,7 @@ export function VideoEditorWorkspace({
       return false;
     }
 
-    if (!attachedProjectMediaIdSet.has(item.id)) {
+    if (!attachedProjectMediaIdSet.has(item.id) && !isBuiltInEditorElementMedia(item)) {
       dispatch(toastShown("Add this media to the project before placing it on the timeline"));
       return false;
     }
