@@ -21,7 +21,7 @@ import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-
 import { AlbumGrid } from "~/components/dashboard/shared/AlbumGrid";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import { MediaKind, AlbumKind, PERSONAL, type MediaDto, type AlbumDto } from "~/lib/api";
-import { ApiError, listMedia, setMediaFavorite, softDelete, albumsApi } from "~/lib/api.server";
+import { ApiError, listMedia, renameMedia, setMediaFavorite, softDelete, albumsApi } from "~/lib/api.server";
 import { useLiveMedia } from "~/lib/media-realtime";
 import { TextField, TextArea } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
@@ -132,6 +132,15 @@ export async function action({ request }: Route.ActionArgs) {
         materialSymbol
       }, reqLog);
       
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      if (id && name) {
+        await renameMedia(accessToken, id, name, reqLog);
+      }
       return { ok: true, intent };
     }
 

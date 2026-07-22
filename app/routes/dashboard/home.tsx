@@ -12,6 +12,7 @@ import {
 } from "~/components/dashboard/layout/DashboardPageLayout";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 import { AssetCardContextMenu } from "~/components/dashboard/shared/AssetCardContextMenu";
+import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import { ErrorBanner } from "~/components/dashboard/section";
 import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewOverlay";
 import {
@@ -26,16 +27,20 @@ import {
   taskStatusLabel,
   type MediaDto,
   type ProjectDto,
+  type ProjectMediaDto,
   type TaskIssueDto,
 } from "~/lib/api";
 import {
   listMedia,
   listMediaTrash,
+  listProjectMedia,
   listProjects,
   listProjectTrash,
   listAssignedTasks,
   listSharedMedia,
   listSharedProjects,
+  renameMedia,
+  renameProject,
   setProjectStar,
   softDelete,
 } from "~/lib/api.server";
@@ -97,7 +102,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       listAssignedTasks(accessToken, {}, reqLog),
     ]);
 
-  const recent = projects.status === "fulfilled" ? projects.value.items.slice(0, 6) : [];
+  const recentItems = projects.status === "fulfilled" ? projects.value.items.slice(0, 6) : [];
+  const recent = await hydrateProjectPreviewMedia(accessToken, recentItems, reqLog);
   const recentMedia = media.status === "fulfilled" ? media.value.items.slice(0, 4) : [];
   const coreFailed = [projects, media].some(
     (result) => result.status === "rejected",
@@ -140,6 +146,37 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
+async function hydrateProjectPreviewMedia(
+  accessToken: string,
+  projects: ProjectDto[],
+  log: ReturnType<typeof withUser>,
+): Promise<ProjectDto[]> {
+  if (projects.length === 0) return projects;
+
+  const rows = await Promise.allSettled(
+    projects.map((project) => listProjectMedia(accessToken, project.id, log)),
+  );
+
+  return projects.map((project, index) => {
+    const result = rows[index];
+    if (result?.status !== "fulfilled") {
+      if (result?.status === "rejected") {
+        log.warn({ err: result.reason, projectId: project.id }, "failed to load dashboard project preview media");
+      }
+      return project;
+    }
+
+    const projectMediaItems = result.value.items.filter(hasPreviewObject).slice(0, 1);
+    return projectMediaItems.length > 0
+      ? ({ ...project, projectMediaItems } as ProjectDto & { projectMediaItems: ProjectMediaDto[] })
+      : project;
+  });
+}
+
+function hasPreviewObject(media: ProjectMediaDto) {
+  return Boolean(media.thumbnailStorageKey || media.canonicalStorageKey || media.storageKey);
+}
+
 export async function action({ request }: Route.ActionArgs) {
   const log = createRequestLogger(request);
   const user = await requireUser(request, log);
@@ -171,6 +208,20 @@ export async function action({ request }: Route.ActionArgs) {
       const isStarred = String(formData.get("value") ?? "") === "true";
       if (id) {
         await setProjectStar(accessToken, id, isStarred, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      const resourceType = String(formData.get("resourceType") ?? "");
+      if (id && name) {
+        if (resourceType === "projects" || resourceType === "project") {
+          await renameProject(accessToken, id, name, reqLog);
+        } else {
+          await renameMedia(accessToken, id, name, reqLog);
+        }
       }
       return { ok: true, intent };
     }
@@ -262,13 +313,63 @@ function projectToMedia(project: ProjectDto): MediaDto {
   } as unknown as MediaDto;
 }
 
+type ProjectWithPreviewMedia = ProjectDto & {
+  projectMediaItems?: ProjectMediaDto[] | null;
+};
+
+function projectPreviewMedia(project: ProjectDto): MediaDto | null {
+  const row = (project as ProjectWithPreviewMedia).projectMediaItems?.[0];
+  if (!row || row.kind === null || !row.filename || !row.storageKey || !row.status) return null;
+
+  return {
+    id: row.mediaId,
+    ownerId: row.ownerId ?? "project-preview",
+    ownerKind: row.ownerKind ?? 0,
+    ownerEmail: null,
+    ownerDisplayName: null,
+    kind: row.kind,
+    filename: row.filename,
+    storageKey: row.storageKey,
+    sizeBytes: row.sizeBytes ?? 0,
+    status: row.status,
+    canonicalStorageKey: row.canonicalStorageKey,
+    proxyStorageKey: row.proxyStorageKey,
+    thumbnailStorageKey: row.thumbnailStorageKey,
+    errorMessage: row.errorMessage,
+    durationSeconds: row.durationSeconds,
+    width: row.width,
+    height: row.height,
+    codec: row.codec,
+    frameRate: row.frameRate,
+    createdAt: row.createdAt ?? new Date(0).toISOString(),
+    isFavorite: false,
+    pipeline: {
+      stage: row.status,
+      label: row.status,
+      detail: row.status,
+      step: 4,
+      stepCount: 4,
+      terminal: true,
+    },
+  };
+}
+
 function ProjectCard({ project, index }: { project: ProjectDto; index: number }) {
   const media = projectToMedia(project);
+  const previewMedia = projectPreviewMedia(project);
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-low transition-colors hover:border-primary/30">
       <Link to={projectHref(project)} className="block">
         <div className="relative h-44">
-          <GradientThumbnail index={index} icon="play_circle" />
+          {previewMedia ? (
+            <MediaThumbnail
+              media={previewMedia}
+              index={index}
+              icon={project.kind === ProjectKind.Image ? "image" : "play_circle"}
+            />
+          ) : (
+            <GradientThumbnail index={index} icon={project.kind === ProjectKind.Image ? "image" : "play_circle"} />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent" />
           <div className="absolute left-3 top-3">
             <StatusBadge

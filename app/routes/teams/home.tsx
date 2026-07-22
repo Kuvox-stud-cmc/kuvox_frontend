@@ -36,6 +36,8 @@ import {
   listProjectTrash,
   listTasks,
   listStudioMembers,
+  renameMedia,
+  renameProject,
   setProjectStar,
   softDelete,
 } from "~/lib/api.server";
@@ -148,6 +150,20 @@ export async function action({ request }: Route.ActionArgs) {
       const id = String(formData.get("id") ?? "");
       const resourceType = String(formData.get("resourceType") ?? "projects");
       if (id) await softDelete(accessToken, resourceType === "media" ? "media" : "projects", id, reqLog);
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      const resourceType = String(formData.get("resourceType") ?? "");
+      if (id && name) {
+        if (resourceType === "projects" || resourceType === "project") {
+          await renameProject(accessToken, id, name, reqLog);
+        } else {
+          await renameMedia(accessToken, id, name, reqLog);
+        }
+      }
       return { ok: true, intent };
     }
 

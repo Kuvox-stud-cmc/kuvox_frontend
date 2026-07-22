@@ -68,6 +68,21 @@ const allowedIconifyPrefixes = [
   "material-symbols",
 ] as const;
 
+const elementQuickQueries = [
+  "heart",
+  "arrow",
+  "music",
+  "sparkles",
+  "camera",
+  "play",
+  "star",
+  "social",
+  "shape",
+  "badge",
+  "emoji",
+  "business",
+];
+
 type IconifyIconResult = {
   name: string;
   prefix: string;
@@ -953,6 +968,25 @@ function IconifyElementsPanel({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("heart");
   const [results, setResults] = useState<IconifyIconResult[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const categoryScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollCategoriesLeft, setCanScrollCategoriesLeft] = useState(false);
+  const [canScrollCategoriesRight, setCanScrollCategoriesRight] = useState(false);
+
+  const checkCategoryScroll = useCallback(() => {
+    const el = categoryScrollRef.current;
+    if (!el) return;
+    setCanScrollCategoriesLeft(el.scrollLeft > 1);
+    setCanScrollCategoriesRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+
+  const scrollCategories = (direction: "left" | "right") => {
+    const el = categoryScrollRef.current;
+    if (!el) return;
+    el.scrollBy({
+      left: direction === "left" ? -160 : 160,
+      behavior: "smooth",
+    });
+  };
 
   useEffect(() => {
     const normalizedQuery = query.trim();
@@ -990,6 +1024,20 @@ function IconifyElementsPanel({ onClose }: { onClose: () => void }) {
     };
   }, [query]);
 
+  useEffect(() => {
+    const el = categoryScrollRef.current;
+    if (!el) return;
+    checkCategoryScroll();
+    el.addEventListener("scroll", checkCategoryScroll);
+    window.addEventListener("resize", checkCategoryScroll);
+    const raf = requestAnimationFrame(checkCategoryScroll);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener("scroll", checkCategoryScroll);
+      window.removeEventListener("resize", checkCategoryScroll);
+    };
+  }, [checkCategoryScroll]);
+
   return (
     <div className="flex h-full flex-col bg-surface">
       <div className="flex h-13 shrink-0 items-center justify-between gap-3 px-4 border-b border-outline-variant/30">
@@ -1023,15 +1071,59 @@ function IconifyElementsPanel({ onClose }: { onClose: () => void }) {
         </label>
       </div>
 
-      <div className="flex shrink-0 flex-wrap gap-1 border-b border-outline-variant px-3 py-2">
-        {allowedIconifyPrefixes.map((prefix) => (
-          <span
-            key={prefix}
-            className="rounded-[4px] border border-outline-variant/50 bg-surface-container-low px-1.5 py-0.5 text-[9px] font-semibold text-on-surface-variant"
+      <div className="relative flex shrink-0 items-center border-b border-outline-variant bg-surface px-2 py-2">
+        {canScrollCategoriesLeft ? (
+          <button
+            type="button"
+            onClick={() => scrollCategories("left")}
+            aria-label="Scroll element categories left"
+            className="absolute left-0 z-10 flex h-full w-8 items-center justify-center bg-gradient-to-r from-surface via-surface to-transparent text-on-surface-variant hover:text-on-surface"
           >
-            {prefix}
-          </span>
-        ))}
+            <EditorIcon className="text-[14px]">chevron_left</EditorIcon>
+          </button>
+        ) : null}
+        <div
+          ref={categoryScrollRef}
+          className="flex flex-1 gap-1 overflow-x-auto scroll-smooth px-7 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        >
+          {elementQuickQueries.map((item) => {
+            const active = query.trim().toLowerCase() === item;
+            return (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setQuery(item)}
+                className={`h-7 shrink-0 rounded-[4px] border px-2 text-[10px] font-semibold capitalize transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-outline-variant/50 bg-surface-container-low text-on-surface-variant hover:border-primary/50 hover:text-on-surface"
+                }`}
+              >
+                {item}
+              </button>
+            );
+          })}
+          {allowedIconifyPrefixes.map((prefix) => (
+            <button
+              key={prefix}
+              type="button"
+              onClick={() => setQuery(prefix)}
+              className="h-7 shrink-0 rounded-[4px] border border-outline-variant/50 bg-surface-container-high px-2 text-[10px] font-semibold text-on-surface-variant hover:border-primary/50 hover:text-on-surface"
+            >
+              {prefix}
+            </button>
+          ))}
+        </div>
+        {canScrollCategoriesRight ? (
+          <button
+            type="button"
+            onClick={() => scrollCategories("right")}
+            aria-label="Scroll element categories right"
+            className="absolute right-0 z-10 flex h-full w-8 items-center justify-center bg-gradient-to-l from-surface via-surface to-transparent text-on-surface-variant hover:text-on-surface"
+          >
+            <EditorIcon className="text-[14px]">chevron_right</EditorIcon>
+          </button>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
@@ -1991,6 +2083,39 @@ export function ElementsLibraryPanelContent({
 
   // AI Theme Context Selection
   const [aiContext, setAiContext] = useState<"travel" | "tech" | "gaming" | "corporate" | "cooking">("travel");
+  const categoryNavRef = useRef<HTMLDivElement>(null);
+  const [canScrollCategoryNavLeft, setCanScrollCategoryNavLeft] = useState(false);
+  const [canScrollCategoryNavRight, setCanScrollCategoryNavRight] = useState(false);
+
+  const checkCategoryNavScroll = useCallback(() => {
+    const el = categoryNavRef.current;
+    if (!el) return;
+    setCanScrollCategoryNavLeft(el.scrollLeft > 1);
+    setCanScrollCategoryNavRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+
+  const scrollCategoryNav = (direction: "left" | "right") => {
+    const el = categoryNavRef.current;
+    if (!el) return;
+    el.scrollBy({
+      left: direction === "left" ? -180 : 180,
+      behavior: "smooth",
+    });
+  };
+
+  useEffect(() => {
+    const el = categoryNavRef.current;
+    if (!el) return;
+    checkCategoryNavScroll();
+    el.addEventListener("scroll", checkCategoryNavScroll);
+    window.addEventListener("resize", checkCategoryNavScroll);
+    const raf = requestAnimationFrame(checkCategoryNavScroll);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener("scroll", checkCategoryNavScroll);
+      window.removeEventListener("resize", checkCategoryNavScroll);
+    };
+  }, [checkCategoryNavScroll]);
 
   // Helper to persist favorites
   const toggleFavorite = (id: string, e: React.MouseEvent) => {
@@ -2435,24 +2560,49 @@ export function ElementsLibraryPanelContent({
           </div>
 
           {/* ASSET CATEGORIES HORIZONTAL NAVIGATION (Level 2) */}
-          <div className="flex shrink-0 items-center border-b border-outline-variant/30 bg-surface px-2.5 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            {categories.map((cat) => {
-              const active = selectedCategory === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => {
-                    setSelectedCategory(cat);
-                    setQuickCategory("all");
-                  }}
-                  className={`relative flex h-10 shrink-0 items-center justify-center px-3 text-[10.5px] font-bold cursor-pointer transition-colors active:scale-95 ${
-                    active ? "text-primary after:absolute after:bottom-0 after:inset-x-2 after:h-0.5 after:bg-primary" : "text-on-surface-variant hover:text-on-surface"
-                  }`}
-                >
-                  {cat}
-                </button>
-              );
-            })}
+          <div className="relative flex shrink-0 items-center border-b border-outline-variant/30 bg-surface">
+            {canScrollCategoryNavLeft ? (
+              <button
+                type="button"
+                onClick={() => scrollCategoryNav("left")}
+                aria-label="Scroll element categories left"
+                className="absolute left-0 z-10 flex h-full w-8 items-center justify-center bg-gradient-to-r from-surface via-surface to-transparent text-on-surface-variant hover:text-on-surface"
+              >
+                <EditorIcon className="text-[14px]">chevron_left</EditorIcon>
+              </button>
+            ) : null}
+            <div
+              ref={categoryNavRef}
+              className="flex flex-1 items-center overflow-x-auto scroll-smooth px-8 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            >
+              {categories.map((cat) => {
+                const active = selectedCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setSelectedCategory(cat);
+                      setQuickCategory("all");
+                    }}
+                    className={`relative flex h-10 shrink-0 items-center justify-center px-3 text-[10.5px] font-bold cursor-pointer transition-colors active:scale-95 ${
+                      active ? "text-primary after:absolute after:bottom-0 after:inset-x-2 after:h-0.5 after:bg-primary" : "text-on-surface-variant hover:text-on-surface"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+            {canScrollCategoryNavRight ? (
+              <button
+                type="button"
+                onClick={() => scrollCategoryNav("right")}
+                aria-label="Scroll element categories right"
+                className="absolute right-0 z-10 flex h-full w-8 items-center justify-center bg-gradient-to-l from-surface via-surface to-transparent text-on-surface-variant hover:text-on-surface"
+              >
+                <EditorIcon className="text-[14px]">chevron_right</EditorIcon>
+              </button>
+            ) : null}
           </div>
 
           {/* MAIN BROWSE SCROLLABLE CONTENT */}

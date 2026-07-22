@@ -21,7 +21,7 @@ import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { IconToggleButton } from "~/components/dashboard/shared/IconToggleButton";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { AlbumKind, PERSONAL, MediaKind, type AlbumDto, type MediaDto } from "~/lib/api";
-import { albumsApi, ApiError } from "~/lib/api.server";
+import { albumsApi, ApiError, renameMedia } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { handleResourceAction } from "~/lib/resource-actions.server";
@@ -158,6 +158,15 @@ export async function action({ request }: Route.ActionArgs) {
       }
 
       await albumsApi.setFavorite(accessToken, id, isFavorite, reqLog);
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      if (id && name) {
+        await renameMedia(accessToken, id, name, reqLog);
+      }
       return { ok: true, intent };
     }
 

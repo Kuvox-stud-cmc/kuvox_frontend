@@ -93,6 +93,10 @@ export class ProjectsApi extends BaseApiModule {
       log,
     );
   }
+
+  renameProject(token: string, id: string, name: string, log?: RequestLogger): Promise<ProjectDto> {
+    return this.patch<{ name: string }, ProjectDto>(token, `${API_ROUTES.PROJECTS}/${id}`, { name }, log);
+  }
 }
 
 export const projectsApi = new ProjectsApi(apiClient);
@@ -112,3 +116,4 @@ export const listProjectAccess = (t: string, id: string, l?: RequestLogger) => p
 export const updateProjectAccess = (t: string, id: string, i: { userId: string; role?: number | null; isHidden: boolean }, l?: RequestLogger) => projectsApi.updateAccess(t, id, i, l);
 export const getImageComposition = (t: string, id: string, l?: RequestLogger) => projectsApi.getImageComposition(t, id, l);
 export const saveImageComposition = (t: string, id: string, i: SaveImageCompositionRequest, l?: RequestLogger) => projectsApi.saveImageComposition(t, id, i, l);
+export const renameProject = (t: string, id: string, name: string, l?: RequestLogger) => projectsApi.renameProject(t, id, name, l);
