@@ -1,7 +1,7 @@
 import { actionErrorMessage } from "~/lib/action-error.server";
 import { MediaView } from "~/components/dashboard/workspace/media-view";
 import { canManageStudioAccess, canWriteStudioContent, type MediaDto, type Workspace } from "~/lib/api";
-import { ApiError, listMedia, listMyStudios, softDelete } from "~/lib/api.server";
+import { ApiError, listMedia, listMyStudios, renameMedia, softDelete } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { handleResourceAction } from "~/lib/resource-actions.server";
@@ -82,6 +82,15 @@ export async function action({ request, params }: Route.ActionArgs) {
       const id = String(formData.get("id") ?? "");
       if (id) {
         await softDelete(accessToken, "media", id, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      if (id && name) {
+        await renameMedia(accessToken, id, name, reqLog);
       }
       return { ok: true, intent };
     }

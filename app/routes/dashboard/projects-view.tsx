@@ -8,6 +8,7 @@ import {
 } from "~/components/dashboard/section";
 import { CreateProjectModal } from "~/components/dashboard/projects/create-project-modal";
 import { MediaUploadModal } from "~/components/dashboard/workspace/media-upload-modal";
+import { MediaThumbnail } from "~/components/dashboard/workspace/media-thumbnail";
 import {
     AssetCardContextMenu,
     FilterTabs,
@@ -22,6 +23,7 @@ import {
     projectKindLabel,
     type MediaDto,
     type ProjectDto,
+    type ProjectMediaDto,
 } from "~/lib/api";
 import { AUDIO_CATEGORY_OPTIONS } from "~/lib/audio-categories";
 import { projectEditorHref } from "~/lib/project-routes";
@@ -62,6 +64,8 @@ interface DashboardMetrics {
     mediaCount: number;
 }
 
+type TabFilter = "all" | "video" | "image" | "starred";
+
 interface MockTeamProject {
     id: string;
     name: string;
@@ -69,12 +73,6 @@ interface MockTeamProject {
     projectCount: number;
     icon: string;
 }
-
-const MOCK_TEAM_PROJECTS: MockTeamProject[] = [
-    { id: "tp1", name: "Brand Campaign 2024", memberCount: 8, projectCount: 12, icon: "campaign" },
-    { id: "tp2", name: "Marketing Assets", memberCount: 5, projectCount: 8, icon: "trending_up" },
-    { id: "tp3", name: "Product Videos", memberCount: 6, projectCount: 15, icon: "videocam" },
-];
 
 interface MockActivity {
     id: string;
@@ -86,48 +84,12 @@ interface MockActivity {
     online: boolean;
 }
 
-const MOCK_ACTIVITY: MockActivity[] = [
-    {
-        id: "a1",
-        user: "Sarah Chen",
-        initials: "SC",
-        action: "updated",
-        project: "Summer Campaign 2024",
-        timeAgo: "2m ago",
-        online: true,
-    },
-    {
-        id: "a2",
-        user: "John Smith",
-        initials: "JS",
-        action: "uploaded 8 assets to",
-        project: "TikTok Ads Pack",
-        timeAgo: "15m ago",
-        online: true,
-    },
-    {
-        id: "a3",
-        user: "Mike Johnson",
-        initials: "MJ",
-        action: "exported",
-        project: "Product Launch Video",
-        timeAgo: "1h ago",
-        online: false,
-    },
-];
-
 interface MockTask {
     id: string;
     title: string;
     project: string;
     priority: "high" | "medium" | "low";
 }
-
-const MOCK_TASKS: MockTask[] = [
-    { id: "t1", title: "Review final cut", project: "Summer Campaign 2024", priority: "high" },
-    { id: "t2", title: "Approve color grading", project: "Product Launch Video", priority: "medium" },
-    { id: "t3", title: "Add subtitles", project: "Client Interview", priority: "low" },
-];
 
 interface MockTemplate {
     id: string;
@@ -136,27 +98,11 @@ interface MockTemplate {
     tone: "primary" | "secondary" | "tertiary";
 }
 
-const MOCK_TEMPLATES: MockTemplate[] = [
-    { id: "tpl1", name: "Video Production", icon: "movie", tone: "primary" },
-    { id: "tpl2", name: "Social Media Ads", icon: "ads_click", tone: "secondary" },
-    { id: "tpl3", name: "Product Promo", icon: "campaign", tone: "tertiary" },
-    { id: "tpl4", name: "Event Recap", icon: "celebration", tone: "tertiary" },
-];
-
-const AVATAR_COLORS = [
-    "bg-primary/20 text-primary",
-    "bg-secondary/20 text-secondary",
-    "bg-tertiary/20 text-tertiary",
-    "bg-primary-container/30 text-primary",
-];
-
 const TEAM_GRADIENTS = [
     "from-primary/25 via-surface-container-high to-secondary/10",
     "from-tertiary/20 via-surface-container-high to-primary/10",
     "from-secondary/25 via-surface-container-high to-tertiary/10",
 ];
-
-type TabFilter = "all" | "video" | "image" | "starred";
 
 function buildTabs(metrics: DashboardMetrics): { id: TabFilter; label: string; count: number }[] {
     return [
@@ -168,27 +114,6 @@ function buildTabs(metrics: DashboardMetrics): { id: TabFilter; label: string; c
 }
 
 /* ── Sub-components ─────────────────────────────────────────────────────── */
-
-function AvatarStack({ collaborators }: { collaborators: string[] }) {
-    return (
-        <div className="flex -space-x-2">
-            {collaborators.map((c, i) => {
-                const isOverflow = c.startsWith("+");
-                return (
-                    <div
-                        key={i}
-                        className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface-container-low text-[8px] font-bold ${isOverflow
-                                ? "bg-surface-container-highest text-on-surface-variant"
-                                : AVATAR_COLORS[i % AVATAR_COLORS.length]
-                            }`}
-                    >
-                        {c}
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
 
 function projectHref(project: ProjectDto, basePath: string) {
     return projectEditorHref(project);
@@ -204,9 +129,198 @@ function projectToMedia(project: ProjectDto): MediaDto {
     } as unknown as MediaDto;
 }
 
+type ProjectPreviewShape = ProjectDto & {
+    coverMedia?: MediaDto | null;
+    previewMedia?: MediaDto | null;
+    thumbnailMedia?: MediaDto | null;
+    media?: MediaDto[] | ProjectMediaDto[] | null;
+    projectMedia?: ProjectMediaDto[] | null;
+    projectMediaItems?: ProjectMediaDto[] | null;
+    mediaItems?: MediaDto[] | null;
+    coverMediaId?: string | null;
+    previewMediaId?: string | null;
+    thumbnailMediaId?: string | null;
+    coverMediaUrl?: string | null;
+    coverUrl?: string | null;
+    posterUrl?: string | null;
+    previewImageUrl?: string | null;
+    thumbnailImageUrl?: string | null;
+    previewUrl?: string | null;
+    thumbnailUrl?: string | null;
+};
+
+type MediaProjectLinkShape = MediaDto & {
+    projectId?: string | null;
+    projectIds?: string[] | null;
+    projectIdsCsv?: string | null;
+};
+
+function projectPreviewMedia(project: ProjectDto, media: MediaDto[]): MediaDto | null {
+    const previewProject = project as ProjectPreviewShape;
+    const embedded = previewProject.thumbnailMedia ?? previewProject.previewMedia ?? previewProject.coverMedia;
+    if (embedded) return embedded;
+
+    const embeddedList = [
+        ...(previewProject.mediaItems ?? []),
+        ...(previewProject.media ?? []),
+        ...(previewProject.projectMediaItems ?? []),
+        ...(previewProject.projectMedia ?? []),
+    ];
+    for (const item of embeddedList) {
+        const mediaItem = projectPreviewItemToMedia(item);
+        if (mediaItem) return mediaItem;
+    }
+
+    const mediaId = previewProject.thumbnailMediaId ?? previewProject.previewMediaId ?? previewProject.coverMediaId;
+    if (mediaId) {
+        return media.find((item) => item.id === mediaId) ?? null;
+    }
+
+    return media.find((item) => {
+        const linked = item as MediaProjectLinkShape;
+        return (
+            linked.projectId === project.id ||
+            Boolean(linked.projectIds?.includes(project.id)) ||
+            Boolean(linked.projectIdsCsv?.split(",").map((id) => id.trim()).includes(project.id))
+        );
+    }) ?? null;
+}
+
+function projectPreviewUrl(project: ProjectDto): string | null {
+    const previewProject = project as ProjectPreviewShape;
+    return (
+        previewProject.thumbnailImageUrl ??
+        previewProject.thumbnailUrl ??
+        previewProject.previewImageUrl ??
+        previewProject.previewUrl ??
+        previewProject.posterUrl ??
+        previewProject.coverMediaUrl ??
+        previewProject.coverUrl ??
+        null
+    );
+}
+
+function projectPreviewItemToMedia(item: MediaDto | ProjectMediaDto): MediaDto | null {
+    if ("id" in item && "filename" in item && "kind" in item && "createdAt" in item) {
+        return item as MediaDto;
+    }
+
+    const row = item as ProjectMediaDto;
+    if (!row.mediaId || row.kind === null || !row.filename || !row.storageKey || !row.status) {
+        return null;
+    }
+
+    return {
+        id: row.mediaId,
+        ownerId: row.ownerId ?? "project-preview",
+        ownerKind: row.ownerKind ?? 0,
+        ownerEmail: null,
+        ownerDisplayName: null,
+        kind: row.kind,
+        filename: row.filename,
+        storageKey: row.storageKey,
+        sizeBytes: row.sizeBytes ?? 0,
+        status: row.status,
+        canonicalStorageKey: row.canonicalStorageKey,
+        proxyStorageKey: row.proxyStorageKey,
+        thumbnailStorageKey: row.thumbnailStorageKey,
+        errorMessage: row.errorMessage,
+        durationSeconds: row.durationSeconds,
+        width: row.width,
+        height: row.height,
+        codec: row.codec,
+        frameRate: row.frameRate,
+        createdAt: row.createdAt ?? new Date(0).toISOString(),
+        isFavorite: false,
+        pipeline: {
+            stage: row.status,
+            label: row.status,
+            detail: row.status,
+            step: 4,
+            stepCount: 4,
+            terminal: true,
+        },
+    };
+}
+
+function ProjectPreview({
+    project,
+    media,
+    index,
+    icon,
+    compact = false,
+}: {
+    project: ProjectDto;
+    media: MediaDto[];
+    index: number;
+    icon: string;
+    compact?: boolean;
+}) {
+    const previewMedia = projectPreviewMedia(project, media);
+    const previewUrl = projectPreviewUrl(project);
+    const typeLabel = projectKindLabel(project.kind);
+    const hasImagePreview = Boolean(previewMedia || previewUrl);
+
+    return (
+        <div className="relative h-full w-full overflow-hidden bg-surface-container-high">
+            {previewMedia ? (
+                <MediaThumbnail media={previewMedia} index={index} icon={icon} />
+            ) : previewUrl ? (
+                <img
+                    src={previewUrl}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                />
+            ) : (
+                <GeneratedProjectPreview project={project} index={index} icon={icon} compact={compact} />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-black/10 opacity-80 transition-opacity group-hover:opacity-60" />
+            <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white/85 backdrop-blur">
+                <span className="material-symbols-outlined text-[13px]">{hasImagePreview ? "image" : icon}</span>
+                {hasImagePreview ? "Preview" : typeLabel}
+            </div>
+        </div>
+    );
+}
+
+function GeneratedProjectPreview({
+    project,
+    index,
+    icon,
+    compact,
+}: {
+    project: ProjectDto;
+    index: number;
+    icon: string;
+    compact: boolean;
+}) {
+    const initials = project.name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join("") || "KP";
+
+    return (
+        <GradientThumbnail index={index} icon={icon} className="relative">
+            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12)_0,rgba(255,255,255,0)_42%),radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.24),rgba(255,255,255,0)_30%)]" />
+            <div className={`relative grid ${compact ? "h-10 w-16" : "h-20 w-32"} place-items-center rounded-md border border-white/18 bg-black/18 shadow-[0_18px_40px_rgba(0,0,0,0.22)] backdrop-blur-[1px]`}>
+                <span className={`material-symbols-outlined absolute left-2 top-1.5 ${compact ? "text-[13px]" : "text-[17px]"} text-white/55`}>
+                    {icon}
+                </span>
+                <span className={`${compact ? "text-[13px]" : "text-[22px]"} font-black tracking-wide text-white/85`}>
+                    {initials}
+                </span>
+            </div>
+        </GradientThumbnail>
+    );
+}
+
 function ProjectCard({
     project,
     index,
+    previewMediaItems,
     basePath,
     canWrite,
     canManageAccess,
@@ -214,6 +328,7 @@ function ProjectCard({
 }: {
     project: ProjectDto;
     index: number;
+    previewMediaItems: MediaDto[];
     basePath: string;
     canWrite: boolean;
     canManageAccess: boolean;
@@ -225,15 +340,13 @@ function ProjectCard({
         image: "image",
     }[typeLabel] || "movie";
     const href = projectHref(project, basePath);
-    const media = projectToMedia(project);
+    const menuMedia = projectToMedia(project);
 
     return (
         <div className="bento-card group relative overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low transition-all hover:border-primary/50">
             <Link to={href} className="block cursor-pointer">
                 <div className="relative aspect-video">
-                    <GradientThumbnail index={index} icon={typeIcon} />
-                    <div className="absolute inset-0 bg-black/20 transition-colors group-hover:bg-black/10" />
-
+                    <ProjectPreview project={project} media={previewMediaItems} index={index} icon={typeIcon} />
                 </div>
 
                 <div className="p-4">
@@ -256,7 +369,7 @@ function ProjectCard({
             {canWrite ? (
                 <div className="absolute right-3 top-3 z-10">
                     <AssetCardContextMenu
-                        media={media}
+                        media={menuMedia}
                         workspaceKind={workspaceKind}
                         resourceType="projects"
                         copyUrl={href}
@@ -282,6 +395,7 @@ function ProjectCard({
 function ProjectListRow({
     project,
     index,
+    previewMediaItems,
     basePath,
     canWrite,
     canManageAccess,
@@ -289,6 +403,7 @@ function ProjectListRow({
 }: {
     project: ProjectDto;
     index: number;
+    previewMediaItems: MediaDto[];
     basePath: string;
     canWrite: boolean;
     canManageAccess: boolean;
@@ -300,17 +415,13 @@ function ProjectListRow({
         image: "image",
     }[typeLabel] || "movie";
     const href = projectHref(project, basePath);
-    const media = projectToMedia(project);
+    const menuMedia = projectToMedia(project);
 
     return (
         <div className="group flex items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 transition-colors hover:border-primary/40">
             <Link to={href} className="flex min-w-0 flex-1 items-center gap-4">
                 <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg">
-                    <GradientThumbnail
-                        index={index}
-                        icon={typeIcon}
-                        iconClassName="text-[20px] text-on-surface-variant/20"
-                    />
+                    <ProjectPreview project={project} media={previewMediaItems} index={index} icon={typeIcon} compact />
                 </div>
                 <div className="min-w-0 flex-1">
                     <h5 className="truncate text-body-sm font-bold text-on-surface">{project.name}</h5>
@@ -336,7 +447,7 @@ function ProjectListRow({
             />
             {canWrite ? (
                 <AssetCardContextMenu
-                    media={media}
+                    media={menuMedia}
                     workspaceKind={workspaceKind}
                     resourceType="projects"
                     copyUrl={href}
@@ -450,6 +561,31 @@ function TemplateRow({ template }: { template: MockTemplate }) {
 }
 
 /* ── Main component ─────────────────────────────────────────────────────── */
+
+function ComingSoonPanel({
+    title,
+    icon,
+    message,
+}: {
+    title: string;
+    icon: string;
+    message: string;
+}) {
+    return (
+        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-5">
+            <div className="mb-4 flex items-center justify-between">
+                <h4 className="text-body-sm font-bold text-on-surface">{title}</h4>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-label-sm font-bold text-primary">
+                    Soon
+                </span>
+            </div>
+            <div className="rounded-xl border border-dashed border-outline-variant/45 bg-surface-container-high/35 px-3 py-5 text-center">
+                <span className="material-symbols-outlined text-[24px] text-on-surface-variant/35">{icon}</span>
+                <p className="mt-2 text-label-md font-semibold text-on-surface-variant/70">{message}</p>
+            </div>
+        </div>
+    );
+}
 
 function normalizeStatus(status: string): string {
     return status.replace(/\s|_/g, "").toLowerCase();
@@ -759,13 +895,13 @@ export default function ProjectsDashboard({
                         ) : view === "list" ? (
                             <div className="space-y-3">
                                 {sortedProjects.map((project, i) => (
-                                    <ProjectListRow key={project.id} project={project} index={i} basePath={basePath} canWrite={canWrite} canManageAccess={canManageAccess} workspaceKind={workspaceKind} />
+                                    <ProjectListRow key={project.id} project={project} index={i} previewMediaItems={live.media} basePath={basePath} canWrite={canWrite} canManageAccess={canManageAccess} workspaceKind={workspaceKind} />
                                 ))}
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                 {sortedProjects.map((project, i) => (
-                                    <ProjectCard key={project.id} project={project} index={i} basePath={basePath} canWrite={canWrite} canManageAccess={canManageAccess} workspaceKind={workspaceKind} />
+                                    <ProjectCard key={project.id} project={project} index={i} previewMediaItems={live.media} basePath={basePath} canWrite={canWrite} canManageAccess={canManageAccess} workspaceKind={workspaceKind} />
                                 ))}
                             </div>
                         )}
@@ -814,62 +950,23 @@ export default function ProjectsDashboard({
 
                 {/* ── Right sidebar (3 cols) ───────────────────────────────────────── */}
                 <div className="col-span-12 space-y-6 xl:col-span-3">
-                    {/* Project Activity */}
-                    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-5">
-                        <div className="mb-5 flex items-center justify-between">
-                            <h4 className="text-body-sm font-bold text-on-surface">Project Activity</h4>
-                            <button
-                                type="button"
-                                className="flex items-center gap-1 text-label-sm font-bold text-primary transition-colors hover:text-primary-fixed"
-                            >
-                                View All
-                                <span className="material-symbols-outlined text-[12px]">arrow_forward</span>
-                            </button>
-                        </div>
-                        <div className="space-y-4">
-                            {MOCK_ACTIVITY.map((activity) => (
-                                <ActivityItem key={activity.id} activity={activity} />
-                            ))}
-                        </div>
-                    </div>
+                    <ComingSoonPanel
+                        title="Project Activity"
+                        icon="notifications"
+                        message="Live activity will appear here when workspace events are connected."
+                    />
 
-                    {/* My Tasks */}
-                    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-5">
-                        <div className="mb-5 flex items-center justify-between">
-                            <h4 className="text-body-sm font-bold text-on-surface">My Tasks</h4>
-                            <button
-                                type="button"
-                                className="flex items-center gap-1 text-label-sm font-bold text-primary transition-colors hover:text-primary-fixed"
-                            >
-                                View All
-                                <span className="material-symbols-outlined text-[12px]">arrow_forward</span>
-                            </button>
-                        </div>
-                        <div className="space-y-4">
-                            {MOCK_TASKS.map((task) => (
-                                <TaskItem key={task.id} task={task} />
-                            ))}
-                        </div>
-                    </div>
+                    <ComingSoonPanel
+                        title="My Tasks"
+                        icon="task_alt"
+                        message="Assigned project tasks will appear here when task data is available."
+                    />
 
-                    {/* Project Templates */}
-                    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-5">
-                        <div className="mb-5 flex items-center justify-between">
-                            <h4 className="text-body-sm font-bold text-on-surface">Project Templates</h4>
-                            <button
-                                type="button"
-                                className="flex items-center gap-1 text-label-sm font-bold text-primary transition-colors hover:text-primary-fixed"
-                            >
-                                View All
-                                <span className="material-symbols-outlined text-[12px]">arrow_forward</span>
-                            </button>
-                        </div>
-                        <div className="space-y-2">
-                            {MOCK_TEMPLATES.map((template) => (
-                                <TemplateRow key={template.id} template={template} />
-                            ))}
-                        </div>
-                    </div>
+                    <ComingSoonPanel
+                        title="Project Templates"
+                        icon="dashboard_customize"
+                        message="Reusable project templates are being prepared for this workspace."
+                    />
                 </div>
             </div>
 

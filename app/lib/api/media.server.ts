@@ -75,6 +75,10 @@ export class MediaApi extends BaseApiModule {
   updateAccess(token: string, id: string, input: { userId: string; role?: number | null; isHidden: boolean }, log?: RequestLogger): Promise<ItemAccessMemberDto[]> {
     return this.put<typeof input, ItemAccessMemberDto[]>(token, `${API_ROUTES.MEDIA}/${id}/access`, input, log);
   }
+
+  renameMedia(token: string, id: string, filename: string, log?: RequestLogger): Promise<MediaDto> {
+    return this.patch<{ filename: string }, MediaDto>(token, `${API_ROUTES.MEDIA}/${id}`, { filename }, log);
+  }
 }
 
 export const mediaApi = new MediaApi(apiClient);
@@ -90,3 +94,4 @@ export const shareMedia = (t: string, id: string, i: ShareRequest, l?: RequestLo
 export const unshareMedia = (t: string, id: string, u: string, l?: RequestLogger) => mediaApi.unshareMedia(t, id, u, l);
 export const listMediaAccess = (t: string, id: string, l?: RequestLogger) => mediaApi.listAccess(t, id, l);
 export const updateMediaAccess = (t: string, id: string, i: { userId: string; role?: number | null; isHidden: boolean }, l?: RequestLogger) => mediaApi.updateAccess(t, id, i, l);
+export const renameMedia = (t: string, id: string, filename: string, l?: RequestLogger) => mediaApi.renameMedia(t, id, filename, l);

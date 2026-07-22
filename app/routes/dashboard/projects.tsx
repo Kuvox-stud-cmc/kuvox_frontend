@@ -5,12 +5,16 @@ import {
   ProjectKind,
   type MediaDto,
   type ProjectDto,
+  type ProjectMediaDto,
 } from "~/lib/api";
 import {
   createProject,
   listMedia,
+  listProjectMedia,
   listProjects,
   listSharedProjects,
+  renameProject,
+  renameMedia,
   setProjectStar,
   softDelete,
 } from "~/lib/api.server";
@@ -55,13 +59,46 @@ export async function loader({ request }: Route.LoaderArgs) {
     reqLog.warn("some projects dashboard data failed to load");
   }
 
+  const projectItems = projects.status === "fulfilled" ? projects.value.items : ([] as ProjectDto[]);
+  const sharedProjectItems = sharedProjects.status === "fulfilled" ? sharedProjects.value.items : ([] as ProjectDto[]);
+
   return {
-    projects: projects.status === "fulfilled" ? projects.value.items : ([] as ProjectDto[]),
-    sharedProjects:
-      sharedProjects.status === "fulfilled" ? sharedProjects.value.items : ([] as ProjectDto[]),
+    projects: await hydrateProjectPreviewMedia(accessToken, projectItems, reqLog),
+    sharedProjects: await hydrateProjectPreviewMedia(accessToken, sharedProjectItems, reqLog),
     media: media.status === "fulfilled" ? media.value.items : ([] as MediaDto[]),
     error: anyFailed ? "Some projects dashboard data couldn't be loaded." : null,
   };
+}
+
+async function hydrateProjectPreviewMedia(
+  accessToken: string,
+  projects: ProjectDto[],
+  log: ReturnType<typeof withUser>,
+): Promise<ProjectDto[]> {
+  if (projects.length === 0) return projects;
+
+  const rows = await Promise.allSettled(
+    projects.map((project) => listProjectMedia(accessToken, project.id, log)),
+  );
+
+  return projects.map((project, index) => {
+    const result = rows[index];
+    if (result?.status !== "fulfilled") {
+      if (result?.status === "rejected") {
+        log.warn({ err: result.reason, projectId: project.id }, "failed to load project preview media");
+      }
+      return project;
+    }
+
+    const projectMediaItems = result.value.items.filter(hasPreviewObject).slice(0, 1);
+    return projectMediaItems.length > 0
+      ? ({ ...project, projectMediaItems } as ProjectDto & { projectMediaItems: ProjectMediaDto[] })
+      : project;
+  });
+}
+
+function hasPreviewObject(media: ProjectMediaDto) {
+  return Boolean(media.thumbnailStorageKey || media.canonicalStorageKey || media.storageKey);
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -105,6 +142,20 @@ export async function action({ request }: Route.ActionArgs) {
       const isStarred = String(formData.get("value") ?? "") === "true";
       if (id) {
         await setProjectStar(accessToken, id, isStarred, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      const resourceType = String(formData.get("resourceType") ?? "");
+      if (id && name) {
+        if (resourceType === "projects" || resourceType === "project") {
+          await renameProject(accessToken, id, name, reqLog);
+        } else {
+          await renameMedia(accessToken, id, name, reqLog);
+        }
       }
       return { ok: true, intent };
     }

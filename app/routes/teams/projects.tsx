@@ -1,12 +1,15 @@
 import { actionErrorMessage } from "~/lib/action-error.server";
 import ProjectsDashboard from "../dashboard/projects-view";
-import { ProjectKind, canManageStudioAccess, canWriteStudioContent, type MediaDto, type ProjectDto, type Workspace } from "~/lib/api";
+import { ProjectKind, canManageStudioAccess, canWriteStudioContent, type MediaDto, type ProjectDto, type ProjectMediaDto, type Workspace } from "~/lib/api";
 import {
   ApiError,
   createProject,
   listMedia,
+  listProjectMedia,
   listMyStudios,
   listProjects,
+  renameProject,
+  renameMedia,
   setProjectStar,
   softDelete,
 } from "~/lib/api.server";
@@ -49,7 +52,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ]);
     const role = studios.find((studio) => studio.id === params.studioId)?.role;
     return {
-      projects: page.items,
+      projects: await hydrateProjectPreviewMedia(accessToken, page.items, reqLog),
       sharedProjects: [] as ProjectDto[],
       media: media.items,
       error: null as string | null,
@@ -69,6 +72,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       canManageAccess: false,
     };
   }
+}
+
+async function hydrateProjectPreviewMedia(
+  accessToken: string,
+  projects: ProjectDto[],
+  log: ReturnType<typeof withUser>,
+): Promise<ProjectDto[]> {
+  if (projects.length === 0) return projects;
+
+  const rows = await Promise.allSettled(
+    projects.map((project) => listProjectMedia(accessToken, project.id, log)),
+  );
+
+  return projects.map((project, index) => {
+    const result = rows[index];
+    if (result?.status !== "fulfilled") {
+      if (result?.status === "rejected") {
+        log.warn({ err: result.reason, projectId: project.id }, "failed to load team project preview media");
+      }
+      return project;
+    }
+
+    const projectMediaItems = result.value.items.filter(hasPreviewObject).slice(0, 1);
+    return projectMediaItems.length > 0
+      ? ({ ...project, projectMediaItems } as ProjectDto & { projectMediaItems: ProjectMediaDto[] })
+      : project;
+  });
+}
+
+function hasPreviewObject(media: ProjectMediaDto) {
+  return Boolean(media.thumbnailStorageKey || media.canonicalStorageKey || media.storageKey);
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -113,6 +147,20 @@ export async function action({ request, params }: Route.ActionArgs) {
       const isStarred = String(formData.get("value") ?? "") === "true";
       if (id) {
         await setProjectStar(accessToken, id, isStarred, reqLog);
+      }
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      const resourceType = String(formData.get("resourceType") ?? "");
+      if (id && name) {
+        if (resourceType === "projects" || resourceType === "project") {
+          await renameProject(accessToken, id, name, reqLog);
+        } else {
+          await renameMedia(accessToken, id, name, reqLog);
+        }
       }
       return { ok: true, intent };
     }

@@ -15,7 +15,7 @@ import { EmptyState, ErrorBanner, Modal, primaryButtonClass } from "~/components
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { AlbumKind, canManageStudioAccess, canWriteStudioContent, MediaKind, type AlbumDto, type MediaDto, type Workspace } from "~/lib/api";
-import { albumsApi, ApiError, listMyStudios } from "~/lib/api.server";
+import { albumsApi, ApiError, listMyStudios, renameMedia } from "~/lib/api.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
 import { handleResourceAction } from "~/lib/resource-actions.server";
@@ -114,6 +114,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       const id = String(formData.get("id") ?? "");
       if (!id) return { error: "Choose an album to delete." };
       await albumsApi.deleteAlbum(accessToken, id, ws, reqLog);
+      return { ok: true, intent };
+    }
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      if (id && name) {
+        await renameMedia(accessToken, id, name, reqLog);
+      }
       return { ok: true, intent };
     }
     return { error: "Unknown action." };

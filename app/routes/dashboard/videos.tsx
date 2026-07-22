@@ -19,7 +19,7 @@ import { MediaPreviewOverlay } from "~/components/dashboard/shared/MediaPreviewO
 import { TextArea, TextField } from "~/components/dashboard/shared/form";
 import { IconPicker } from "~/components/dashboard/shared/IconPicker";
 
-import { ApiError, albumsApi, listMedia, setMediaFavorite, softDelete } from "~/lib/api.server";
+import { ApiError, albumsApi, listMedia, renameMedia, setMediaFavorite, softDelete } from "~/lib/api.server";
 import { getSession } from "~/lib/session.server";
 import { requireUser } from "~/lib/auth.server";
 import { createRequestLogger, withUser } from "~/lib/logger.server";
@@ -151,6 +151,15 @@ export async function action({ request }: Route.ActionArgs) {
         materialSymbol,
       }, reqLog);
 
+      return { ok: true, intent };
+    }
+
+    if (intent === "rename") {
+      const id = String(formData.get("id") ?? "").trim();
+      const name = String(formData.get("name") ?? "").trim();
+      if (id && name) {
+        await renameMedia(accessToken, id, name, reqLog);
+      }
       return { ok: true, intent };
     }
 

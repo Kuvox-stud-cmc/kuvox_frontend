@@ -72,6 +72,7 @@ export function AssetCardContextMenu({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -316,6 +317,20 @@ export function AssetCardContextMenu({
               {copyState === "copied" ? "Link Copied" : copyState === "failed" ? "Copy Failed" : "Copy Link"}
             </button>
 
+            {/* Rename */}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                closeMenu();
+                setRenameOpen(true);
+              }}
+              className={menuItemClass}
+            >
+              <span className="material-symbols-outlined text-[18px]">edit</span>
+              Rename
+            </button>
+
             {/* Manage Access / Share */}
             {workspaceKind === "studio" ? (
               <button
@@ -367,6 +382,14 @@ export function AssetCardContextMenu({
         )}
       </div>
 
+      {renameOpen && (
+        <RenameModal
+          media={media}
+          resourceType={resourceType}
+          open={renameOpen}
+          onClose={() => setRenameOpen(false)}
+        />
+      )}
       {detailsOpen && (
         <AssetDetailsModal media={media} downloadVariant={download?.variant ?? null} open={detailsOpen} onClose={() => setDetailsOpen(false)} />
       )}
@@ -399,6 +422,75 @@ export function AssetCardContextMenu({
         />
       )}
     </>
+  );
+}
+
+function RenameModal({
+  media,
+  resourceType,
+  open,
+  onClose,
+}: {
+  media: MediaDto;
+  resourceType: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const currentName = media.filename;
+  const [value, setValue] = useState(currentName);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setValue(currentName);
+      setTimeout(() => inputRef.current?.select(), 50);
+    }
+  }, [open, currentName]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rename">
+      <Form
+        method="post"
+        onSubmit={onClose}
+        className="space-y-4"
+      >
+        <input type="hidden" name="intent" value="rename" />
+        <input type="hidden" name="id" value={media.id} />
+        <input type="hidden" name="resourceType" value={resourceType} />
+        <div>
+          <label htmlFor="rename-input" className="mb-1 block text-label-md text-on-surface-variant">
+            New name
+          </label>
+          <input
+            id="rename-input"
+            ref={inputRef}
+            name="name"
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            required
+            autoComplete="off"
+            className="w-full rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-body-sm text-on-surface outline-none transition-colors focus:border-primary"
+          />
+        </div>
+        <div className="flex justify-end gap-3 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-label-md text-on-surface-variant transition-colors hover:text-on-surface"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!value.trim() || value.trim() === currentName}
+            className={primaryButtonClass("disabled:opacity-60")}
+          >
+            Rename
+          </button>
+        </div>
+      </Form>
+    </Modal>
   );
 }
 
