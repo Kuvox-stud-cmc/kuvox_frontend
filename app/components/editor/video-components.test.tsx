@@ -9,13 +9,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MediaKind } from "~/lib/api";
 import { createMockVideoProjectDocument, type VideoProjectDocument, type VideoTransform } from "~/lib/editor/video-document";
+import { getTimelineItemPropertyValue } from "~/lib/editor/editor-property-service";
 import { createVideoOperationBatch } from "~/lib/editor/video-operations";
 import {
   activeToolChanged,
   activeInspectorSectionChanged,
   commandInputChanged,
+  cropEditDraftChanged,
   currentTimeChanged,
   playbackToggled,
+  selectCropEditDraft,
   selectEditorState,
   timelineItemsSelected,
   videoOperationApplied,
@@ -30,7 +33,7 @@ import { PreviewPanel } from "./panels/preview-panel";
 import { TimelinePanel } from "./panels/timeline-panel";
 import { mediaFixture, projectFixture, renderWithEditorStore } from "./test-utils";
 import { useVideoKeyboardShortcuts } from "./use-video-keyboard-shortcuts";
-import { VideoInspectorPanel } from "./video-inspector-panel";
+import { InspectorFooter, VideoInspectorPanel } from "./video-inspector-panel";
 
 const planningMock = vi.hoisted(() => vi.fn());
 const retrievalMock = vi.hoisted(() => vi.fn());
@@ -198,6 +201,74 @@ describe("MediaLibraryPanel", () => {
 });
 
 describe("VideoInspectorPanel", () => {
+  it("renders Reset, Apply, Cancel in order and invokes their actions", async () => {
+    const user = userEvent.setup();
+    const onReset = vi.fn();
+    const onApply = vi.fn();
+    const onCancel = vi.fn();
+
+    renderWithEditorStore(
+      <InspectorFooter onReset={onReset} onApply={onApply} onCancel={onCancel} hasChanges />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.textContent)).toEqual(["Reset", "Apply", "Cancel"]);
+
+    await user.click(buttons[0]);
+    await user.click(buttons[1]);
+    await user.click(buttons[2]);
+    expect(onReset).toHaveBeenCalledOnce();
+    expect(onApply).toHaveBeenCalledOnce();
+    expect(onCancel).toHaveBeenCalledOnce();
+
+    cleanup();
+    renderWithEditorStore(
+      <InspectorFooter onReset={onReset} onApply={onApply} onCancel={onCancel} hasChanges={false} />,
+    );
+    expect(screen.getByRole("button", { name: "Reset" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("resets adjustment values to defaults and cancels back one operation", async () => {
+    const user = userEvent.setup();
+    const document = createMockVideoProjectDocument("video-reset", "Video Reset");
+    document.tracks = document.tracks.map((track) => ({
+      ...track,
+      items: track.items.map((item) => item.id === "tl-beach" && item.type === "video" ? {
+        ...item,
+        opacity: 0.8,
+        properties: {
+          ...(item.properties || {}),
+          adjust: {
+            exposure: { value: 74 },
+            brightness: { value: 140 },
+            contrast: { value: 137 },
+          },
+        },
+      } : item),
+    }));
+    const { store } = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="adjust" />,
+      { document, selectedItemIds: ["tl-beach"] },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    const resetItem = findItem(store, "tl-beach");
+    expect(resetItem).toMatchObject({ type: "video", opacity: 1 });
+    expect(getTimelineItemPropertyValue(resetItem!, "adjust", "exposure")).toBe(0);
+    expect(getTimelineItemPropertyValue(resetItem!, "adjust", "brightness")).toBe(100);
+    expect(getTimelineItemPropertyValue(resetItem!, "adjust", "contrast")).toBe(100);
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    await waitFor(() => expect(cancel).toBeEnabled());
+    await user.click(cancel);
+    const restoredItem = findItem(store, "tl-beach");
+    expect(restoredItem).toMatchObject({ type: "video", opacity: 0.8 });
+    expect(getTimelineItemPropertyValue(restoredItem!, "adjust", "exposure")).toBe(74);
+    expect(getTimelineItemPropertyValue(restoredItem!, "adjust", "brightness")).toBe(140);
+    expect(getTimelineItemPropertyValue(restoredItem!, "adjust", "contrast")).toBe(137);
+  });
+
   it("dispatches valid clip, text, audio, and project setting operations while rejecting invalid numbers", async () => {
     const user = userEvent.setup();
     const { store } = renderWithEditorStore(<VideoInspectorPanel />, { selectedItemIds: ["tl-beach"] });
@@ -329,27 +400,65 @@ describe("VideoInspectorPanel", () => {
     const user = userEvent.setup();
     const document = directManipulationDocument();
     document.media["clip-beach"] = { ...document.media["clip-beach"], width: 100, height: 50 };
-    const { store } = renderWithEditorStore(<VideoInspectorPanel />, {
+    const { store } = renderWithEditorStore(<VideoInspectorPanel activeSection="crop" />, {
       document,
       selectedItemIds: ["tl-beach"],
     });
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Apply crop" })).toBeDisabled();
+
+    const initialDraft = selectCropEditDraft(store.getState());
+    expect(initialDraft).not.toBeNull();
+    act(() => {
+      store.dispatch(cropEditDraftChanged({
+        itemId: "tl-beach",
+        crop: { ...initialDraft!.draftCrop, left: 0.2 },
+        transform: { ...initialDraft!.draftTransform, x: initialDraft!.draftTransform.x + 25 },
+      }));
+    });
+    await user.click(screen.getByRole("button", { name: "Reset crop" }));
+    expect(selectCropEditDraft(store.getState())).toMatchObject({
+      draftCrop: { top: 0, right: 0, bottom: 0, left: 0 },
+      draftTransform: initialDraft!.baseTransform,
+      dirty: false,
+    });
 
     await replaceNumber(user, screen.getByLabelText("Left"), "99.9");
-    expect(findItem(store, "tl-beach")).toMatchObject({ crop: { left: 0.99, right: 0 } });
-    await user.click(screen.getByRole("button", { name: "Reset Crop" }));
+    expect(screen.getByRole("button", { name: "Apply crop" })).toBeEnabled();
+    expect(findItem(store, "tl-beach")).toMatchObject({ crop: { left: 0, right: 0 } });
+    expect(selectCropEditDraft(store.getState())).toMatchObject({
+      draftCrop: { left: 0.99, right: 0 },
+      dirty: true,
+    });
+    expect(selectEditorState(store.getState()).undoStack).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Reset crop" }));
+    expect(selectCropEditDraft(store.getState())).toMatchObject({
+      draftCrop: { top: 0, right: 0, bottom: 0, left: 0 },
+      dirty: false,
+    });
     expect(findItem(store, "tl-beach")).toMatchObject({ crop: { top: 0, right: 0, bottom: 0, left: 0 } });
+
+    await replaceNumber(user, screen.getByLabelText("Left"), "99.9");
+    await user.click(screen.getByRole("button", { name: "Apply crop" }));
+    expect(findItem(store, "tl-beach")).toMatchObject({ crop: { left: 0.99, right: 0 } });
+    expect(selectCropEditDraft(store.getState())).toMatchObject({
+      baseCrop: { left: 0.99, right: 0 },
+      draftCrop: { left: 0.99, right: 0 },
+      dirty: false,
+    });
+    expect(selectEditorState(store.getState()).undoStack).toHaveLength(1);
 
     cleanup();
     const imageDocument = imagePresetDocument();
-    renderWithEditorStore(<VideoInspectorPanel />, { document: imageDocument, selectedItemIds: ["image-preset"] });
+    renderWithEditorStore(<VideoInspectorPanel activeSection="crop" />, { document: imageDocument, selectedItemIds: ["image-preset"] });
     expect(screen.getByLabelText("Top")).toBeEnabled();
     expect(screen.queryByLabelText("Corner Rad.")).toBeNull();
 
     cleanup();
     imageDocument.media["image-preset-media"] = { ...imageDocument.media["image-preset-media"], width: undefined };
-    renderWithEditorStore(<VideoInspectorPanel />, { document: imageDocument, selectedItemIds: ["image-preset"] });
+    renderWithEditorStore(<VideoInspectorPanel activeSection="crop" />, { document: imageDocument, selectedItemIds: ["image-preset"] });
     expect(screen.getByLabelText("Top")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Reset Crop" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reset crop" })).toBeDisabled();
   });
 });
 
@@ -812,7 +921,7 @@ describe("PreviewPanel direct visual manipulation", () => {
     expect(lockedRender.container.querySelector('[data-konva-name="preview-selection-tl-beach"]')).toBeNull();
   });
 
-  it("activates crop mode from the inspector, previews locally, and commits one edge operation", () => {
+  it("activates crop mode, previews locally, and stages one edge edit without history", () => {
     installMediaElementMocks();
     const { store, container } = renderWithEditorStore(<PreviewPanel />, {
       document: directManipulationDocument(),
@@ -823,14 +932,20 @@ describe("PreviewPanel direct visual manipulation", () => {
     const handle = container.querySelector('[data-konva-name="preview-crop-right-tl-beach"]') as HTMLElement;
     expect(handle).not.toBeNull();
     expect(container.querySelector('[data-konva-name="preview-selection-tl-beach"]')).toBeNull();
+    expect(container.querySelector('[data-konva-name="preview-crop-ghost-tl-beach"]')).toBeNull();
 
     fireEvent.pointerDown(handle, { clientX: 951, clientY: 270, pointerId: 21, pointerType: "mouse", button: 0 });
     fireEvent.pointerMove(stage, { clientX: 711, clientY: 270, pointerId: 21, pointerType: "mouse" });
     expect(findItem(store, "tl-beach")).toMatchObject({ crop: { right: 0 }, transform: { x: 0 } });
     fireEvent.pointerUp(stage, { clientX: 711, clientY: 270, pointerId: 21, pointerType: "mouse" });
-    expect(findItem(store, "tl-beach")).toMatchObject({ crop: { right: 0.25 }, transform: { x: -240, scaleX: 1, scaleY: 1 } });
-    expect(selectEditorState(store.getState()).undoStack).toHaveLength(1);
-    expect(selectEditorState(store.getState()).lastAppliedOperationIds).toHaveLength(1);
+    expect(findItem(store, "tl-beach")).toMatchObject({ crop: { right: 0 }, transform: { x: 0 } });
+    expect(selectCropEditDraft(store.getState())).toMatchObject({
+      draftCrop: { right: 0.25 },
+      draftTransform: { x: -240, scaleX: 1, scaleY: 1 },
+      dirty: true,
+    });
+    expect(selectEditorState(store.getState()).undoStack).toHaveLength(0);
+    expect(selectEditorState(store.getState()).lastAppliedOperationIds).toHaveLength(0);
   });
 
   it("pans the source behind a fixed frame and cancels crop gestures on Escape or section changes", () => {
@@ -850,18 +965,21 @@ describe("PreviewPanel direct visual manipulation", () => {
     fireEvent.pointerMove(stage, { clientX: 576, clientY: 270, pointerId: 22, pointerType: "mouse" });
     fireEvent.pointerUp(stage, { clientX: 576, clientY: 270, pointerId: 22, pointerType: "mouse" });
     expect(findItem(store, "tl-beach")).toMatchObject({
-      crop: { left: 0.1, right: 0.3 },
+      crop: { left: 0.2, right: 0.2 },
       transform: { x: 0, y: 0, scaleX: 1, scaleY: 1 },
     });
-    expect(selectEditorState(store.getState()).undoStack).toHaveLength(1);
+    expect(selectCropEditDraft(store.getState())).toMatchObject({
+      draftCrop: { left: 0.1, right: 0.3 },
+      dirty: true,
+    });
+    expect(selectEditorState(store.getState()).undoStack).toHaveLength(0);
 
-    act(() => store.dispatch(videoUndoRequested()));
     const nextPan = container.querySelector('[data-konva-name="preview-crop-pan-tl-beach"]') as HTMLElement;
     fireEvent.pointerDown(nextPan, { clientX: 480, clientY: 270, pointerId: 23, pointerType: "mouse", button: 0 });
     fireEvent.pointerMove(stage, { clientX: 576, clientY: 270, pointerId: 23, pointerType: "mouse" });
     fireEvent.keyDown(window, { key: "Escape" });
     fireEvent.pointerUp(stage, { clientX: 576, clientY: 270, pointerId: 23, pointerType: "mouse" });
-    expect(findItem(store, "tl-beach")).toMatchObject({ crop: { left: 0.2, right: 0.2 } });
+    expect(selectCropEditDraft(store.getState())).toMatchObject({ draftCrop: { left: 0.1, right: 0.3 } });
     expect(selectEditorState(store.getState()).ui.activeInspectorSection).toBe("crop");
 
     const finalPan = container.querySelector('[data-konva-name="preview-crop-pan-tl-beach"]') as HTMLElement;
@@ -870,6 +988,7 @@ describe("PreviewPanel direct visual manipulation", () => {
     act(() => store.dispatch(activeInspectorSectionChanged("transform")));
     fireEvent.pointerUp(stage, { clientX: 576, clientY: 270, pointerId: 24, pointerType: "mouse" });
     expect(findItem(store, "tl-beach")).toMatchObject({ crop: { left: 0.2, right: 0.2 } });
+    expect(selectCropEditDraft(store.getState())).toMatchObject({ draftCrop: { left: 0.1, right: 0.3 } });
 
     act(() => store.dispatch(activeInspectorSectionChanged("crop")));
     fireEvent.keyDown(window, { key: "Escape" });

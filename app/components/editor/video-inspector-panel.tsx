@@ -33,12 +33,19 @@ import {
 import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   inspectorWidthChanged,
+  cropEditCleared,
+  cropEditDraftChanged,
+  cropEditReset,
+  cropEditStarted,
   selectInspectorPanelState,
   selectMediaPreparationState,
   selectCurrentTimeSeconds,
   selectVideoDocument,
   selectVideoInspectorState,
   selectVisualScalesLinked,
+  selectCanUndo,
+  selectCropEditDraft,
+  videoUndoRequested,
   videoOperationApplied,
   visualScalesLinkedChanged,
   type InspectorSubject,
@@ -136,10 +143,12 @@ type InspectorClipboardPayload = {
   crop?: typeof defaultInspectorCrop;
   opacity?: number;
   layerOrder?: number;
+  speed?: number;
+  volume?: number;
+  muted?: boolean;
+  textStyle?: VideoTextStyle;
   properties?: Record<string, unknown>;
 };
-
-let inspectorAttributesClipboard: InspectorClipboardPayload | null = null;
 
 function cloneInspectorValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -153,23 +162,35 @@ function sectionPropertyGroup(sectionId: string): string {
   return sectionId;
 }
 
-function copySectionAttributes(item: VideoTimelineItem, sectionId: string) {
+function createSectionAttributesSnapshot(item: VideoTimelineItem, sectionId: string): InspectorClipboardPayload {
   const properties = (item as any).properties || {};
   const groupName = sectionPropertyGroup(sectionId);
   const payload: InspectorClipboardPayload = { sectionId };
 
   if ((sectionId === "transform" || sectionId === "layout") && item.type !== "audio") {
-    payload.transform = resolveItemTransform(item);
+    payload.transform = cloneInspectorValue(resolveItemTransform(item));
     if ("opacity" in item) payload.opacity = resolveItemOpacity(item as any);
     if ("layerOrder" in item) payload.layerOrder = item.layerOrder;
   } else if (sectionId === "crop") {
-    payload.crop = resolveItemCrop(item as any);
+    payload.crop = cloneInspectorValue(resolveItemCrop(item as any));
     payload.properties = cloneInspectorValue(properties.crop || {});
+  } else if (sectionId === "speed" && item.type === "video") {
+    payload.speed = item.speed;
+    payload.properties = cloneInspectorValue(properties.speedSettings || {});
+  } else if (sectionId === "volume" && item.type === "audio") {
+    payload.volume = item.volume;
+    payload.muted = item.muted;
+  } else if (sectionId === "adjust" && "opacity" in item) {
+    payload.opacity = resolveItemOpacity(item as any);
+    payload.properties = cloneInspectorValue(properties.adjust || {});
+  } else if (item.type === "text") {
+    payload.textStyle = cloneInspectorValue(item.style);
+    payload.properties = cloneInspectorValue(properties[groupName] || {});
   } else {
     payload.properties = cloneInspectorValue(properties[groupName] || {});
   }
 
-  inspectorAttributesClipboard = payload;
+  return payload;
 }
 
 function propertyGroupOperation(item: VideoTimelineItem, groupName: string, properties: Record<string, unknown>, label: string) {
@@ -177,36 +198,6 @@ function propertyGroupOperation(item: VideoTimelineItem, groupName: string, prop
   if (item.type === "audio") return updateAudioOperation(item.id, fields as any, label);
   if (item.type === "text") return updateTextOperation(item.id, fields as any, label);
   return updateTransformCropOperation(item.id, fields as any, label);
-}
-
-function pasteSectionAttributes(item: VideoTimelineItem): VideoOperation | ReturnType<typeof createVideoOperationBatch> | null {
-  const payload = inspectorAttributesClipboard;
-  if (!payload) return null;
-
-  if ((payload.sectionId === "transform" || payload.sectionId === "layout") && payload.transform) {
-    if (item.type === "audio") return null;
-    if (item.type === "text") {
-      return updateTextOperation(item.id, {
-        transform: payload.transform,
-        ...(payload.layerOrder !== undefined ? { layerOrder: payload.layerOrder } : {}),
-      }, "Paste attributes");
-    }
-    return updateTransformCropOperation(item.id, {
-      transform: payload.transform,
-      ...(payload.opacity !== undefined ? { opacity: payload.opacity } : {}),
-      ...(payload.layerOrder !== undefined ? { layerOrder: payload.layerOrder } : {}),
-    }, "Paste attributes");
-  }
-
-  if (payload.sectionId === "crop" && payload.crop && item.type !== "audio" && item.type !== "text") {
-    return updateTransformCropOperation(item.id, {
-      ...(item.type === "video" ? { crop: payload.crop } : {}),
-      properties: { crop: payload.crop } as any,
-    }, "Paste crop");
-  }
-
-  if (!payload.properties) return null;
-  return propertyGroupOperation(item, sectionPropertyGroup(payload.sectionId), cloneInspectorValue(payload.properties), "Paste attributes");
 }
 
 function resetSectionAttributes(item: VideoTimelineItem, sectionId: string): VideoOperation | ReturnType<typeof createVideoOperationBatch> | null {
@@ -241,7 +232,76 @@ function resetSectionAttributes(item: VideoTimelineItem, sectionId: string): Vid
     return updateAudioOperation(item.id, { volume: 1, muted: false }, "Reset volume");
   }
 
+  if (sectionId === "adjust" && item.type !== "audio" && item.type !== "text") {
+    const adjustDefaults = Object.fromEntries(
+      Object.values(PROPERTY_REGISTRY)
+        .filter((property) => property.group === "adjust")
+        .map((property) => [property.id, { value: property.defaultValue }]),
+    );
+    return createVideoOperationBatch({
+      source: "manual",
+      label: "Reset adjustments",
+      operations: [
+        propertyGroupOperation(item, "adjust", adjustDefaults, "Reset adjustments") as VideoOperation,
+        updateTransformCropOperation(item.id, { opacity: 1 }, "Reset opacity"),
+      ],
+    });
+  }
+
+  if (item.type === "text") {
+    const styleDefaults: Record<string, Partial<VideoTextStyle>> = {
+      font: { fontFamily: "Inter", fontSize: 48, fontWeight: "normal" },
+      style: { color: "#ffffff", backgroundColor: "#000000", textAlign: "center" },
+      stroke: { strokeColor: "#000000", strokeWidth: 0 },
+      shadow: { shadowColor: "#000000", shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 },
+      animation: { animType: "None", animDur: 1 },
+    };
+    const defaults = styleDefaults[sectionId];
+    if (defaults) {
+      return updateTextOperation(item.id, { style: { ...item.style, ...defaults } }, `Reset ${sectionId}`);
+    }
+  }
+
   return propertyGroupOperation(item, sectionPropertyGroup(sectionId), {}, "Reset attributes");
+}
+
+function useInspectorSectionSession(
+  item: VideoTimelineItem,
+  sectionId: string,
+  dispatch: (operation: VideoOperation | ReturnType<typeof createVideoOperationBatch>) => void,
+) {
+  const reduxDispatch = useAppDispatch();
+  const canCancel = useAppSelector(selectCanUndo);
+  const sessionKey = `${item.id}:${sectionId}`;
+  const baselineRef = useRef({
+    key: sessionKey,
+    snapshot: createSectionAttributesSnapshot(item, sectionId),
+  });
+  const [, refresh] = useState(0);
+
+  if (baselineRef.current.key !== sessionKey) {
+    baselineRef.current = {
+      key: sessionKey,
+      snapshot: createSectionAttributesSnapshot(item, sectionId),
+    };
+  }
+
+  const currentSnapshot = createSectionAttributesSnapshot(item, sectionId);
+  const hasChanges = JSON.stringify(currentSnapshot) !== JSON.stringify(baselineRef.current.snapshot);
+
+  const reset = () => {
+    const operation = resetSectionAttributes(item, sectionId);
+    if (operation) dispatch(operation);
+  };
+  const apply = () => {
+    baselineRef.current = { key: sessionKey, snapshot: currentSnapshot };
+    refresh((revision) => revision + 1);
+  };
+  const cancel = () => {
+    if (canCancel) reduxDispatch(videoUndoRequested());
+  };
+
+  return { reset, apply, cancel, hasChanges, canCancel };
 }
 
 export function VideoInspectorPanel({
@@ -744,15 +804,7 @@ function VideoClipInspector({
   
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "transform" : "");
-  const handleResetSection = () => {
-    const operation = resetSectionAttributes(item, currentSection);
-    if (operation) dispatch(operation);
-  };
-  const handleCopySection = () => copySectionAttributes(item, currentSection);
-  const handlePasteSection = () => {
-    const operation = pasteSectionAttributes(item);
-    if (operation) dispatch(operation);
-  };
+  const sectionSession = useInspectorSectionSession(item, currentSection, dispatch);
 
   const [pitchCorrection, setPitchCorrection] = useState(true);
 
@@ -1050,6 +1102,7 @@ function VideoClipInspector({
                 },
               }, "Generate auto crop");
             }} />
+            <CropActionBar item={item} disabled={inspector.track.locked || inspector.track.hidden} />
           </>
         );
       case "mask":
@@ -1304,6 +1357,15 @@ function VideoClipInspector({
             <div className="flex flex-col gap-2.5 pl-0.5">{renderSectionContent(sec.id)}</div>
           </div>
         ))}
+        {currentSection === "crop" ? null : (
+          <InspectorFooter
+            onReset={sectionSession.reset}
+            onApply={sectionSession.apply}
+            onCancel={sectionSession.cancel}
+            hasChanges={sectionSession.hasChanges}
+            canCancel={sectionSession.canCancel}
+          />
+        )}
       </div>
     );
   }
@@ -1370,7 +1432,15 @@ function VideoClipInspector({
       </div>
       <div className="flex flex-col gap-2.5">
         {renderSectionContent(currentSection)}
-        <InspectorFooter onReset={handleResetSection} onCopy={handleCopySection} onPaste={handlePasteSection} />
+        {currentSection === "crop" ? null : (
+          <InspectorFooter
+            onReset={sectionSession.reset}
+            onApply={sectionSession.apply}
+            onCancel={sectionSession.cancel}
+            hasChanges={sectionSession.hasChanges}
+            canCancel={sectionSession.canCancel}
+          />
+        )}
       </div>
     </div>
   );
@@ -1402,15 +1472,7 @@ function AudioInspector({
   
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "volume" : "");
-  const handleResetSection = () => {
-    const operation = resetSectionAttributes(item, currentSection);
-    if (operation) dispatch(operation);
-  };
-  const handleCopySection = () => copySectionAttributes(item, currentSection);
-  const handlePasteSection = () => {
-    const operation = pasteSectionAttributes(item);
-    if (operation) dispatch(operation);
-  };
+  const sectionSession = useInspectorSectionSession(item, currentSection, dispatch);
 
   const renderSectionContent = (sectionId: string) => {
     switch (sectionId) {
@@ -1613,7 +1675,13 @@ function AudioInspector({
       </div>
       <div className="flex flex-col gap-2.5">
         {renderSectionContent(currentSection)}
-        <InspectorFooter onReset={handleResetSection} onCopy={handleCopySection} onPaste={handlePasteSection} />
+        <InspectorFooter
+          onReset={sectionSession.reset}
+          onApply={sectionSession.apply}
+          onCancel={sectionSession.cancel}
+          hasChanges={sectionSession.hasChanges}
+          canCancel={sectionSession.canCancel}
+        />
       </div>
     </div>
   );
@@ -1676,7 +1744,10 @@ function ImageOverlayInspector({
         );
       case "crop":
         return (
-          <StructuralCropControls item={item} disabled={disabled} />
+          <>
+            <StructuralCropControls item={item} disabled={disabled} />
+            <CropActionBar item={item} disabled={disabled} />
+          </>
         );
       case "mask":
         return (
@@ -1905,15 +1976,7 @@ function TextInspector({
   
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "font" : "");
-  const handleResetSection = () => {
-    const operation = resetSectionAttributes(item, currentSection);
-    if (operation) dispatch(operation);
-  };
-  const handleCopySection = () => copySectionAttributes(item, currentSection);
-  const handlePasteSection = () => {
-    const operation = pasteSectionAttributes(item);
-    if (operation) dispatch(operation);
-  };
+  const sectionSession = useInspectorSectionSession(item, currentSection, dispatch);
   const transform = resolveItemTransform(item);
 
   const renderSectionContent = (sectionId: string) => {
@@ -2192,7 +2255,13 @@ function TextInspector({
         </div>
         <div className="flex flex-col gap-2.5">
           {renderSectionContent(currentSection)}
-          <InspectorFooter onReset={handleResetSection} onCopy={handleCopySection} onPaste={handlePasteSection} />
+          <InspectorFooter
+            onReset={sectionSession.reset}
+            onApply={sectionSession.apply}
+            onCancel={sectionSession.cancel}
+            hasChanges={sectionSession.hasChanges}
+            canCancel={sectionSession.canCancel}
+          />
         </div>
       </div>
     </div>
@@ -2426,25 +2495,37 @@ function StructuralCropControls({
   item: VideoClipTimelineItem | ImageOverlayTimelineItem;
   disabled: boolean;
 }) {
-  const dispatchOperation = useInspectorDispatch();
+  const dispatch = useAppDispatch();
   const document = useAppSelector(selectVideoDocument);
+  const cropEditDraft = useAppSelector(selectCropEditDraft);
   const media = document?.media[item.mediaId];
   const width = media?.width;
   const height = media?.height;
   const dimensionsValid = typeof width === "number" && width > 0 && typeof height === "number" && height > 0;
   const controlsDisabled = disabled || !dimensionsValid;
+  const activeDraft = cropEditDraft?.itemId === item.id ? cropEditDraft : null;
+  const crop = activeDraft?.draftCrop ?? item.crop;
+  const transform = activeDraft?.draftTransform ?? item.transform;
 
-  const commitSide = (side: keyof typeof item.crop, percent: number) => {
+  useEffect(() => {
+    if (cropEditDraft?.itemId === item.id) return;
+    dispatch(cropEditStarted({ itemId: item.id, crop: item.crop, transform: item.transform }));
+  }, [cropEditDraft?.itemId, dispatch, item.crop, item.id, item.transform]);
+
+  const commitSide = (side: keyof typeof crop, percent: number) => {
     if (!dimensionsValid) return;
     const horizontal = side === "left" || side === "right";
     const opposite = ({ top: "bottom", right: "left", bottom: "top", left: "right" } as const)[side];
     const sourceDimension = horizontal ? width : height;
-    const maximum = Math.max(0, 1 - item.crop[opposite] - 1 / sourceDimension);
-    const crop = roundCropForCommit({
-      ...item.crop,
+    const maximum = Math.max(0, 1 - crop[opposite] - 1 / sourceDimension);
+    const nextCrop = roundCropForCommit({
+      ...crop,
       [side]: Math.min(maximum, Math.max(0, percent / 100)),
     }, width, height);
-    dispatchOperation(updateTransformCropOperation(item.id, { crop }, `Update crop ${side}`));
+    if (!activeDraft) {
+      dispatch(cropEditStarted({ itemId: item.id, crop: item.crop, transform: item.transform }));
+    }
+    dispatch(cropEditDraftChanged({ itemId: item.id, crop: nextCrop, transform }));
   };
 
   return (
@@ -2453,7 +2534,7 @@ function StructuralCropControls({
         <NumberField
           key={side}
           label={capitalize(side)}
-          value={roundTo(item.crop[side] * 100, 4)}
+          value={roundTo(crop[side] * 100, 4)}
           min={0}
           max={100}
           step={0.1}
@@ -2463,16 +2544,56 @@ function StructuralCropControls({
           onCommit={(value) => commitSide(side, value)}
         />
       ))}
-      <MockButtonField
-        label="Reset Crop"
-        disabled={controlsDisabled || Object.values(item.crop).every((value) => value === 0)}
-        onClick={() => dispatchOperation(updateTransformCropOperation(
-          item.id,
-          { crop: { top: 0, right: 0, bottom: 0, left: 0 } },
-          "Reset crop",
-        ))}
-      />
     </>
+  );
+}
+
+function CropActionBar({
+  item,
+  disabled,
+}: {
+  item: VideoClipTimelineItem | ImageOverlayTimelineItem;
+  disabled: boolean;
+}) {
+  const dispatch = useAppDispatch();
+  const cropEditDraft = useAppSelector(selectCropEditDraft);
+  const draft = cropEditDraft?.itemId === item.id ? cropEditDraft : null;
+  const canReset = Boolean(draft && (
+    Object.values(draft.draftCrop).some((value) => value !== 0)
+    || JSON.stringify(draft.draftTransform) !== JSON.stringify(draft.baseTransform)
+  ));
+
+  const apply = () => {
+    if (!draft?.dirty || disabled) return;
+    dispatch(videoOperationApplied(updateTransformCropOperation(
+      draft.itemId,
+      { crop: draft.draftCrop, transform: draft.draftTransform },
+      "Apply crop",
+    )));
+    dispatch(cropEditCleared());
+  };
+
+  return (
+    <div className="mt-1 grid grid-cols-2 gap-1.5 border-t border-outline-variant/40 pt-2">
+      <button
+        type="button"
+        aria-label="Reset crop"
+        onClick={() => draft && dispatch(cropEditReset({ itemId: draft.itemId }))}
+        disabled={disabled || !canReset}
+        className="h-8 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        aria-label="Apply crop"
+        onClick={apply}
+        disabled={disabled || !draft?.dirty}
+        className="h-8 rounded-[4px] border border-primary/70 bg-primary-container px-2 text-[11px] font-semibold text-on-primary-container transition-colors hover:bg-primary hover:text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:border-outline-variant disabled:bg-surface-container-low disabled:text-on-surface-variant disabled:opacity-40 motion-reduce:transition-none"
+      >
+        Apply
+      </button>
+    </div>
   );
 }
 
@@ -2720,29 +2841,45 @@ function ToggleField({
   );
 }
 
-function InspectorFooter({ onReset, onCopy, onPaste }: { onReset: () => void; onCopy: () => void; onPaste: () => void }) {
+export function InspectorFooter({
+  onReset,
+  onApply,
+  onCancel,
+  hasChanges = true,
+  canCancel = hasChanges,
+}: {
+  onReset: () => void;
+  onApply: () => void;
+  onCancel: () => void;
+  hasChanges?: boolean;
+  canCancel?: boolean;
+}) {
+  const secondaryButtonClass = "h-8 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none";
+
   return (
     <div className="mt-1 grid grid-cols-3 gap-1.5 border-t border-outline-variant/40 pt-2">
       <button
         type="button"
         onClick={onReset}
-        className="h-7 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+        className={secondaryButtonClass}
       >
         Reset
       </button>
       <button
         type="button"
-        onClick={onCopy}
-        className="h-7 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+        onClick={onApply}
+        disabled={!hasChanges}
+        className="h-8 rounded-[4px] border border-primary/70 bg-primary-container px-2 text-[11px] font-semibold text-on-primary-container transition-colors hover:bg-primary hover:text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:border-outline-variant disabled:bg-surface-container-low disabled:text-on-surface-variant disabled:opacity-40 motion-reduce:transition-none"
       >
-        Copy
+        Apply
       </button>
       <button
         type="button"
-        onClick={onPaste}
-        className="h-7 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+        onClick={onCancel}
+        disabled={!canCancel}
+        className={secondaryButtonClass}
       >
-        Paste
+        Cancel
       </button>
     </div>
   );

@@ -74,7 +74,12 @@ import {
   selectHasUnsyncedChanges,
   inspectorOpenChanged,
   activeInspectorSectionChanged,
+  cropEditCleared,
+  cropEditStarted,
   type VideoEditorHistoryFrame,
+  selectCropEditDraft,
+  selectSelectedTimelineItem,
+  videoOperationApplied,
 } from "~/store/slices/editor-slice";
 
 import { AiAssistantPanel } from "./ai-assistant-panel";
@@ -95,6 +100,7 @@ import { insertionPreparationRequest, useMediaPreparation } from "./use-media-pr
 import { VideoExportModal } from "./video-export-modal";
 import { VideoInspectorPanel } from "./video-inspector-panel";
 import type { VideoMediaKind, VideoMediaReference, VideoProjectDocument, VideoTimelineItem } from "~/lib/editor/video-document";
+import { updateTransformCropOperation } from "~/lib/editor/video-operations";
 
 interface VideoEditorWorkspaceProps {
   project: ProjectDto;
@@ -145,6 +151,8 @@ export function VideoEditorWorkspace({
   const [activeRailTab, setActiveRailTab] = useState("media");
   const responsiveDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const editor = useAppSelector(selectEditorState);
+  const cropEditDraft = useAppSelector(selectCropEditDraft);
+  const selectedTimelineItem = useAppSelector(selectSelectedTimelineItem);
   const hasUnsyncedChanges = useAppSelector(selectHasUnsyncedChanges);
   const editorMode = useAppSelector(selectEditorMode);
   const { libraryOpen } = useAppSelector(selectChromeState);
@@ -199,8 +207,73 @@ export function VideoEditorWorkspace({
     attachedProjectMediaIds,
     onProjectMediaAttached: mergeAttachedProjectMedia,
   });
-  useVideoKeyboardShortcuts(editorRootRef, { onSave: autosave.syncNow });
+  const cropEditDraftRef = useRef(cropEditDraft);
+  cropEditDraftRef.current = cropEditDraft;
+
+  const commitCropEditDraft = useCallback(() => {
+    const draft = cropEditDraftRef.current;
+    if (!draft) return false;
+    cropEditDraftRef.current = null;
+    if (draft.dirty) {
+      dispatch(videoOperationApplied(updateTransformCropOperation(
+        draft.itemId,
+        { crop: draft.draftCrop, transform: draft.draftTransform },
+        "Apply crop",
+      )));
+    }
+    dispatch(cropEditCleared());
+    return draft.dirty;
+  }, [dispatch]);
+
+  const waitForCropCommit = useCallback(async () => {
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  }, []);
+
+  const flushLocalDraftWithCrop = useCallback(async () => {
+    if (commitCropEditDraft()) await waitForCropCommit();
+    return autosave.flushLocalDraft();
+  }, [autosave.flushLocalDraft, commitCropEditDraft, waitForCropCommit]);
+  const syncNowWithCrop = useCallback(async () => {
+    if (commitCropEditDraft()) await waitForCropCommit();
+    return autosave.syncNow();
+  }, [autosave.syncNow, commitCropEditDraft, waitForCropCommit]);
+  const flushForExportWithCrop = useCallback(async () => {
+    if (commitCropEditDraft()) await waitForCropCommit();
+    return autosave.flushForExport();
+  }, [autosave.flushForExport, commitCropEditDraft, waitForCropCommit]);
+
+  useVideoKeyboardShortcuts(editorRootRef, { onSave: syncNowWithCrop });
   useMediaPreparation(project.id);
+
+  useEffect(() => {
+    const visualSelected = selectedTimelineItem
+      && selectedTimelineItem.type !== "audio"
+      && selectedTimelineItem.type !== "text"
+      ? selectedTimelineItem
+      : null;
+    const cropModeActive = desktopInspectorOpen
+      && activeInspectorSection === "crop"
+      && visualSelected !== null;
+    const draft = cropEditDraftRef.current;
+
+    if (draft && (!cropModeActive || draft.itemId !== visualSelected?.id)) {
+      commitCropEditDraft();
+      return;
+    }
+    if (cropModeActive && !draft && visualSelected) {
+      dispatch(cropEditStarted({
+        itemId: visualSelected.id,
+        crop: visualSelected.crop,
+        transform: visualSelected.transform,
+      }));
+    }
+  }, [
+    activeInspectorSection,
+    commitCropEditDraft,
+    desktopInspectorOpen,
+    dispatch,
+    selectedTimelineItem,
+  ]);
 
   useEffect(() => {
     setProjectMediaRows(projectMedia);
@@ -636,15 +709,15 @@ export function VideoEditorWorkspace({
     >
       <EditorExitGuard
         hasUnsyncedChanges={hasUnsyncedChanges}
-        flushLocalDraft={autosave.flushLocalDraft}
-        syncNow={autosave.syncNow}
+        flushLocalDraft={flushLocalDraftWithCrop}
+        syncNow={syncNowWithCrop}
       />
       <GuidedTour storageScope={`${userId}:${project.id}`} />
       <EditorTopBar
         project={project}
         user={user}
         notifications={notifications}
-        onSync={autosave.syncNow}
+        onSync={syncNowWithCrop}
         conflict={Boolean(conflict)}
         onKeepLocal={autosave.keepLocalEdits}
         onReloadServer={autosave.reloadServerCopy}
@@ -661,7 +734,7 @@ export function VideoEditorWorkspace({
       ) : editor.localSaveStatus === "failed" ? (
         <EditorSyncFailureBanner
           error={editor.localSaveError ?? "Local save failed. This page cannot be left safely yet."}
-          onRetry={() => void autosave.flushLocalDraft().catch(() => undefined)}
+          onRetry={() => void flushLocalDraftWithCrop().catch(() => undefined)}
           retrying={false}
         />
       ) : editor.syncStatus === "sync-failed" ? (
@@ -843,7 +916,7 @@ export function VideoEditorWorkspace({
           projectMedia={projectMediaRows}
           projectName={project.name}
           onClose={() => dispatch(modalClosed())}
-          flushForExport={autosave.flushForExport}
+          flushForExport={flushForExportWithCrop}
         />
         <EditorModalLayer />
         <EditorToast />

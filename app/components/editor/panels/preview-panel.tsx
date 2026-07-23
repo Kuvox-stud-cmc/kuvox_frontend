@@ -44,6 +44,8 @@ import { useAppDispatch, useAppSelector } from "~/store/hooks";
 import {
   currentTimeChanged,
   activeInspectorSectionChanged,
+  cropEditDraftChanged,
+  cropEditStarted,
   modalClosed,
   modalOpened,
   muteToggled,
@@ -64,9 +66,11 @@ import {
   selectMediaPreparationEnabled,
   selectPreviewBufferingState,
   selectSelectedItemIds,
+  selectCropEditDraft,
   selectVisualScalesLinked,
   timelineItemsSelected,
   videoOperationApplied,
+  type CropEditDraft,
 } from "~/store/slices/editor-slice";
 import { updateTransformCropOperation, type UpdateTextOperation } from "~/lib/editor/video-operations";
 import {
@@ -183,6 +187,7 @@ export function PreviewPanel({
   const activeToolId = useAppSelector(selectActiveToolId);
   const visualScalesLinked = useAppSelector(selectVisualScalesLinked);
   const inspectorPanel = useAppSelector(selectInspectorPanelState);
+  const cropEditDraft = useAppSelector(selectCropEditDraft);
   const activeModal = useAppSelector((state) => selectOverlayState(state).activeModal);
   const preparationByKey = useAppSelector(selectMediaPreparationState);
   const preparationEnabled = useAppSelector(selectMediaPreparationEnabled);
@@ -210,6 +215,14 @@ export function PreviewPanel({
         : null,
     [document, playback.currentTime, playback.muted, playback.volume, qualityPreference, soloedAudioTrackIds],
   );
+
+  useEffect(() => {
+    if (!inspectorPanel.open || inspectorPanel.activeSection !== "crop" || selectedItemIds.length !== 1 || !document) return;
+    const selectedId = selectedItemIds[0];
+    const item = document.tracks.flatMap((track) => track.items).find((candidate) => candidate.id === selectedId);
+    if (!item || item.type === "audio" || item.type === "text" || cropEditDraft?.itemId === item.id) return;
+    dispatch(cropEditStarted({ itemId: item.id, crop: item.crop, transform: item.transform }));
+  }, [cropEditDraft?.itemId, dispatch, document, inspectorPanel.activeSection, inspectorPanel.open, selectedItemIds]);
   const frameRate = document?.settings.frameRate ?? 30;
   const activeVideo =
     plan?.activeVideo?.item.type === "video" && plan.activeVideo.objectUrl
@@ -437,16 +450,12 @@ export function PreviewPanel({
   const commitVisualTransform = useCallback((itemId: string, transform: VideoTransform) => {
     dispatch(videoOperationApplied(updateTransformCropOperation(itemId, { transform }, "Move visual")));
   }, [dispatch]);
-  const commitVisualCrop = useCallback((
+  const updateVisualCropDraft = useCallback((
     itemId: string,
     crop: VideoCrop,
-    transform?: VideoTransform,
+    transform: VideoTransform,
   ) => {
-    dispatch(videoOperationApplied(updateTransformCropOperation(
-      itemId,
-      { crop, ...(transform ? { transform } : {}) },
-      transform ? "Resize crop" : "Pan crop",
-    )));
+    dispatch(cropEditDraftChanged({ itemId, crop, transform }));
   }, [dispatch]);
 
   const commitTextTransform = useCallback((itemId: string, transform: VideoTransform) => {
@@ -538,9 +547,10 @@ export function PreviewPanel({
               selectToolActive={activeToolId === "select"}
               visualScalesLinked={visualScalesLinked}
               cropModeRequested={inspectorPanel.open && inspectorPanel.activeSection === "crop"}
+              cropEditDraft={cropEditDraft}
               onSelectVisual={selectVisual}
               onCommitVisualTransform={commitVisualTransform}
-              onCommitVisualCrop={commitVisualCrop}
+              onCommitVisualCrop={updateVisualCropDraft}
               onExitCropMode={() => dispatch(activeInspectorSectionChanged("transform"))}
               onSelectTextOverlay={selectTextOverlay}
               onCommitTextTransform={commitTextTransform}
@@ -758,9 +768,10 @@ export function PreviewPanel({
               selectToolActive={activeToolId === "select"}
               visualScalesLinked={visualScalesLinked}
               cropModeRequested={inspectorPanel.open && inspectorPanel.activeSection === "crop"}
+              cropEditDraft={cropEditDraft}
               onSelectVisual={selectVisual}
               onCommitVisualTransform={commitVisualTransform}
-              onCommitVisualCrop={commitVisualCrop}
+              onCommitVisualCrop={updateVisualCropDraft}
               onExitCropMode={() => dispatch(activeInspectorSectionChanged("transform"))}
               onSelectTextOverlay={selectTextOverlay}
               onCommitTextTransform={commitTextTransform}
@@ -786,6 +797,7 @@ function ProgramMonitorStage({
   selectToolActive,
   visualScalesLinked,
   cropModeRequested,
+  cropEditDraft,
   onSelectVisual,
   onCommitVisualTransform,
   onCommitVisualCrop,
@@ -806,9 +818,10 @@ function ProgramMonitorStage({
   selectToolActive: boolean;
   visualScalesLinked: boolean;
   cropModeRequested: boolean;
+  cropEditDraft: CropEditDraft | null;
   onSelectVisual: (itemId: string) => void;
   onCommitVisualTransform: (itemId: string, transform: VideoTransform) => void;
-  onCommitVisualCrop: (itemId: string, crop: VideoCrop, transform?: VideoTransform) => void;
+  onCommitVisualCrop: (itemId: string, crop: VideoCrop, transform: VideoTransform) => void;
   onExitCropMode: () => void;
   onSelectTextOverlay: (itemId: string) => void;
   onCommitTextTransform: (itemId: string, transform: VideoTransform) => void;
@@ -1120,6 +1133,9 @@ function ProgramMonitorStage({
     if (!pointer || !pointerContainer) return;
     event.cancelBubble = true;
     const pointerId = event.evt.pointerId ?? 0;
+    const activeDraft = cropEditDraft?.itemId === visual.item.id ? cropEditDraft : null;
+    const startingCrop = activeDraft?.draftCrop ?? documentItem.crop;
+    const startingTransform = activeDraft?.draftTransform ?? documentItem.transform;
     try {
       pointerContainer.setPointerCapture(pointerId);
     } catch {
@@ -1131,16 +1147,16 @@ function ProgramMonitorStage({
       pointerId,
       pointerContainer,
       startPointer: handlePlacement ? applyHandlePointerOffset(pointer, handlePlacement) : pointer,
-      documentCrop: { ...documentItem.crop },
-      documentTransform: { ...documentItem.transform },
-      renderedCrop: { ...visual.item.crop },
-      renderedTransform: { ...visual.item.transform },
+      documentCrop: { ...startingCrop },
+      documentTransform: { ...startingTransform },
+      renderedCrop: { ...startingCrop },
+      renderedTransform: { ...startingTransform },
       mediaWidth: width,
       mediaHeight: height,
       edge,
       handlePlacement,
     };
-  }, [plan?.document.tracks]);
+  }, [cropEditDraft, plan?.document.tracks]);
 
   const updateCropGesturePreview = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
     const gesture = cropGestureRef.current;
@@ -1173,8 +1189,8 @@ function ProgramMonitorStage({
     } catch {
       // The pointer may already be released by the browser.
     }
-    if (!sameCrop(crop, gesture.documentCrop) || (gesture.kind === "edge" && !sameTransform(transform, gesture.documentTransform))) {
-      onCommitVisualCrop(gesture.itemId, crop, gesture.kind === "edge" ? transform : undefined);
+    if (!sameCrop(crop, gesture.documentCrop) || !sameTransform(transform, gesture.documentTransform)) {
+      onCommitVisualCrop(gesture.itemId, crop, transform);
     }
   }, [clearCropPreview, frameBounds, onCommitVisualCrop, settings]);
 
@@ -1318,8 +1334,10 @@ function ProgramMonitorStage({
                 settings={settings}
                 interactive={selectToolActive && !cropModeActive}
                 previewTransform={visualPreview[visual.item.id]}
-                cropPreview={cropPreview[visual.item.id]}
-                cropModeActive={cropModeActive && selectedVisual?.item.id === visual.item.id}
+                cropPreview={cropPreview[visual.item.id] ?? (cropEditDraft?.itemId === visual.item.id ? {
+                  crop: cropEditDraft.draftCrop,
+                  transform: cropEditDraft.draftTransform,
+                } : undefined)}
                 onGestureStart={(event, visualItem, mediaDimensions) =>
                   handleVisualGestureStart(event, visualItem, "move", undefined, undefined, mediaDimensions)
                 }
@@ -1339,8 +1357,10 @@ function ProgramMonitorStage({
               selected={selectedTextIds.has(overlay.item.id)}
               visualInteractive={selectToolActive && !cropModeActive}
               visualPreviewTransform={visualPreview[overlay.item.id]}
-              cropPreview={cropPreview[overlay.item.id]}
-              cropModeActive={cropModeActive && selectedVisual?.item.id === overlay.item.id}
+              cropPreview={cropPreview[overlay.item.id] ?? (cropEditDraft?.itemId === overlay.item.id ? {
+                crop: cropEditDraft.draftCrop,
+                transform: cropEditDraft.draftTransform,
+              } : undefined)}
               onVisualGestureStart={(event, visualItem, mediaDimensions) =>
                 handleVisualGestureStart(event, visualItem, "move", undefined, undefined, mediaDimensions)
               }
@@ -1368,7 +1388,10 @@ function ProgramMonitorStage({
             frameBounds={frameBounds}
             stageSize={stageSize}
             settings={settings}
-            preview={cropPreview[selectedVisual.item.id]}
+            preview={cropPreview[selectedVisual.item.id] ?? (cropEditDraft?.itemId === selectedVisual.item.id ? {
+              crop: cropEditDraft.draftCrop,
+              transform: cropEditDraft.draftTransform,
+            } : undefined)}
             onGestureStart={handleCropGestureStart}
           />
         ) : null}
@@ -1399,7 +1422,6 @@ function VisualNode({
   interactive,
   previewTransform,
   cropPreview,
-  cropModeActive,
   onGestureStart,
 }: {
   visual: PreviewVisualPlan;
@@ -1413,7 +1435,6 @@ function VisualNode({
   interactive: boolean;
   previewTransform?: VideoTransform;
   cropPreview?: { crop: VideoCrop; transform: VideoTransform };
-  cropModeActive: boolean;
   onGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
@@ -1488,8 +1509,6 @@ function VisualNode({
     dimensions.mediaHeight ?? settings.height,
     crop,
   );
-  const densityX = sourceCrop.width > 0 ? geometry.width / sourceCrop.width : 0;
-  const densityY = sourceCrop.height > 0 ? geometry.height / sourceCrop.height : 0;
   const opacity = "opacity" in visual.item ? visual.item.opacity : 1;
   const sourceImage = visual.item.type === "video" ? videoElement ?? layerVideoElement : image;
 
@@ -1511,20 +1530,6 @@ function VisualNode({
           <MediaPlaceholder bounds={{ x: -geometry.width / 2, y: -geometry.height / 2, width: geometry.width, height: geometry.height }} label={visual.media.name} />
         ) : (
           <>
-            {cropModeActive ? (
-              <StyledPreviewImage
-                name={`preview-crop-ghost-${visual.item.id}`}
-                image={sourceImage}
-                item={visual.item}
-                effect={effect}
-                x={-geometry.width / 2 - sourceCrop.x * densityX}
-                y={-geometry.height / 2 - sourceCrop.y * densityY}
-                width={(dimensions.mediaWidth ?? settings.width) * densityX}
-                height={(dimensions.mediaHeight ?? settings.height) * densityY}
-                opacity={opacity * 0.3}
-                listening={false}
-              />
-            ) : null}
             <StyledPreviewImage
               image={sourceImage}
               item={visual.item}
@@ -1622,7 +1627,6 @@ function OverlayNode({
   visualInteractive,
   visualPreviewTransform,
   cropPreview,
-  cropModeActive,
   onVisualGestureStart,
   previewTransform,
   onTextGestureStart,
@@ -1636,7 +1640,6 @@ function OverlayNode({
   visualInteractive: boolean;
   visualPreviewTransform?: VideoTransform;
   cropPreview?: { crop: VideoCrop; transform: VideoTransform };
-  cropModeActive: boolean;
   onVisualGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
@@ -1674,7 +1677,6 @@ function OverlayNode({
       interactive={visualInteractive}
       previewTransform={visualPreviewTransform}
       cropPreview={cropPreview}
-      cropModeActive={cropModeActive}
       onGestureStart={onVisualGestureStart}
     />
   );
@@ -1799,7 +1801,6 @@ function MediaOverlayNode({
   interactive,
   previewTransform,
   cropPreview,
-  cropModeActive,
   onGestureStart,
 }: {
   overlay: PreviewMediaOverlayPlan;
@@ -1810,7 +1811,6 @@ function MediaOverlayNode({
   interactive: boolean;
   previewTransform?: VideoTransform;
   cropPreview?: { crop: VideoCrop; transform: VideoTransform };
-  cropModeActive: boolean;
   onGestureStart: (
     event: Konva.KonvaEventObject<PointerEvent>,
     visual: PreviewVisualPlan | PreviewMediaOverlayPlan,
@@ -1844,8 +1844,6 @@ function MediaOverlayNode({
     dimensions.mediaHeight ?? settings.height,
     crop,
   );
-  const densityX = sourceCrop.width > 0 ? geometry.width / sourceCrop.width : 0;
-  const densityY = sourceCrop.height > 0 ? geometry.height / sourceCrop.height : 0;
 
   return (
     <Group
@@ -1864,20 +1862,6 @@ function MediaOverlayNode({
           <MediaPlaceholder bounds={{ x: -geometry.width / 2, y: -geometry.height / 2, width: geometry.width, height: geometry.height }} label={overlay.media.name} />
         ) : (
           <>
-            {cropModeActive ? (
-              <StyledPreviewImage
-                name={`preview-crop-ghost-${overlay.item.id}`}
-                image={image}
-                item={overlay.item}
-                effect={effect}
-                x={-geometry.width / 2 - sourceCrop.x * densityX}
-                y={-geometry.height / 2 - sourceCrop.y * densityY}
-                width={(dimensions.mediaWidth ?? settings.width) * densityX}
-                height={(dimensions.mediaHeight ?? settings.height) * densityY}
-                opacity={overlay.item.opacity * 0.3}
-                listening={false}
-              />
-            ) : null}
             <StyledPreviewImage
               image={image}
               item={overlay.item}
