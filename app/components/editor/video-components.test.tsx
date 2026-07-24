@@ -29,7 +29,7 @@ import {
 import { AiAssistantPanel } from "./ai-assistant-panel";
 import { EditorTopBar } from "./editor-top-bar";
 import { MediaLibraryPanel } from "./media-library-panel";
-import { PreviewPanel } from "./panels/preview-panel";
+import { fontStyleForText, PreviewPanel, textBackgroundOpacity } from "./panels/preview-panel";
 import { TimelinePanel } from "./panels/timeline-panel";
 import { mediaFixture, projectFixture, renderWithEditorStore } from "./test-utils";
 import { useVideoKeyboardShortcuts } from "./use-video-keyboard-shortcuts";
@@ -156,6 +156,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  Reflect.deleteProperty(document, "fonts");
   Reflect.deleteProperty(HTMLVideoElement.prototype, "requestVideoFrameCallback");
   Reflect.deleteProperty(HTMLVideoElement.prototype, "cancelVideoFrameCallback");
 });
@@ -269,6 +270,142 @@ describe("VideoInspectorPanel", () => {
     expect(getTimelineItemPropertyValue(restoredItem!, "adjust", "contrast")).toBe(137);
   });
 
+  it("edits color adjustments by slider or number while migrating legacy values", async () => {
+    const user = userEvent.setup();
+    const document = createMockVideoProjectDocument("video-color-adjust", "Video Color Adjust");
+    document.tracks = document.tracks.map((track) => ({
+      ...track,
+      items: track.items.map((item) => item.id === "tl-beach" && item.type === "video" ? {
+        ...item,
+        properties: {
+          ...(item.properties || {}),
+          color: {
+            temperature: { value: 24 },
+            tint: { value: -12 },
+            saturation: { value: 135 },
+            vibrance: { value: 142 },
+            hue: { value: 15 },
+          },
+        },
+      } : item),
+    }));
+
+    const view = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="color" />,
+      { document, selectedItemIds: ["tl-beach"] },
+    );
+
+    expect(screen.getByLabelText("Temperature value")).toHaveValue(24);
+    expect(screen.getByLabelText("Tint value")).toHaveValue(-12);
+    expect(screen.getByLabelText("Saturation value")).toHaveValue(135);
+    expect(screen.getByLabelText("Vibrance value")).toHaveValue(142);
+
+    await replaceNumber(user, screen.getByLabelText("Temperature value"), "999");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "temperature")).toBe(100);
+
+    const tintSlider = screen.getByLabelText("Tint slider");
+    fireEvent.change(tintSlider, { target: { value: "-30" } });
+    fireEvent.change(tintSlider, { target: { value: "-45" } });
+    fireEvent.mouseUp(tintSlider);
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "tint")).toBe(-45);
+
+    act(() => {
+      view.store.dispatch(videoUndoRequested());
+    });
+    expect((findItem(view.store, "tl-beach") as any)?.properties?.adjust?.tint).toBeUndefined();
+    expect((findItem(view.store, "tl-beach") as any)?.properties?.color?.tint?.value).toBe(-12);
+
+    await replaceNumber(user, screen.getByLabelText("Hue value"), "225");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "color", "hue")).toBe(180);
+
+    const saturationInput = screen.getByLabelText("Saturation value");
+    await user.click(saturationInput);
+    await user.clear(saturationInput);
+    fireEvent.blur(saturationInput);
+    expect((findItem(view.store, "tl-beach") as any)?.properties?.adjust?.saturation).toBeUndefined();
+
+    await user.click(screen.getByLabelText("Vibrance value"));
+    await user.clear(screen.getByLabelText("Vibrance value"));
+    await user.type(screen.getByLabelText("Vibrance value"), "50");
+    fireEvent.keyDown(screen.getByLabelText("Vibrance value"), { key: "Escape" });
+    expect((findItem(view.store, "tl-beach") as any)?.properties?.adjust?.vibrance).toBeUndefined();
+
+    const updatedDocument = selectEditorState(view.store.getState()).document!;
+    cleanup();
+    renderWithEditorStore(
+      <VideoInspectorPanel activeSection="adjust" />,
+      { document: updatedDocument, selectedItemIds: ["tl-beach"] },
+    );
+    expect(screen.getByLabelText("Temperature")).toHaveValue("100");
+    expect(screen.getByLabelText("Tint")).toHaveValue("-12");
+    expect(screen.getByLabelText("Saturation")).toHaveValue("135");
+    expect(screen.getByLabelText("Vibrance")).toHaveValue("142");
+  });
+
+  it("resets, applies, and cancels Color section changes across color and adjust groups", async () => {
+    const user = userEvent.setup();
+    const document = createMockVideoProjectDocument("video-color-session", "Video Color Session");
+    document.tracks = document.tracks.map((track) => ({
+      ...track,
+      items: track.items.map((item) => item.id === "tl-beach" && item.type === "video" ? {
+        ...item,
+        properties: {
+          ...(item.properties || {}),
+          adjust: {
+            temperature: { value: 30 },
+            tint: { value: -20 },
+            saturation: { value: 140 },
+            vibrance: { value: 125 },
+          },
+          color: {
+            hue: { value: 60 },
+            lift: { value: 15 },
+          },
+        },
+      } : item),
+    }));
+
+    const { store } = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="color" />,
+      { document, selectedItemIds: ["tl-beach"] },
+    );
+
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    let item = findItem(store, "tl-beach")!;
+    expect(getTimelineItemPropertyValue(item, "adjust", "temperature")).toBe(0);
+    expect(getTimelineItemPropertyValue(item, "adjust", "tint")).toBe(0);
+    expect(getTimelineItemPropertyValue(item, "adjust", "saturation")).toBe(100);
+    expect(getTimelineItemPropertyValue(item, "adjust", "vibrance")).toBe(100);
+    expect(getTimelineItemPropertyValue(item, "color", "hue")).toBe(0);
+    expect(getTimelineItemPropertyValue(item, "color", "lift")).toBe(0);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    item = findItem(store, "tl-beach")!;
+    expect(getTimelineItemPropertyValue(item, "adjust", "temperature")).toBe(30);
+    expect(getTimelineItemPropertyValue(item, "color", "hue")).toBe(60);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    await replaceNumber(user, screen.getByLabelText("Hue value"), "45");
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    await replaceNumber(user, screen.getByLabelText("Temperature value"), "10");
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    item = findItem(store, "tl-beach")!;
+    expect(getTimelineItemPropertyValue(item, "adjust", "temperature")).toBe(30);
+    expect(getTimelineItemPropertyValue(item, "color", "hue")).toBe(45);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
   it("dispatches valid clip, text, audio, and project setting operations while rejecting invalid numbers", async () => {
     const user = userEvent.setup();
     const { store } = renderWithEditorStore(<VideoInspectorPanel />, { selectedItemIds: ["tl-beach"] });
@@ -299,9 +436,86 @@ describe("VideoInspectorPanel", () => {
     expect(selectEditorState(store.getState()).document?.settings.width).toBe(1280);
   });
 
+  it("updates text font, size, colors, and background opacity with one undo step per gesture", async () => {
+    const user = userEvent.setup();
+    const fontView = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="font" />,
+      { selectedItemIds: ["tl-caption"] },
+    );
+
+    await user.selectOptions(screen.getByLabelText("Font Family"), "Lora");
+    await replaceNumber(user, screen.getByLabelText("Font Size"), "64");
+    expect(findItem(fontView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { fontFamily: "Lora", fontSize: 64 },
+    });
+
+    cleanup();
+    const styleView = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="style" />,
+      { selectedItemIds: ["tl-caption"] },
+    );
+
+    fireEvent.change(screen.getByLabelText("Text color picker"), { target: { value: "#123456" } });
+    fireEvent.blur(screen.getByLabelText("Text color picker"));
+    expect(findItem(styleView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { color: "#123456" },
+    });
+
+    await replaceText(user, screen.getByLabelText("Background color hex"), "#abcdef");
+    expect(findItem(styleView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { color: "#123456", backgroundColor: "#abcdef", backgroundOpacity: 0.72 },
+    });
+
+    const opacity = screen.getByLabelText("Background opacity");
+    fireEvent.change(opacity, { target: { value: "50" } });
+    fireEvent.mouseUp(opacity);
+    expect(findItem(styleView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { color: "#123456", backgroundColor: "#abcdef", backgroundOpacity: 0.5 },
+    });
+
+    act(() => {
+      styleView.store.dispatch(videoUndoRequested());
+    });
+    expect(findItem(styleView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { color: "#123456", backgroundColor: "#abcdef", backgroundOpacity: 0.72 },
+    });
+
+    await replaceText(user, screen.getByLabelText("Text color hex"), "#nothex");
+    expect(screen.getByText("Use a hex color such as #FFFFFF.")).toBeInTheDocument();
+    expect(findItem(styleView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { color: "#123456" },
+    });
+  });
+
   it("links visual scales, supports independent edits, normalizes rotation, and disables locked tracks", async () => {
     const user = userEvent.setup();
     const { store } = renderWithEditorStore(<VideoInspectorPanel />, { selectedItemIds: ["tl-beach"] });
+
+    const initialPositionX = (findItem(store, "tl-beach") as any).transform.x;
+    const positionX = screen.getByLabelText("Position X");
+    await user.click(positionX);
+    await user.clear(positionX);
+    await user.type(positionX, "125");
+    fireEvent.keyDown(positionX, { key: "Escape" });
+    expect((findItem(store, "tl-beach") as any).transform.x).toBe(initialPositionX);
+    expect(positionX).toHaveValue(initialPositionX);
+
+    await user.click(positionX);
+    await user.clear(positionX);
+    await user.tab();
+    expect(screen.getByText("Enter a number.")).toBeInTheDocument();
+    expect((findItem(store, "tl-beach") as any).transform.x).toBe(initialPositionX);
+
+    const opacityInput = screen.getAllByLabelText("Opacity").find((control) => control.getAttribute("type") === "number")!;
+    await replaceNumber(user, opacityInput, "0.35");
+    expect(findItem(store, "tl-beach")).toMatchObject({ opacity: 0.35 });
+    expect(opacityInput).toHaveValue(0.35);
 
     await replaceNumber(user, screen.getByLabelText("Scale X"), "2");
     expect(findItem(store, "tl-beach")).toMatchObject({ transform: { scaleX: 2, scaleY: 2 } });
@@ -324,6 +538,89 @@ describe("VideoInspectorPanel", () => {
     expect(screen.getByLabelText("Rotation")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Fit visual to frame" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reset visual transform" })).toBeDisabled();
+  });
+
+  it("cancels the complete Transform session and resets back to the last applied baseline", async () => {
+    const user = userEvent.setup();
+    const document = transformPresetDocument();
+    const { store } = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="transform" />,
+      { document, selectedItemIds: ["tl-beach"] },
+    );
+
+    await replaceNumber(user, screen.getByLabelText("Position X"), "100");
+    await replaceNumber(user, screen.getByLabelText("Position Y"), "200");
+    await replaceNumber(
+      user,
+      screen.getAllByLabelText("Opacity").find((control) => control.getAttribute("type") === "number")!,
+      "0.25",
+    );
+    expect(findItem(store, "tl-beach")).toMatchObject({
+      transform: { x: 100, y: 200 },
+      opacity: 0.25,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(findItem(store, "tl-beach")).toMatchObject({
+      transform: { x: 240, y: -120, scaleX: 2, scaleY: 0.75, rotation: 0 },
+      opacity: 0.65,
+    });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    await replaceNumber(user, screen.getByLabelText("Scale X"), "3");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+
+    await replaceNumber(user, screen.getByLabelText("Position X"), "50");
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    expect(findItem(store, "tl-beach")).toMatchObject({
+      transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+      opacity: 1,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(findItem(store, "tl-beach")).toMatchObject({
+      transform: { x: 240, y: -120, scaleX: 3, scaleY: 1.125, rotation: 0 },
+      opacity: 0.65,
+    });
+  });
+
+  it("uses resolved Transform values and preserves them when editing legacy mirrored documents", async () => {
+    const user = userEvent.setup();
+    const document = transformPresetDocument();
+    document.tracks = document.tracks.map((track) => ({
+      ...track,
+      items: track.items.map((item) => item.id === "tl-beach" && item.type === "video" ? {
+        ...item,
+        properties: {
+          ...(item.properties || {}),
+          transform: { x: 333, y: -222, scaleX: 1.25, scaleY: 0.5, rotation: 30 },
+          opacity: 0.42,
+        },
+      } : item),
+    }));
+
+    const { store } = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="transform" />,
+      { document, selectedItemIds: ["tl-beach"] },
+    );
+
+    expect(screen.getByLabelText("Position X")).toHaveValue(333);
+    expect(screen.getByLabelText("Position Y")).toHaveValue(-222);
+    expect(screen.getByLabelText("Scale X")).toHaveValue(1.25);
+    expect(screen.getByLabelText("Scale Y")).toHaveValue(0.5);
+    expect(screen.getByLabelText("Rotation")).toHaveValue(30);
+    expect(
+      screen.getAllByLabelText("Opacity").find((control) => control.getAttribute("type") === "number"),
+    ).toHaveValue(0.42);
+
+    await replaceNumber(user, screen.getByLabelText("Position Y"), "-100");
+    expect(findItem(store, "tl-beach")).toMatchObject({
+      transform: { x: 333, y: -100, scaleX: 1.25, scaleY: 0.5, rotation: 30 },
+      properties: {
+        transform: { x: 333, y: -100, scaleX: 1.25, scaleY: 0.5, rotation: 30 },
+      },
+    });
   });
 
   it("applies fit, fill, center, reset, and original-size presets as single undoable visual operations", async () => {
@@ -394,6 +691,25 @@ describe("VideoInspectorPanel", () => {
     expect(screen.getByRole("button", { name: "Set visual to original size" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Center visual" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reset visual transform" })).toBeEnabled();
+  });
+
+  it("provides Transform session controls for images and rounds layer order before dispatch", async () => {
+    const user = userEvent.setup();
+    const document = imagePresetDocument();
+    const { store } = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="transform" />,
+      { document, selectedItemIds: ["image-preset"] },
+    );
+
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await replaceNumber(user, screen.getByLabelText("Layer"), "2.6");
+    expect(findItem(store, "image-preset")).toMatchObject({ layerOrder: 3 });
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(findItem(store, "image-preset")).toMatchObject({ layerOrder: 7 });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
   });
 
   it("edits structural crop percentages with source-pixel constraints and reset parity", async () => {
@@ -689,6 +1005,57 @@ describe("Timeline and top-bar controls", () => {
 });
 
 describe("PreviewPanel direct visual manipulation", () => {
+  it("maps editor font weights to valid canvas font syntax and preserves legacy background opacity", () => {
+    expect(fontStyleForText({ fontFamily: "Inter", fontSize: 48, color: "#fff", fontWeight: "normal" })).toBe("400");
+    expect(fontStyleForText({ fontFamily: "Inter", fontSize: 48, color: "#fff", fontWeight: "medium" })).toBe("500");
+    expect(fontStyleForText({ fontFamily: "Inter", fontSize: 48, color: "#fff", fontWeight: "semibold" })).toBe("600");
+    expect(fontStyleForText({
+      fontFamily: "Inter",
+      fontSize: 48,
+      color: "#fff",
+      fontWeight: "bold",
+      fontStyle: "italic",
+    })).toBe("italic 700");
+
+    expect(textBackgroundOpacity({
+      fontFamily: "Inter",
+      fontSize: 48,
+      color: "#fff",
+      backgroundColor: "#000000",
+    })).toBe(0.72);
+    expect(textBackgroundOpacity({
+      fontFamily: "Inter",
+      fontSize: 48,
+      color: "#fff",
+      backgroundColor: "#000000",
+      backgroundOpacity: 0,
+    })).toBe(0);
+    expect(textBackgroundOpacity({
+      fontFamily: "Inter",
+      fontSize: 48,
+      color: "#fff",
+      backgroundOpacity: 1,
+    })).toBe(0);
+  });
+
+  it("loads the selected bundled font before redrawing an active text overlay", async () => {
+    installMediaElementMocks();
+    const load = vi.fn().mockResolvedValue([]);
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: { load },
+    });
+    const { store } = renderWithEditorStore(<PreviewPanel />);
+
+    act(() => {
+      store.dispatch(currentTimeChanged(8));
+    });
+
+    await waitFor(() => {
+      expect(load).toHaveBeenCalledWith('600 48px "Inter"');
+    });
+  });
+
   it("selects a vertical visual and mirrors timeline selection with an outline", () => {
     installMediaElementMocks();
     const document = directManipulationDocument();

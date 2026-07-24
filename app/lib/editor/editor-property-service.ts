@@ -39,6 +39,7 @@ export const PROPERTY_REGISTRY: Record<string, PropertyMetadata> = {
   blend: { id: "blend", label: "Blend", group: "filters", min: 0, max: 100, defaultValue: 100, suffix: "%" },
 
   // Color
+  backgroundOpacity: { id: "backgroundOpacity", label: "Background opacity", group: "style", min: 0, max: 1, step: 0.01, defaultValue: 0.72, precision: 2 },
   lift: { id: "lift", label: "Lift", group: "color", min: -100, max: 100, step: 1, defaultValue: 0 },
   gamma: { id: "gamma", label: "Gamma", group: "color", min: -100, max: 100, step: 1, defaultValue: 0 },
   gain: { id: "gain", label: "Gain", group: "color", min: -100, max: 100, step: 1, defaultValue: 0 },
@@ -148,7 +149,7 @@ export const EditorPropertyService = {
     // 3. Translate to correct Redux operation type based on target item
     if (item.type === "text") {
       // Styling is handled in style object for text items, but we can also save under properties
-      if (["fontFamily", "fontSize", "color", "backgroundColor", "fontWeight", "fontStyle", "textAlign"].includes(propertyName)) {
+      if (["fontFamily", "fontSize", "color", "backgroundColor", "backgroundOpacity", "fontWeight", "fontStyle", "textAlign"].includes(propertyName)) {
         return updateTextOperation(item.id, { style: { ...(item.style || {}), [propertyName]: clampedValue } }, operationLabel);
       }
       

@@ -331,6 +331,7 @@ function assertTextToolCreation(): void {
   assert.equal(textItem?.duration, 4);
   assert.equal(textItem?.type === "text" ? textItem.text : undefined, "New caption");
   assert.equal(textItem?.type === "text" ? textItem.style.backgroundColor : undefined, "#000000");
+  assert.equal(textItem?.type === "text" ? textItem.style.backgroundOpacity : undefined, 0.72);
   assert.equal(textItem?.type === "text" ? textItem.transform.y : undefined, 320);
   assert.deepEqual(withText.selection.selectedItemIds, [textItem?.id]);
   assert.equal(withText.selection.activeItemId, textItem?.id);

@@ -2013,9 +2013,12 @@ function applySuccessfulVideoEdit(
   
   let undoStack = [...state.undoStack];
   const lastFrame = undoStack[undoStack.length - 1];
+  const lastOperation = lastFrame?.batch.operations[0];
+  const currentOperation = input.batch.operations[0];
   const isSameItemAndOp = lastFrame &&
-    lastFrame.batch.operations[0]?.type === input.batch.operations[0]?.type &&
-    lastFrame.batch.operations[0]?.affectedEntityIds[0] === input.batch.operations[0]?.affectedEntityIds[0];
+    lastOperation?.type === currentOperation?.type &&
+    lastOperation?.affectedEntityIds[0] === currentOperation?.affectedEntityIds[0] &&
+    (!currentOperation?.commandId || lastOperation?.commandId === currentOperation.commandId);
 
   const beforeDoc = (input.squash && isSameItemAndOp) ? lastFrame.beforeDocument : input.beforeDocument;
 

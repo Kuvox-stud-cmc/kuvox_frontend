@@ -60,6 +60,7 @@ import {
   roundCropForCommit,
   type VisualTransformPreset,
 } from "~/lib/editor/editor-preview";
+import { videoColorAdjustmentValue } from "~/lib/editor/video-adjustments";
 
 export function useInspectorCommands() {
   const dispatch = useAppDispatch();
@@ -68,7 +69,7 @@ export function useInspectorCommands() {
     item: VideoTimelineItem,
     propertyName: string,
     value: any,
-    options?: { squash?: boolean; label?: string; groupName?: string }
+    options?: { squash?: boolean; label?: string; groupName?: string; commandId?: string }
   ) => {
     const operation = EditorPropertyService.createUpdatePropertyOperation(
       item,
@@ -78,6 +79,9 @@ export function useInspectorCommands() {
       options?.groupName
     );
     if (operation) {
+      if (options?.commandId) {
+        operation.commandId = options.commandId;
+      }
       dispatch(videoOperationApplied({
         operation,
         squash: options?.squash,
@@ -136,6 +140,7 @@ const defaultInspectorTransform: VideoTransform = {
 const defaultInspectorCrop = { top: 0, right: 0, bottom: 0, left: 0 };
 const filterPresets = ["Original", "Cinematic", "Film", "Vintage", "Warm", "Cold", "Dreamy", "Noir", "Vivid"] as const;
 const cropAspectPresets = ["Free", "16:9", "9:16", "1:1", "4:5", "3:2", "21:9"] as const;
+const sharedColorAdjustmentProperties = ["temperature", "tint", "saturation", "vibrance"] as const;
 
 type InspectorClipboardPayload = {
   sectionId: string;
@@ -183,6 +188,15 @@ function createSectionAttributesSnapshot(item: VideoTimelineItem, sectionId: str
   } else if (sectionId === "adjust" && "opacity" in item) {
     payload.opacity = resolveItemOpacity(item as any);
     payload.properties = cloneInspectorValue(properties.adjust || {});
+  } else if (sectionId === "color") {
+    payload.properties = {
+      color: cloneInspectorValue(properties.color || {}),
+      adjust: cloneInspectorValue(Object.fromEntries(
+        sharedColorAdjustmentProperties
+          .filter((propertyName) => properties.adjust?.[propertyName] !== undefined)
+          .map((propertyName) => [propertyName, properties.adjust[propertyName]]),
+      )),
+    };
   } else if (item.type === "text") {
     payload.textStyle = cloneInspectorValue(item.style);
     payload.properties = cloneInspectorValue(properties[groupName] || {});
@@ -248,10 +262,30 @@ function resetSectionAttributes(item: VideoTimelineItem, sectionId: string): Vid
     });
   }
 
+  if (sectionId === "color" && item.type !== "audio" && item.type !== "text") {
+    const colorDefaults = Object.fromEntries(
+      Object.values(PROPERTY_REGISTRY)
+        .filter((property) => property.group === "color")
+        .map((property) => [property.id, { value: property.defaultValue }]),
+    );
+    const sharedAdjustDefaults = Object.fromEntries(
+      sharedColorAdjustmentProperties.map((propertyName) => [
+        propertyName,
+        { value: PROPERTY_REGISTRY[propertyName].defaultValue },
+      ]),
+    );
+    return updateTransformCropOperation(item.id, {
+      properties: {
+        color: colorDefaults,
+        adjust: sharedAdjustDefaults,
+      } as any,
+    }, "Reset color");
+  }
+
   if (item.type === "text") {
     const styleDefaults: Record<string, Partial<VideoTextStyle>> = {
       font: { fontFamily: "Inter", fontSize: 48, fontWeight: "normal" },
-      style: { color: "#ffffff", backgroundColor: "#000000", textAlign: "center" },
+      style: { color: "#ffffff", backgroundColor: "#000000", backgroundOpacity: 0.72, textAlign: "center" },
       stroke: { strokeColor: "#000000", strokeWidth: 0 },
       shadow: { shadowColor: "#000000", shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 },
       animation: { animType: "None", animDur: 1 },
@@ -265,13 +299,37 @@ function resetSectionAttributes(item: VideoTimelineItem, sectionId: string): Vid
   return propertyGroupOperation(item, sectionPropertyGroup(sectionId), {}, "Reset attributes");
 }
 
+function restoreTransformSection(
+  item: VideoTimelineItem,
+  snapshot: InspectorClipboardPayload,
+): VideoOperation | null {
+  if (snapshot.sectionId !== "transform" || !snapshot.transform) return null;
+
+  if (item.type === "text") {
+    return updateTextOperation(item.id, {
+      transform: snapshot.transform,
+      ...(snapshot.layerOrder !== undefined ? { layerOrder: snapshot.layerOrder } : {}),
+    }, "Cancel transform changes");
+  }
+
+  if (item.type === "video" || item.type === "image" || item.type === "overlay") {
+    return updateTransformCropOperation(item.id, {
+      transform: snapshot.transform,
+      ...(snapshot.opacity !== undefined ? { opacity: snapshot.opacity } : {}),
+      ...(snapshot.layerOrder !== undefined ? { layerOrder: snapshot.layerOrder } : {}),
+    }, "Cancel transform changes");
+  }
+
+  return null;
+}
+
 function useInspectorSectionSession(
   item: VideoTimelineItem,
   sectionId: string,
   dispatch: (operation: VideoOperation | ReturnType<typeof createVideoOperationBatch>) => void,
 ) {
   const reduxDispatch = useAppDispatch();
-  const canCancel = useAppSelector(selectCanUndo);
+  const canUndo = useAppSelector(selectCanUndo);
   const sessionKey = `${item.id}:${sectionId}`;
   const baselineRef = useRef({
     key: sessionKey,
@@ -288,6 +346,7 @@ function useInspectorSectionSession(
 
   const currentSnapshot = createSectionAttributesSnapshot(item, sectionId);
   const hasChanges = JSON.stringify(currentSnapshot) !== JSON.stringify(baselineRef.current.snapshot);
+  const canCancel = hasChanges && canUndo;
 
   const reset = () => {
     const operation = resetSectionAttributes(item, sectionId);
@@ -298,7 +357,13 @@ function useInspectorSectionSession(
     refresh((revision) => revision + 1);
   };
   const cancel = () => {
-    if (canCancel) reduxDispatch(videoUndoRequested());
+    if (!canCancel) return;
+    const restoreOperation = restoreTransformSection(item, baselineRef.current.snapshot);
+    if (restoreOperation) {
+      dispatch(restoreOperation);
+      return;
+    }
+    reduxDispatch(videoUndoRequested());
   };
 
   return { reset, apply, cancel, hasChanges, canCancel };
@@ -638,6 +703,7 @@ function SliderField({
       <span className="text-on-surface-variant truncate">{label}</span>
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
@@ -682,6 +748,7 @@ function RealtimeSliderField({
       <span className="text-on-surface-variant truncate">{label}</span>
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
@@ -697,10 +764,136 @@ function RealtimeSliderField({
         onTouchEnd={() => {
           if (onChangeEnd) onChangeEnd(localValue);
         }}
+        onBlur={() => {
+          if (onChangeEnd) onChangeEnd(localValue);
+        }}
         className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-outline-variant accent-primary"
       />
       <span className="text-right font-mono text-on-surface-variant text-[12px] font-medium">
         {localValue}{suffix}
+      </span>
+    </div>
+  );
+}
+
+function EditableRealtimeSliderField({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  suffix = "",
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+  onChange: (val: number, commandId: string) => void;
+}) {
+  const [localValue, setLocalValue] = useState(value);
+  const [draft, setDraft] = useState(formatNumber(value, step < 1 ? 2 : 0));
+  const [isEditing, setIsEditing] = useState(false);
+  const sliderCommandIdRef = useRef<string | null>(null);
+  const skipBlurCommitRef = useRef(false);
+
+  useEffect(() => {
+    setLocalValue(value);
+    if (!isEditing) {
+      setDraft(formatNumber(value, step < 1 ? 2 : 0));
+    }
+  }, [isEditing, step, value]);
+
+  const emitSliderChange = (nextValue: number) => {
+    const commandId = sliderCommandIdRef.current
+      ?? createInspectorCommandId(`color-${label.toLowerCase()}`);
+    sliderCommandIdRef.current = commandId;
+    setLocalValue(nextValue);
+    setDraft(formatNumber(nextValue, step < 1 ? 2 : 0));
+    onChange(nextValue, commandId);
+  };
+
+  const finishSliderGesture = () => {
+    sliderCommandIdRef.current = null;
+  };
+
+  const commitDraft = () => {
+    setIsEditing(false);
+    const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
+    if (!Number.isFinite(parsed)) {
+      setDraft(formatNumber(localValue, step < 1 ? 2 : 0));
+      return;
+    }
+
+    const nextValue = Math.min(max, Math.max(min, parsed));
+    setLocalValue(nextValue);
+    setDraft(formatNumber(nextValue, step < 1 ? 2 : 0));
+    if (nextValue !== localValue) {
+      onChange(nextValue, createInspectorCommandId(`color-${label.toLowerCase()}-input`));
+    }
+  };
+
+  return (
+    <div
+      className="grid items-center gap-2 text-[13px] font-medium"
+      style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr) 64px" }}
+    >
+      <span className="truncate text-on-surface-variant">{label}</span>
+      <input
+        type="range"
+        aria-label={`${label} slider`}
+        min={min}
+        max={max}
+        step={step}
+        value={localValue}
+        onChange={(event) => emitSliderChange(Number(event.target.value))}
+        onMouseUp={finishSliderGesture}
+        onTouchEnd={finishSliderGesture}
+        onBlur={finishSliderGesture}
+        className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-outline-variant accent-primary"
+      />
+      <span className="flex h-7 min-w-0 overflow-hidden rounded-[4px] border border-outline-variant bg-surface-container-low transition-colors focus-within:border-primary motion-reduce:transition-none">
+        <input
+          type="number"
+          aria-label={`${label} value`}
+          min={min}
+          max={max}
+          step={step}
+          value={draft}
+          onFocus={() => setIsEditing(true)}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            if (skipBlurCommitRef.current) {
+              skipBlurCommitRef.current = false;
+              setIsEditing(false);
+              setDraft(formatNumber(localValue, step < 1 ? 2 : 0));
+              return;
+            }
+            commitDraft();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              skipBlurCommitRef.current = true;
+              event.currentTarget.blur();
+            }
+          }}
+          data-editor-shortcuts="ignore"
+          className="h-full min-w-0 flex-1 appearance-none bg-transparent px-1.5 text-right font-mono text-[12px] font-medium tabular-nums text-on-surface outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        {suffix ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none flex shrink-0 items-center border-l border-outline-variant/70 bg-surface-container px-1.5 font-mono text-[10px] text-on-surface-variant"
+          >
+            {suffix}
+          </span>
+        ) : null}
       </span>
     </div>
   );
@@ -884,7 +1077,7 @@ function VideoClipInspector({
               label="Temperature"
               min={-100}
               max={100}
-              value={getTimelineItemPropertyValue(item, "adjust", "temperature")}
+              value={videoColorAdjustmentValue(item, "temperature")}
               onChange={(val) => updateProperty(item, "temperature", val, { squash: true })}
               onChangeEnd={(val) => updateProperty(item, "temperature", val, { squash: false })}
             />
@@ -892,7 +1085,7 @@ function VideoClipInspector({
               label="Tint"
               min={-100}
               max={100}
-              value={getTimelineItemPropertyValue(item, "adjust", "tint")}
+              value={videoColorAdjustmentValue(item, "tint")}
               onChange={(val) => updateProperty(item, "tint", val, { squash: true })}
               onChangeEnd={(val) => updateProperty(item, "tint", val, { squash: false })}
             />
@@ -900,7 +1093,7 @@ function VideoClipInspector({
               label="Saturation"
               min={0}
               max={200}
-              value={getTimelineItemPropertyValue(item, "adjust", "saturation")}
+              value={videoColorAdjustmentValue(item, "saturation")}
               onChange={(val) => updateProperty(item, "saturation", val, { squash: true })}
               onChangeEnd={(val) => updateProperty(item, "saturation", val, { squash: false })}
               suffix="%"
@@ -909,7 +1102,7 @@ function VideoClipInspector({
               label="Vibrance"
               min={0}
               max={200}
-              value={getTimelineItemPropertyValue(item, "adjust", "vibrance")}
+              value={videoColorAdjustmentValue(item, "vibrance")}
               onChange={(val) => updateProperty(item, "vibrance", val, { squash: true })}
               onChangeEnd={(val) => updateProperty(item, "vibrance", val, { squash: false })}
               suffix="%"
@@ -969,47 +1162,62 @@ function VideoClipInspector({
       case "color":
         return (
           <>
-            <RealtimeSliderField
+            <EditableRealtimeSliderField
               label="Temperature"
               min={-100}
               max={100}
-              value={getTimelineItemPropertyValue(item, "color", "temperature")}
-              onChange={(val) => updateProperty(item, "temperature", val, { squash: true, groupName: "color" })}
-              onChangeEnd={(val) => updateProperty(item, "temperature", val, { squash: false, groupName: "color" })}
+              value={videoColorAdjustmentValue(item, "temperature")}
+              onChange={(val, commandId) => updateProperty(item, "temperature", val, {
+                squash: true,
+                groupName: "adjust",
+                commandId,
+              })}
             />
-            <RealtimeSliderField
+            <EditableRealtimeSliderField
               label="Tint"
               min={-100}
               max={100}
-              value={getTimelineItemPropertyValue(item, "color", "tint")}
-              onChange={(val) => updateProperty(item, "tint", val, { squash: true, groupName: "color" })}
-              onChangeEnd={(val) => updateProperty(item, "tint", val, { squash: false, groupName: "color" })}
+              value={videoColorAdjustmentValue(item, "tint")}
+              onChange={(val, commandId) => updateProperty(item, "tint", val, {
+                squash: true,
+                groupName: "adjust",
+                commandId,
+              })}
             />
-            <RealtimeSliderField
+            <EditableRealtimeSliderField
               label="Hue"
               min={-180}
               max={180}
               value={getTimelineItemPropertyValue(item, "color", "hue")}
-              onChange={(val) => updateProperty(item, "hue", val, { squash: true, groupName: "color" })}
-              onChangeEnd={(val) => updateProperty(item, "hue", val, { squash: false, groupName: "color" })}
+              onChange={(val, commandId) => updateProperty(item, "hue", val, {
+                squash: true,
+                groupName: "color",
+                commandId,
+              })}
               suffix="deg"
             />
-            <RealtimeSliderField
+            <EditableRealtimeSliderField
               label="Saturation"
               min={0}
               max={200}
-              value={getTimelineItemPropertyValue(item, "color", "saturation")}
-              onChange={(val) => updateProperty(item, "saturation", val, { squash: true, groupName: "color" })}
-              onChangeEnd={(val) => updateProperty(item, "saturation", val, { squash: false, groupName: "color" })}
+              value={videoColorAdjustmentValue(item, "saturation")}
+              onChange={(val, commandId) => updateProperty(item, "saturation", val, {
+                squash: true,
+                groupName: "adjust",
+                commandId,
+              })}
               suffix="%"
             />
-            <RealtimeSliderField
+            <EditableRealtimeSliderField
               label="Vibrance"
               min={0}
               max={200}
-              value={getTimelineItemPropertyValue(item, "color", "vibrance")}
-              onChange={(val) => updateProperty(item, "vibrance", val, { squash: true, groupName: "color" })}
-              onChangeEnd={(val) => updateProperty(item, "vibrance", val, { squash: false, groupName: "color" })}
+              value={videoColorAdjustmentValue(item, "vibrance")}
+              onChange={(val, commandId) => updateProperty(item, "vibrance", val, {
+                squash: true,
+                groupName: "adjust",
+                commandId,
+              })}
               suffix="%"
             />
             <div className="py-2"><span className="text-label-sm font-semibold text-on-surface-variant">Color Wheels</span></div>
@@ -1064,7 +1272,7 @@ function VideoClipInspector({
             <VisualTransformControls item={item} disabled={inspector.track.locked || inspector.track.hidden} />
             <NumberField
               label="Opacity"
-              value={opacity}
+              value={isMock ? opacity : resolveItemOpacity(item)}
               min={0}
               max={1}
               step={0.01}
@@ -1715,6 +1923,7 @@ function ImageOverlayInspector({
   
   const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "transform" : "");
+  const sectionSession = useInspectorSectionSession(item, currentSection, dispatch);
 
   const renderSectionContent = (sectionId: string) => {
     switch (sectionId) {
@@ -1889,6 +2098,15 @@ function ImageOverlayInspector({
             <div className="flex flex-col gap-2.5 pl-0.5">{renderSectionContent(sec.id)}</div>
           </div>
         ))}
+        {currentSection === "crop" ? null : (
+          <InspectorFooter
+            onReset={sectionSession.reset}
+            onApply={sectionSession.apply}
+            onCancel={sectionSession.cancel}
+            hasChanges={sectionSession.hasChanges}
+            canCancel={sectionSession.canCancel}
+          />
+        )}
       </div>
     );
   }
@@ -1945,6 +2163,15 @@ function ImageOverlayInspector({
       </div>
       <div className="flex flex-col gap-2.5">
         {renderSectionContent(currentSection)}
+        {currentSection === "crop" ? null : (
+          <InspectorFooter
+            onReset={sectionSession.reset}
+            onApply={sectionSession.apply}
+            onCancel={sectionSession.cancel}
+            hasChanges={sectionSession.hasChanges}
+            canCancel={sectionSession.canCancel}
+          />
+        )}
       </div>
     </div>
   );
@@ -1971,6 +2198,7 @@ function TextInspector({
 }) {
   const dispatch = useInspectorDispatch();
   const { updateProperty } = useInspectorCommands();
+  const backgroundOpacityCommandId = useRef<string | null>(null);
 
   const supported = ["font", "style", "stroke", "shadow", "animation", "layout"];
   
@@ -1978,6 +2206,34 @@ function TextInspector({
   const currentSection = supported.includes(activeSection) ? activeSection : (isTest ? "font" : "");
   const sectionSession = useInspectorSectionSession(item, currentSection, dispatch);
   const transform = resolveItemTransform(item);
+  const backgroundOpacity = item.style.backgroundColor
+    ? item.style.backgroundOpacity ?? 0.72
+    : 0;
+
+  const updateBackgroundOpacity = (percentage: number) => {
+    const commandId = backgroundOpacityCommandId.current
+      ?? createInspectorCommandId("text-background-opacity");
+    backgroundOpacityCommandId.current = commandId;
+    const nextOpacity = clamp(percentage / 100, 0, 1);
+
+    dispatch(
+      updateTextOperation(
+        item.id,
+        {
+          style: {
+            ...item.style,
+            ...(nextOpacity > 0 && !item.style.backgroundColor
+              ? { backgroundColor: "#000000" }
+              : {}),
+            backgroundOpacity: nextOpacity,
+          },
+        },
+        "Update background opacity",
+        commandId,
+      ),
+      { squash: true },
+    );
+  };
 
   const renderSectionContent = (sectionId: string) => {
     switch (sectionId) {
@@ -2009,17 +2265,44 @@ function TextInspector({
       case "style":
         return (
           <>
-            <TextField
-              label="Color"
+            <ColorField
+              label="Text color"
               value={item.style.color}
-              type="color"
-              onCommit={(color) => dispatch(updateTextOperation(item.id, { style: { ...item.style, color } }, "Update color"))}
+              onChange={(color, commandId) => dispatch(
+                updateTextOperation(item.id, { style: { ...item.style, color } }, "Update text color", commandId),
+                { squash: true },
+              )}
             />
-            <TextField
-              label="Background"
+            <ColorField
+              label="Background color"
               value={item.style.backgroundColor ?? "#000000"}
-              type="color"
-              onCommit={(backgroundColor) => dispatch(updateTextOperation(item.id, { style: { ...item.style, backgroundColor } }, "Update background"))}
+              onChange={(backgroundColor, commandId) => dispatch(
+                updateTextOperation(
+                  item.id,
+                  {
+                    style: {
+                      ...item.style,
+                      backgroundColor,
+                      backgroundOpacity: item.style.backgroundOpacity ?? 0.72,
+                    },
+                  },
+                  "Update background color",
+                  commandId,
+                ),
+                { squash: true },
+              )}
+            />
+            <RealtimeSliderField
+              label="Background opacity"
+              min={0}
+              max={100}
+              step={1}
+              suffix="%"
+              value={Math.round(backgroundOpacity * 100)}
+              onChange={updateBackgroundOpacity}
+              onChangeEnd={() => {
+                backgroundOpacityCommandId.current = null;
+              }}
             />
             <SelectField
               label="Align"
@@ -2371,6 +2654,8 @@ function VisualTransformControls({
   const scalesLinked = useAppSelector(selectVisualScalesLinked);
   const document = useAppSelector(selectVideoDocument);
   const media = document?.media[item.mediaId];
+  const transform = resolveItemTransform(item);
+  const crop = resolveItemCrop(item as any);
   const hasMediaDimensions = Boolean(
     media && typeof media.width === "number" && media.width > 0 && typeof media.height === "number" && media.height > 0,
   );
@@ -2383,27 +2668,27 @@ function VisualTransformControls({
     if (!settings) return;
     const nextTransform = computeVisualTransformPreset({
       preset,
-      transform: item.transform,
+      transform,
       projectWidth: settings.width,
       projectHeight: settings.height,
       mediaWidth: media?.width,
       mediaHeight: media?.height,
-      crop: item.crop,
+      crop,
     });
-    if (nextTransform && !sameVideoTransform(nextTransform, item.transform)) {
+    if (nextTransform && !sameVideoTransform(nextTransform, transform)) {
       commitTransform(nextTransform, label);
     }
   };
   const commitScale = (axis: "scaleX" | "scaleY", value: number) => {
     const nextValue = roundTo(Math.max(0.01, Math.abs(value)), 6);
     const otherAxis = axis === "scaleX" ? "scaleY" : "scaleX";
-    const currentValue = Math.max(0.01, Math.abs(item.transform[axis]));
+    const currentValue = Math.max(0.01, Math.abs(transform[axis]));
     const multiplier = nextValue / currentValue;
     commitTransform({
-      ...item.transform,
+      ...transform,
       [axis]: nextValue,
       ...(scalesLinked
-        ? { [otherAxis]: roundTo(Math.max(0.01, Math.abs(item.transform[otherAxis]) * multiplier), 6) }
+        ? { [otherAxis]: roundTo(Math.max(0.01, Math.abs(transform[otherAxis]) * multiplier), 6) }
         : {}),
     });
   };
@@ -2425,7 +2710,7 @@ function VisualTransformControls({
             title={label}
             disabled={disabled || (needsDimensions && !hasMediaDimensions)}
             onClick={() => applyPreset(preset, label)}
-            className="flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-container-high focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-45"
+            className={`flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[4px] border border-outline-variant bg-surface-container-low px-2 text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-container-high focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-45 ${preset === "reset" ? "col-span-2" : ""}`}
           >
             <EditorIcon className="shrink-0 text-[16px]">{icon}</EditorIcon>
             <span className="truncate">{text}</span>
@@ -2434,19 +2719,19 @@ function VisualTransformControls({
       </div>
       <NumberField
         label="Position X"
-        value={item.transform.x}
+        value={transform.x}
         step={1}
         precision={0}
         disabled={disabled}
-        onCommit={(x) => commitTransform({ ...item.transform, x: Math.round(x) })}
+        onCommit={(x) => commitTransform({ ...transform, x })}
       />
       <NumberField
         label="Position Y"
-        value={item.transform.y}
+        value={transform.y}
         step={1}
         precision={0}
         disabled={disabled}
-        onCommit={(y) => commitTransform({ ...item.transform, y: Math.round(y) })}
+        onCommit={(y) => commitTransform({ ...transform, y })}
       />
       <ToggleField
         label="Link scales"
@@ -2456,7 +2741,7 @@ function VisualTransformControls({
       />
       <NumberField
         label="Scale X"
-        value={Math.abs(item.transform.scaleX)}
+        value={Math.abs(transform.scaleX)}
         min={0.01}
         step={0.05}
         precision={6}
@@ -2465,7 +2750,7 @@ function VisualTransformControls({
       />
       <NumberField
         label="Scale Y"
-        value={Math.abs(item.transform.scaleY)}
+        value={Math.abs(transform.scaleY)}
         min={0.01}
         step={0.05}
         precision={6}
@@ -2474,13 +2759,13 @@ function VisualTransformControls({
       />
       <NumberField
         label="Rotation"
-        value={normalizeRotation(item.transform.rotation)}
+        value={normalizeRotation(transform.rotation)}
         step={1}
         precision={1}
         suffix="deg"
         disabled={disabled}
         onCommit={(rotation) => commitTransform({
-          ...item.transform,
+          ...transform,
           rotation: roundTo(normalizeRotation(rotation), 1),
         })}
       />
@@ -2614,6 +2899,7 @@ function NumberField({
   const previousFormattedValue = useRef(formattedValue);
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  const skipBlurCommitRef = useRef(false);
 
   useEffect(() => {
     if (!isFocused || draft === previousFormattedValue.current) {
@@ -2625,24 +2911,24 @@ function NumberField({
   function commit() {
     setIsFocused(false);
     if (disabled) return;
-    const parsed = Number(draft);
+    const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
 
     if (!Number.isFinite(parsed)) {
       setError("Enter a number.");
       return;
     }
 
-    const clamped = clamp(parsed, min, max);
-    const validationError = validate?.(clamped);
+    const normalized = roundTo(clamp(parsed, min, max), precision);
+    const validationError = validate?.(normalized);
     if (validationError) {
       setError(validationError);
       return;
     }
 
     setError(null);
-    setDraft(formatNumber(clamped, precision));
-    if (Math.abs(clamped - value) > 0.000001) {
-      onCommit(clamped);
+    setDraft(formatNumber(normalized, precision));
+    if (Math.abs(normalized - value) > 0.000001) {
+      onCommit(normalized);
     }
   }
 
@@ -2650,6 +2936,7 @@ function NumberField({
     if (event.key === "Enter") {
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      skipBlurCommitRef.current = true;
       setDraft(formattedValue);
       setError(null);
       event.currentTarget.blur();
@@ -2660,10 +2947,11 @@ function NumberField({
     <label className="grid items-start gap-2 text-[13px] font-medium" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}>
       <span className="pt-1 text-on-surface-variant">{label}</span>
       <span className="min-w-0">
-        <span className="relative block">
+        <span className={`flex h-7 min-w-0 overflow-hidden rounded-[4px] border bg-surface-container-low transition-colors focus-within:border-primary motion-reduce:transition-none ${error ? "border-error" : "border-outline-variant"}`}>
           <input
             type="number"
             aria-label={label}
+            aria-invalid={Boolean(error)}
             min={min}
             max={max}
             step={step}
@@ -2674,14 +2962,23 @@ function NumberField({
               setDraft(event.target.value);
               setError(null);
             }}
-            onBlur={commit}
+            onBlur={() => {
+              if (skipBlurCommitRef.current) {
+                skipBlurCommitRef.current = false;
+                setIsFocused(false);
+                return;
+              }
+              commit();
+            }}
             onKeyDown={handleKeyDown}
             data-editor-shortcuts="ignore"
-            className={`h-7 w-full rounded-[4px] border bg-surface-container-low px-1.5 text-[12px] font-medium text-on-surface outline-none transition-colors focus:border-primary motion-reduce:transition-none ${error ? "border-error" : "border-outline-variant"
-              } ${suffix ? "pr-9" : ""} disabled:cursor-not-allowed disabled:text-on-surface-variant/50`}
+            className="h-full min-w-0 flex-1 appearance-none bg-transparent px-1.5 text-right text-[12px] font-medium tabular-nums text-on-surface outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:cursor-not-allowed disabled:text-on-surface-variant/50"
           />
           {suffix ? (
-            <span className="pointer-events-none absolute right-2 top-1/2 text-[11px] text-on-surface-variant -translate-y-1/2">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none flex shrink-0 items-center border-l border-outline-variant/70 bg-surface-container px-1.5 text-[10px] text-on-surface-variant"
+            >
               {suffix}
             </span>
           ) : null}
@@ -2770,6 +3067,126 @@ function TextField({ label, value, type = "text", disabled = false, multiline = 
             className={`${commonClassName} h-7 ${type === "color" ? "p-0.5" : ""}`}
           />
         )}
+        {error ? <span className="mt-1 block text-[11px] text-error">{error}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+function ColorField({
+  label,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string, commandId: string) => void;
+}) {
+  const normalizedValue = normalizeStoredHexColor(value) ?? "#000000";
+  const [draft, setDraft] = useState(normalizedValue);
+  const [error, setError] = useState<string | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const commandIdRef = useRef<string | null>(null);
+  const previousValueRef = useRef(normalizedValue);
+  const skipBlurCommitRef = useRef(false);
+
+  useEffect(() => {
+    const valueChanged = previousValueRef.current !== normalizedValue;
+    if (!isFocused && (valueChanged || !error)) {
+      setDraft(normalizedValue);
+      if (valueChanged) {
+        setError(null);
+      }
+    }
+    previousValueRef.current = normalizedValue;
+  }, [error, isFocused, normalizedValue]);
+
+  const emitChange = (nextColor: string) => {
+    const commandId = commandIdRef.current ?? createInspectorCommandId(`text-${label}`);
+    commandIdRef.current = commandId;
+    setDraft(nextColor);
+    setError(null);
+    onChange(nextColor, commandId);
+  };
+
+  const commitDraft = (): boolean => {
+    const normalizedDraft = normalizeHexColor(draft);
+    if (!normalizedDraft) {
+      setError("Use a hex color such as #FFFFFF.");
+      return false;
+    }
+    if (normalizedDraft !== normalizedValue) {
+      emitChange(normalizedDraft);
+    } else {
+      setDraft(normalizedDraft);
+      setError(null);
+    }
+    return true;
+  };
+
+  const finishInteraction = () => {
+    if (!skipBlurCommitRef.current) {
+      commitDraft();
+    }
+    skipBlurCommitRef.current = false;
+    setIsFocused(false);
+    commandIdRef.current = null;
+  };
+
+  return (
+    <label
+      className="grid items-start gap-2 text-[13px] font-medium"
+      style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr)" }}
+    >
+      <span className="pt-1 text-on-surface-variant">{label}</span>
+      <span className="min-w-0">
+        <span className="grid grid-cols-[28px_minmax(0,1fr)] gap-1.5">
+          <input
+            type="color"
+            aria-label={`${label} picker`}
+            disabled={disabled}
+            value={normalizeHexColor(draft) ?? normalizedValue}
+            onFocus={() => setIsFocused(true)}
+            onChange={(event) => emitChange(event.target.value.toLowerCase())}
+            onBlur={finishInteraction}
+            data-editor-shortcuts="ignore"
+            className="h-7 w-7 cursor-pointer rounded-[4px] border border-outline-variant bg-surface-container-low p-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <input
+            type="text"
+            aria-label={`${label} hex`}
+            aria-invalid={Boolean(error)}
+            disabled={disabled}
+            value={draft}
+            onFocus={() => setIsFocused(true)}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setDraft(nextValue);
+              setError(null);
+              const normalized = normalizeHexColor(nextValue);
+              if (normalized && normalized !== normalizedValue) {
+                emitChange(normalized);
+              }
+            }}
+            onBlur={finishInteraction}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                skipBlurCommitRef.current = true;
+                setDraft(normalizedValue);
+                setError(null);
+                event.currentTarget.blur();
+              }
+            }}
+            data-editor-shortcuts="ignore"
+            className={`h-7 min-w-0 rounded-[4px] border bg-surface-container-low px-1.5 font-mono text-[12px] font-medium text-on-surface outline-none transition-colors focus:border-primary motion-reduce:transition-none ${
+              error ? "border-error" : "border-outline-variant"
+            } disabled:cursor-not-allowed disabled:text-on-surface-variant/50`}
+          />
+        </span>
         {error ? <span className="mt-1 block text-[11px] text-error">{error}</span> : null}
       </span>
     </label>
@@ -2886,8 +3303,13 @@ export function InspectorFooter({
 }
 function useInspectorDispatch() {
   const dispatch = useAppDispatch();
-  return (operation: VideoOperation | ReturnType<typeof createVideoOperationBatch>) => {
-    dispatch(videoOperationApplied(operation));
+  return (
+    operation: VideoOperation | ReturnType<typeof createVideoOperationBatch>,
+    options?: { squash?: boolean },
+  ) => {
+    dispatch(videoOperationApplied(
+      options ? { operation, squash: options.squash } : operation,
+    ));
   };
 }
 
@@ -2905,6 +3327,31 @@ function clamp(value: number, min?: number, max?: number): number {
   if (min !== undefined) nextValue = Math.max(min, nextValue);
   if (max !== undefined) nextValue = Math.min(max, nextValue);
   return nextValue;
+}
+
+function normalizeHexColor(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeStoredHexColor(value: string): string | null {
+  const normalized = normalizeHexColor(value);
+  if (normalized) {
+    return normalized;
+  }
+  const shortHex = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{3}$/.test(shortHex)) {
+    const [red, green, blue] = shortHex.slice(1);
+    return `#${red}${red}${green}${green}${blue}${blue}`;
+  }
+  return null;
+}
+
+function createInspectorCommandId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function formatNumber(value: number, precision: number): string {

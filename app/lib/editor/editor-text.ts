@@ -175,6 +175,7 @@ function textPresetDefaults(preset: TextPreset): { text: string; style: VideoTex
       fontWeight: "semibold",
       color: "#ffffff",
       backgroundColor: "#000000",
+      backgroundOpacity: 0.72,
       textAlign: "center",
     },
     transform: { x: 0, y: 320, scaleX: 1, scaleY: 1, rotation: 0 },

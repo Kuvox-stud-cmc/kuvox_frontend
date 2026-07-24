@@ -20,6 +20,7 @@ export const VIDEO_FILTER_PRESETS = [
 
 export type VideoFilterPreset = (typeof VIDEO_FILTER_PRESETS)[number];
 export type VideoStyledVisualItem = VideoClipTimelineItem | ImageOverlayTimelineItem;
+export type VideoColorAdjustmentProperty = "temperature" | "tint" | "saturation" | "vibrance";
 
 export interface VideoResolvedAdjustments {
   exposure: number;
@@ -159,12 +160,16 @@ export function resolveVideoVisualStyle(item: VideoStyledVisualItem): VideoResol
     (Object.keys(VIDEO_ADJUSTMENT_REGISTRY) as Array<keyof VideoResolvedAdjustments>).map((name) => {
       const definition = VIDEO_ADJUSTMENT_REGISTRY[name];
       const group = name === "lift" || name === "gamma" || name === "gain" ? "color" : "adjust";
-      const userValue = numberProperty(item, group, name, definition.neutral);
+      const userValue = isColorAdjustmentProperty(name)
+        ? videoColorAdjustmentValue(item, name)
+        : numberProperty(item, group, name, definition.neutral);
       const presetValue = presetValues[name] ?? definition.neutral;
       const combined = userValue + (presetValue - definition.neutral) * presetMix;
       return [name, round(clamp(combined, definition.min, definition.max))];
     }),
   ) as unknown as VideoResolvedAdjustments;
+
+  const hue = clamp(numberProperty(item, "color", "hue", 0), -180, 180);
 
   return {
     registryVersion: VIDEO_ADJUSTMENT_REGISTRY_VERSION,
@@ -172,12 +177,13 @@ export function resolveVideoVisualStyle(item: VideoStyledVisualItem): VideoResol
     intensity: round(intensity),
     blend: round(blend),
     adjustments,
-    filter: filterValuesForAdjustments(adjustments),
+    filter: filterValuesForAdjustments(adjustments, hue),
   };
 }
 
 export function filterValuesForAdjustments(
   adjustments: VideoResolvedAdjustments,
+  hue = 0,
 ): VideoResolvedFilterValues {
   return {
     brightness: round(clamp(
@@ -195,13 +201,25 @@ export function filterValuesForAdjustments(
       0,
       3.5,
     )),
-    hueRotate: round(clamp(
-      adjustments.temperature * -0.18 + adjustments.tint * 0.22,
-      -45,
-      45,
+    hueRotate: round(normalizeHue(
+      clamp(
+        adjustments.temperature * -0.18 + adjustments.tint * 0.22,
+        -45,
+        45,
+      ) + clamp(hue, -180, 180),
     )),
     sepia: round(clamp(Math.max(0, adjustments.temperature) / 420, 0, 0.28)),
   };
+}
+
+export function videoColorAdjustmentValue(
+  item: VideoStyledVisualItem,
+  propertyName: VideoColorAdjustmentProperty,
+): number {
+  const definition = VIDEO_ADJUSTMENT_REGISTRY[propertyName];
+  const canonicalValue = numberPropertyOrUndefined(item, "adjust", propertyName);
+  const legacyValue = numberPropertyOrUndefined(item, "color", propertyName);
+  return clamp(canonicalValue ?? legacyValue ?? definition.neutral, definition.min, definition.max);
 }
 
 export function videoVisualStyleCssFilter(style: VideoResolvedVisualStyle): string {
@@ -270,6 +288,24 @@ function numberProperty(
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function numberPropertyOrUndefined(
+  item: VideoTimelineItem,
+  groupName: string,
+  propertyName: string,
+): number | undefined {
+  const value = videoPropertyValue(item, groupName, propertyName, undefined);
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isColorAdjustmentProperty(
+  propertyName: keyof VideoResolvedAdjustments,
+): propertyName is VideoColorAdjustmentProperty {
+  return propertyName === "temperature"
+    || propertyName === "tint"
+    || propertyName === "saturation"
+    || propertyName === "vibrance";
+}
+
 function stringProperty(
   item: VideoTimelineItem,
   groupName: string,
@@ -282,6 +318,11 @@ function stringProperty(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeHue(value: number): number {
+  const normalized = ((value + 180) % 360 + 360) % 360 - 180;
+  return normalized === -180 && value > 0 ? 180 : normalized;
 }
 
 function nearlyEqual(left: number, right: number): boolean {

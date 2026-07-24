@@ -1715,6 +1715,7 @@ function TextOverlayNode({
   const handleOffset = handleSize / 2;
   const textScale = Math.max(0.1, transform.scaleY);
   const shadowScale = frameScale * Math.max(0.1, (Math.abs(transform.scaleX) + Math.abs(transform.scaleY)) / 2);
+  const fontLoadRevision = useTextFontLoadRevision(overlay.item.style);
 
   return (
     <Group
@@ -1731,11 +1732,12 @@ function TextOverlayNode({
           width={bounds.width}
           height={bounds.height}
           fill={overlay.item.style.backgroundColor}
-          opacity={0.72}
+          opacity={textBackgroundOpacity(overlay.item.style)}
           cornerRadius={6 * frameScale}
         />
       ) : null}
       <Text
+        key={`${overlay.item.id}:font-${fontLoadRevision}`}
         text={overlay.item.text}
         x={0}
         y={0}
@@ -3140,10 +3142,53 @@ function activeAudioSignature(activeAudio: PreviewAudioPlan[]): string {
     .join("|");
 }
 
-function fontStyleForText(style: VideoTextStyle): string {
-  const weight = style.fontWeight && style.fontWeight !== "normal" ? style.fontWeight : "";
-  const italic = style.fontStyle === "italic" ? "italic" : "";
-  return `${italic} ${weight}`.trim() || "normal";
+export function fontStyleForText(style: VideoTextStyle): string {
+  const weight = {
+    normal: "400",
+    medium: "500",
+    semibold: "600",
+    bold: "700",
+  }[style.fontWeight ?? "normal"];
+  return style.fontStyle === "italic" ? `italic ${weight}` : weight;
+}
+
+export function textBackgroundOpacity(style: VideoTextStyle): number {
+  if (!style.backgroundColor) {
+    return 0;
+  }
+  return style.backgroundOpacity ?? 0.72;
+}
+
+function useTextFontLoadRevision(style: VideoTextStyle): number {
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !document.fonts) {
+      return;
+    }
+
+    let cancelled = false;
+    const descriptor = `${fontStyleForText(style)} ${Math.max(1, style.fontSize)}px ${fontFamilyForLoad(style.fontFamily)}`;
+
+    void document.fonts.load(descriptor).then(() => {
+      if (!cancelled) {
+        setRevision((current) => current + 1);
+      }
+    }).catch(() => {
+      // Canvas keeps its fallback font when a bundled face cannot be loaded.
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [style.fontFamily, style.fontSize, style.fontStyle, style.fontWeight]);
+
+  return revision;
+}
+
+function fontFamilyForLoad(fontFamily: string): string {
+  const genericFamilies = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"]);
+  return genericFamilies.has(fontFamily) ? fontFamily : JSON.stringify(fontFamily);
 }
 
 function transformForTextGesture(
