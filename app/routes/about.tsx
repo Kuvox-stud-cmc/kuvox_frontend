@@ -79,17 +79,17 @@ const CONTACTS = [
   {
     icon: "mail",
     title: "General Inquiries",
-    email: "hello@lumina-ai.com",
+    email: "hello@kuvox.ai",
   },
   {
     icon: "support_agent",
     title: "Technical Support",
-    email: "support@lumina-ai.com",
+    email: "support@kuvox.ai",
   },
   {
     icon: "business_center",
     title: "Enterprise Sales",
-    email: "enterprise@lumina-ai.com",
+    email: "enterprise@kuvox.ai",
   },
 ] as const;
 

@@ -1988,12 +1988,14 @@ export function updateTextOperation(
   itemId: string,
   fields: Omit<Partial<UpdateTextOperation>, keyof VideoOperationMetadata | "type" | "itemId">,
   label: string,
+  commandId?: string,
 ): UpdateTextOperation {
   return {
     ...operationMetadata(label, [itemId]),
     type: "updateText",
     itemId,
     ...fields,
+    ...(commandId ? { commandId } : {}),
   };
 }
 

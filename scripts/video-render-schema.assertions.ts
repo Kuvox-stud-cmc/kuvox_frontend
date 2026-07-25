@@ -37,6 +37,18 @@ function assertManifestIncludesRenderableSubset(): void {
     },
     animation: { fadeIn: { value: 1.25 }, fadeOut: { value: 2.5 } },
   };
+  const styledCaption = document.tracks
+    .flatMap((track) => track.items)
+    .find((item) => item.id === "tl-caption");
+  if (styledCaption?.type !== "text") throw new Error("Expected caption fixture");
+  styledCaption.style = {
+    ...styledCaption.style,
+    fontFamily: "Lora",
+    fontSize: 64,
+    color: "#123456",
+    backgroundColor: "#abcdef",
+    backgroundOpacity: 0.5,
+  };
   const media = readyMediaForDocument(document);
   const result = buildVideoRenderManifest({
     document,
@@ -96,11 +108,11 @@ function assertManifestIncludesRenderableSubset(): void {
   assert.ok(manifest.audioItems.some((item) => item.itemId === "tl-city" && item.sourceOwner === "embedded-video"));
   assert.ok(manifest.audioItems.some((item) => item.itemId === "tl-mountain" && item.sourceOwner === "embedded-video"));
   assert.equal(manifest.audioItems.some((item) => item.itemId === "muted-audio"), false);
-  assert.ok(manifest.textOverlays.some((item) =>
-    item.itemId === "tl-caption"
-    && item.text === "Welcome to summer"
-    && item.fades.fadeInDuration === 0
-  ));
+  const caption = manifest.textOverlays.find((item) => item.itemId === "tl-caption");
+  assert.ok(caption);
+  assert.equal(caption.text, "Welcome to summer");
+  assert.equal(caption.fades.fadeInDuration, 0);
+  assert.deepEqual(caption.style, styledCaption.style);
   assert.equal(manifest.visualItems.some((item) => item.itemId === "hidden-video"), false);
   assert.ok(result.warnings.some((issue) => issue.code === "hidden-track-excluded"));
   assert.ok(result.warnings.some((issue) => issue.code === "muted-audio-item-excluded"));

@@ -627,10 +627,10 @@ export default function Privacy() {
                 </p>
                 <div className="flex flex-wrap justify-center sm:justify-start gap-3 sm:gap-4 mt-3 sm:mt-4">
                   <a
-                    href="mailto:privacy@us.pippit.ai"
+                    href="mailto:privacy@kuvox.ai"
                     className="text-primary font-bold text-body-sm hover:underline"
                   >
-                    privacy@us.pippit.ai
+                    privacy@kuvox.ai
                   </a>
                   <span className="text-outline hidden sm:inline">|</span>
                   <span className="text-on-surface-variant text-body-sm">

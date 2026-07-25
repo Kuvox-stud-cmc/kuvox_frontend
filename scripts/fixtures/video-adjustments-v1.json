@@ -171,6 +171,50 @@
           "sepia": 0
         }
       }
+    },
+    {
+      "id": "legacy-color-with-hue",
+      "item": {
+        "type": "video",
+        "properties": {
+          "adjust": {
+            "temperature": { "value": 10 },
+            "saturation": { "value": 125 }
+          },
+          "color": {
+            "temperature": { "value": 40 },
+            "tint": { "value": -20 },
+            "hue": { "value": 170 },
+            "saturation": { "value": 150 },
+            "vibrance": { "value": 80 }
+          }
+        }
+      },
+      "expected": {
+        "registryVersion": 1,
+        "preset": "Original",
+        "intensity": 100,
+        "blend": 100,
+        "adjustments": {
+          "exposure": 0,
+          "brightness": 100,
+          "contrast": 100,
+          "temperature": 10,
+          "tint": -20,
+          "saturation": 125,
+          "vibrance": 80,
+          "lift": 0,
+          "gamma": 0,
+          "gain": 0
+        },
+        "filter": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1.173077,
+          "hueRotate": 163.8,
+          "sepia": 0.02381
+        }
+      }
     }
   ]
 }

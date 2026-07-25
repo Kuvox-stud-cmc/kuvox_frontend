@@ -3,10 +3,12 @@ import { createSelector, createSlice, type PayloadAction } from "@reduxjs/toolki
 import {
   createEmptyVideoProjectDocument,
   type VideoEditorSelection,
+  type VideoCrop,
   type VideoMediaReference,
   type VideoPlaybackState,
   type VideoProjectDocument,
   type VideoTimelineItem,
+  type VideoTransform,
   type VideoTrack,
   type VideoTrackKind,
   type VideoTransition,
@@ -80,6 +82,15 @@ export type EditorSyncStatus =
   | "sync-failed"
   | "server-changed";
 export type EditorLocalSaveStatus = "idle" | "saving" | "saved" | "failed";
+
+export interface CropEditDraft {
+  itemId: string;
+  baseCrop: VideoCrop;
+  baseTransform: VideoTransform;
+  draftCrop: VideoCrop;
+  draftTransform: VideoTransform;
+  dirty: boolean;
+}
 
 export interface MockAssistantMessage {
   id: string;
@@ -203,6 +214,7 @@ export interface EditorUiSessionState {
   commandInput: string;
   inspectorOpen: boolean;
   activeInspectorSection: string;
+  cropEditDraft: CropEditDraft | null;
 }
 
 export interface VideoEditorHistoryFrame {
@@ -341,6 +353,7 @@ const initialUi: EditorUiSessionState = {
   commandInput: "",
   inspectorOpen: true,
   activeInspectorSection: "transform",
+  cropEditDraft: null,
 };
 
 const initialState: EditorState = {
@@ -1020,6 +1033,43 @@ const editorSlice = createSlice({
     activeInspectorSectionChanged(state, action: PayloadAction<string>) {
       state.ui.activeInspectorSection = action.payload;
     },
+    cropEditStarted(state, action: PayloadAction<{
+      itemId: string;
+      crop: VideoCrop;
+      transform: VideoTransform;
+    }>) {
+      if (state.ui.cropEditDraft?.itemId === action.payload.itemId) return;
+      state.ui.cropEditDraft = {
+        itemId: action.payload.itemId,
+        baseCrop: cloneJson(action.payload.crop),
+        baseTransform: cloneJson(action.payload.transform),
+        draftCrop: cloneJson(action.payload.crop),
+        draftTransform: cloneJson(action.payload.transform),
+        dirty: false,
+      };
+    },
+    cropEditDraftChanged(state, action: PayloadAction<{
+      itemId: string;
+      crop: VideoCrop;
+      transform: VideoTransform;
+    }>) {
+      const draft = state.ui.cropEditDraft;
+      if (!draft || draft.itemId !== action.payload.itemId) return;
+      draft.draftCrop = cloneJson(action.payload.crop);
+      draft.draftTransform = cloneJson(action.payload.transform);
+      draft.dirty = !sameCropValues(draft.baseCrop, draft.draftCrop)
+        || !sameTransformValues(draft.baseTransform, draft.draftTransform);
+    },
+    cropEditReset(state, action: PayloadAction<{ itemId: string }>) {
+      const draft = state.ui.cropEditDraft;
+      if (!draft || draft.itemId !== action.payload.itemId) return;
+      draft.draftCrop = { top: 0, right: 0, bottom: 0, left: 0 };
+      draft.draftTransform = cloneJson(draft.baseTransform);
+      draft.dirty = !sameCropValues(draft.baseCrop, draft.draftCrop);
+    },
+    cropEditCleared(state) {
+      state.ui.cropEditDraft = null;
+    },
     libraryTabChanged(state, action: PayloadAction<LibraryTab>) {
       state.ui.activeLibraryTab = action.payload;
     },
@@ -1501,6 +1551,10 @@ export const {
   inspectorWidthChanged,
   inspectorOpenChanged,
   activeInspectorSectionChanged,
+  cropEditStarted,
+  cropEditDraftChanged,
+  cropEditReset,
+  cropEditCleared,
   libraryTabChanged,
   assetSelected,
   clipSelected,
@@ -1603,6 +1657,7 @@ export const selectPlaybackState = (state: RootEditorState) => state.editor.play
 export const selectPlaybackSeekRevision = (state: RootEditorState) => state.editor.playbackSeekRevision;
 export const selectCurrentTimeSeconds = (state: RootEditorState) => state.editor.playback.currentTime;
 export const selectSelectedItemIds = (state: RootEditorState) => state.editor.selection.selectedItemIds;
+export const selectCropEditDraft = (state: RootEditorState) => state.editor.ui.cropEditDraft;
 export const selectVideoTracks = (state: RootEditorState) => state.editor.document?.tracks ?? [];
 export const selectVideoMediaReferences = (state: RootEditorState) => state.editor.document?.media ?? {};
 export const selectMediaPreparationState = (state: RootEditorState) => state.editor.mediaPreparationByKey;
@@ -1655,7 +1710,7 @@ export function hasUnsyncedEditorChanges(editor: EditorState): boolean {
 }
 export const selectHasUnsyncedChanges = createSelector(
   [selectEditorState],
-  hasUnsyncedEditorChanges,
+  (editor) => hasUnsyncedEditorChanges(editor) || editor.ui.cropEditDraft?.dirty === true,
 );
 export const selectIsDirty = createSelector(
   [selectVideoDocument, selectLastSavedRevision],
@@ -1849,6 +1904,7 @@ function resetDocumentSessionState(state: EditorState): void {
   state.ui.toastMessage = null;
   state.ui.searchQuery = "";
   state.ui.commandInput = "";
+  state.ui.cropEditDraft = null;
   state.mediaPreparationByKey = {};
   state.pendingTimelineInsertions = [];
   state.previewBuffering = {
@@ -1862,6 +1918,23 @@ function resetDocumentSessionState(state: EditorState): void {
   resetVideoHistoryState(state);
   resetAiCommandState(state);
   resetSemanticSearchState(state);
+}
+
+function sameCropValues(left: VideoCrop, right: VideoCrop): boolean {
+  return left.top === right.top
+    && left.right === right.right
+    && left.bottom === right.bottom
+    && left.left === right.left;
+}
+
+function sameTransformValues(left: VideoTransform, right: VideoTransform): boolean {
+  return left.x === right.x
+    && left.y === right.y
+    && left.scaleX === right.scaleX
+    && left.scaleY === right.scaleY
+    && left.rotation === right.rotation
+    && (left.anchorX ?? 0.5) === (right.anchorX ?? 0.5)
+    && (left.anchorY ?? 0.5) === (right.anchorY ?? 0.5);
 }
 
 function batchTargetsPreparingMedia(state: EditorState, batch: VideoOperationBatch): boolean {
@@ -1940,9 +2013,12 @@ function applySuccessfulVideoEdit(
   
   let undoStack = [...state.undoStack];
   const lastFrame = undoStack[undoStack.length - 1];
+  const lastOperation = lastFrame?.batch.operations[0];
+  const currentOperation = input.batch.operations[0];
   const isSameItemAndOp = lastFrame &&
-    lastFrame.batch.operations[0]?.type === input.batch.operations[0]?.type &&
-    lastFrame.batch.operations[0]?.affectedEntityIds[0] === input.batch.operations[0]?.affectedEntityIds[0];
+    lastOperation?.type === currentOperation?.type &&
+    lastOperation?.affectedEntityIds[0] === currentOperation?.affectedEntityIds[0] &&
+    (!currentOperation?.commandId || lastOperation?.commandId === currentOperation.commandId);
 
   const beforeDoc = (input.squash && isSameItemAndOp) ? lastFrame.beforeDocument : input.beforeDocument;
 

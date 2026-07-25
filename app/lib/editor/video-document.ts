@@ -150,6 +150,7 @@ export interface VideoTextStyle {
   fontSize: number;
   color: string;
   backgroundColor?: string;
+  backgroundOpacity?: number;
   fontWeight?: "normal" | "medium" | "semibold" | "bold";
   fontStyle?: "normal" | "italic";
   textAlign?: "left" | "center" | "right";
@@ -340,8 +341,21 @@ export function resolveItemOpacity(item: { opacity?: number; properties?: { opac
   return item.properties?.opacity ?? item.opacity ?? 1;
 }
 
-export function resolveItemCrop(item: { crop?: VideoCrop; properties?: { crop?: VideoCrop } }): VideoCrop {
-  return item.properties?.crop ?? item.crop ?? defaultCrop;
+export function resolveItemCrop(item: {
+  crop?: VideoCrop;
+  properties?: { crop?: VideoCrop | Record<string, unknown> };
+}): VideoCrop {
+  const propertyCrop = item.properties?.crop;
+  if (
+    propertyCrop
+    && typeof propertyCrop.top === "number"
+    && typeof propertyCrop.right === "number"
+    && typeof propertyCrop.bottom === "number"
+    && typeof propertyCrop.left === "number"
+  ) {
+    return propertyCrop as VideoCrop;
+  }
+  return item.crop ?? defaultCrop;
 }
 
 const defaultSettings: VideoProjectSettings = {
@@ -1148,6 +1162,7 @@ function validateTextStyle(value: unknown, path: string, errors: string[]): void
   validatePositiveNumber(value.fontSize, `${path}.fontSize`, errors);
   validateRequiredString(value.color, `${path}.color`, errors);
   validateOptionalString(value.backgroundColor, `${path}.backgroundColor`, errors);
+  validateOptionalUnitNumber(value.backgroundOpacity, `${path}.backgroundOpacity`, errors);
 
   if (value.fontWeight !== undefined && !isOneOf(value.fontWeight, ["normal", "medium", "semibold", "bold"])) {
     errors.push(`${path}.fontWeight must be normal, medium, semibold, or bold.`);
@@ -1448,6 +1463,15 @@ export interface VideoItemProperties {
     blend?: AnimatableProperty<number>;
   };
   color?: {
+    /** @deprecated Legacy Color inspector storage; use properties.adjust.temperature. */
+    temperature?: AnimatableProperty<number>;
+    /** @deprecated Legacy Color inspector storage; use properties.adjust.tint. */
+    tint?: AnimatableProperty<number>;
+    hue?: AnimatableProperty<number>;
+    /** @deprecated Legacy Color inspector storage; use properties.adjust.saturation. */
+    saturation?: AnimatableProperty<number>;
+    /** @deprecated Legacy Color inspector storage; use properties.adjust.vibrance. */
+    vibrance?: AnimatableProperty<number>;
     lift?: AnimatableProperty<number>;
     gamma?: AnimatableProperty<number>;
     gain?: AnimatableProperty<number>;

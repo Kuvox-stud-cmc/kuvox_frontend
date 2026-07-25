@@ -221,6 +221,23 @@ function assertInvalidOperationsAreNonDestructive(): void {
   });
   assertFailedWithoutMutation(invalidOpacity, createDocument(), "opacity outside unit range should fail");
 
+  const invalidTextBackgroundOpacity = applyVideoOperation(createDocument(), {
+    ...updateTextOperation(),
+    id: "invalid-text-background-opacity",
+    style: {
+      fontFamily: "Inter",
+      fontSize: 48,
+      color: "#ffffff",
+      backgroundColor: "#000000",
+      backgroundOpacity: 1.2,
+    },
+  });
+  assertFailedWithoutMutation(
+    invalidTextBackgroundOpacity,
+    createDocument(),
+    "text background opacity outside unit range should fail",
+  );
+
   const invalidCrop = applyVideoOperation(createDocument(), {
     ...updateTransformCropOperation(),
     id: "invalid-crop",
@@ -325,7 +342,7 @@ function assertInspectorOperationContracts(): void {
       id: "inspector-text-style",
       timelineStart: 8,
       duration: 10,
-      style: { fontFamily: "Inter", fontSize: 42, color: "#f8fafc", backgroundColor: "#111827", fontWeight: "bold", textAlign: "right" },
+      style: { fontFamily: "Inter", fontSize: 42, color: "#f8fafc", backgroundColor: "#111827", backgroundOpacity: 0.6, fontWeight: "bold", textAlign: "right" },
       transform: { x: 12, y: 200, scaleX: 1.1, scaleY: 1.1, rotation: -4 },
       layerOrder: 14,
     },
