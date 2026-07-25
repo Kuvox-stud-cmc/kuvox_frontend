@@ -681,6 +681,99 @@ function Accordion({
   );
 }
 
+function SliderValueInput({
+  label,
+  value,
+  min,
+  max,
+  step,
+  suffix,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  suffix: string;
+  onCommit: (value: number) => void;
+}) {
+  const precision = precisionForStep(step);
+  const [draft, setDraft] = useState(formatNumber(value, precision));
+  const [isEditing, setIsEditing] = useState(false);
+  const skipBlurCommitRef = useRef(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraft(formatNumber(value, precision));
+    }
+  }, [isEditing, precision, value]);
+
+  const restoreValue = () => {
+    setIsEditing(false);
+    setDraft(formatNumber(value, precision));
+  };
+
+  const commitDraft = () => {
+    setIsEditing(false);
+    const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
+    if (!Number.isFinite(parsed)) {
+      setDraft(formatNumber(value, precision));
+      return;
+    }
+
+    const nextValue = roundTo(Math.min(max, Math.max(min, parsed)), precision);
+    setDraft(formatNumber(nextValue, precision));
+    if (nextValue !== value) {
+      onCommit(nextValue);
+    }
+  };
+
+  return (
+    <span className="flex h-7 min-w-0 overflow-hidden rounded-[4px] border border-outline-variant bg-surface-container-low transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/25 motion-reduce:transition-none">
+      <input
+        type="number"
+        aria-label={`${label} value`}
+        inputMode="decimal"
+        min={min}
+        max={max}
+        step={step}
+        value={draft}
+        onFocus={() => setIsEditing(true)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          if (skipBlurCommitRef.current) {
+            skipBlurCommitRef.current = false;
+            restoreValue();
+            return;
+          }
+          commitDraft();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            skipBlurCommitRef.current = true;
+            event.currentTarget.blur();
+          }
+        }}
+        data-editor-shortcuts="ignore"
+        className="h-full min-w-0 flex-1 appearance-none bg-transparent px-1 text-right font-mono text-[12px] font-medium tabular-nums text-on-surface outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      {suffix ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none flex shrink-0 items-center border-l border-outline-variant/70 bg-surface-container px-1 font-mono text-[10px] text-on-surface-variant"
+        >
+          {suffix}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function SliderField({
   label,
   value,
@@ -699,7 +792,7 @@ function SliderField({
   onChange: (val: number) => void;
 }) {
   return (
-    <div className="grid items-center gap-2 text-[13px] font-medium" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr) 45px" }}>
+    <div className="grid items-center gap-2 text-[13px] font-medium" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr) 64px" }}>
       <span className="text-on-surface-variant truncate">{label}</span>
       <input
         type="range"
@@ -711,9 +804,15 @@ function SliderField({
         onChange={(e) => onChange(Number(e.target.value))}
         className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-outline-variant accent-primary"
       />
-      <span className="text-right font-mono text-on-surface-variant text-[12px] font-medium">
-        {value}{suffix}
-      </span>
+      <SliderValueInput
+        label={label}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        suffix={suffix}
+        onCommit={onChange}
+      />
     </div>
   );
 }
@@ -744,7 +843,7 @@ function RealtimeSliderField({
   }, [value]);
 
   return (
-    <div className="grid items-center gap-2 text-[13px] font-medium" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr) 45px" }}>
+    <div className="grid items-center gap-2 text-[13px] font-medium" style={{ gridTemplateColumns: "var(--inspector-label-w, 88px) minmax(0, 1fr) 64px" }}>
       <span className="text-on-surface-variant truncate">{label}</span>
       <input
         type="range"
@@ -769,9 +868,22 @@ function RealtimeSliderField({
         }}
         className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-outline-variant accent-primary"
       />
-      <span className="text-right font-mono text-on-surface-variant text-[12px] font-medium">
-        {localValue}{suffix}
-      </span>
+      <SliderValueInput
+        label={label}
+        value={localValue}
+        min={min}
+        max={max}
+        step={step}
+        suffix={suffix}
+        onCommit={(nextValue) => {
+          setLocalValue(nextValue);
+          if (onChangeEnd) {
+            onChangeEnd(nextValue);
+          } else {
+            onChange(nextValue);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -794,45 +906,22 @@ function EditableRealtimeSliderField({
   onChange: (val: number, commandId: string) => void;
 }) {
   const [localValue, setLocalValue] = useState(value);
-  const [draft, setDraft] = useState(formatNumber(value, step < 1 ? 2 : 0));
-  const [isEditing, setIsEditing] = useState(false);
   const sliderCommandIdRef = useRef<string | null>(null);
-  const skipBlurCommitRef = useRef(false);
 
   useEffect(() => {
     setLocalValue(value);
-    if (!isEditing) {
-      setDraft(formatNumber(value, step < 1 ? 2 : 0));
-    }
-  }, [isEditing, step, value]);
+  }, [value]);
 
   const emitSliderChange = (nextValue: number) => {
     const commandId = sliderCommandIdRef.current
       ?? createInspectorCommandId(`color-${label.toLowerCase()}`);
     sliderCommandIdRef.current = commandId;
     setLocalValue(nextValue);
-    setDraft(formatNumber(nextValue, step < 1 ? 2 : 0));
     onChange(nextValue, commandId);
   };
 
   const finishSliderGesture = () => {
     sliderCommandIdRef.current = null;
-  };
-
-  const commitDraft = () => {
-    setIsEditing(false);
-    const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
-    if (!Number.isFinite(parsed)) {
-      setDraft(formatNumber(localValue, step < 1 ? 2 : 0));
-      return;
-    }
-
-    const nextValue = Math.min(max, Math.max(min, parsed));
-    setLocalValue(nextValue);
-    setDraft(formatNumber(nextValue, step < 1 ? 2 : 0));
-    if (nextValue !== localValue) {
-      onChange(nextValue, createInspectorCommandId(`color-${label.toLowerCase()}-input`));
-    }
   };
 
   return (
@@ -854,47 +943,18 @@ function EditableRealtimeSliderField({
         onBlur={finishSliderGesture}
         className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-outline-variant accent-primary"
       />
-      <span className="flex h-7 min-w-0 overflow-hidden rounded-[4px] border border-outline-variant bg-surface-container-low transition-colors focus-within:border-primary motion-reduce:transition-none">
-        <input
-          type="number"
-          aria-label={`${label} value`}
-          min={min}
-          max={max}
-          step={step}
-          value={draft}
-          onFocus={() => setIsEditing(true)}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => {
-            if (skipBlurCommitRef.current) {
-              skipBlurCommitRef.current = false;
-              setIsEditing(false);
-              setDraft(formatNumber(localValue, step < 1 ? 2 : 0));
-              return;
-            }
-            commitDraft();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              event.currentTarget.blur();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              skipBlurCommitRef.current = true;
-              event.currentTarget.blur();
-            }
-          }}
-          data-editor-shortcuts="ignore"
-          className="h-full min-w-0 flex-1 appearance-none bg-transparent px-1.5 text-right font-mono text-[12px] font-medium tabular-nums text-on-surface outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-        />
-        {suffix ? (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none flex shrink-0 items-center border-l border-outline-variant/70 bg-surface-container px-1.5 font-mono text-[10px] text-on-surface-variant"
-          >
-            {suffix}
-          </span>
-        ) : null}
-      </span>
+      <SliderValueInput
+        label={label}
+        value={localValue}
+        min={min}
+        max={max}
+        step={step}
+        suffix={suffix}
+        onCommit={(nextValue) => {
+          setLocalValue(nextValue);
+          onChange(nextValue, createInspectorCommandId(`color-${label.toLowerCase()}-input`));
+        }}
+      />
     </div>
   );
 }
@@ -2300,7 +2360,8 @@ function TextInspector({
               suffix="%"
               value={Math.round(backgroundOpacity * 100)}
               onChange={updateBackgroundOpacity}
-              onChangeEnd={() => {
+              onChangeEnd={(nextOpacity) => {
+                updateBackgroundOpacity(nextOpacity);
                 backgroundOpacityCommandId.current = null;
               }}
             />
@@ -3357,6 +3418,15 @@ function createInspectorCommandId(prefix: string): string {
 function formatNumber(value: number, precision: number): string {
   if (!Number.isFinite(value)) return "";
   return Number(value.toFixed(precision)).toString();
+}
+
+function precisionForStep(step: number): number {
+  if (!Number.isFinite(step) || step <= 0) return 0;
+  const normalized = step.toString().toLowerCase();
+  if (normalized.includes("e-")) {
+    return Math.min(6, Number(normalized.split("e-")[1]) || 0);
+  }
+  return Math.min(6, normalized.split(".")[1]?.length ?? 0);
 }
 
 function roundTo(value: number, precision: number): number {

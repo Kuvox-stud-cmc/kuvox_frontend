@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useRef } from "react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
@@ -294,16 +294,17 @@ describe("VideoInspectorPanel", () => {
       <VideoInspectorPanel activeSection="color" />,
       { document, selectedItemIds: ["tl-beach"] },
     );
+    const colorSection = within(screen.getByTestId("section-color"));
 
-    expect(screen.getByLabelText("Temperature value")).toHaveValue(24);
-    expect(screen.getByLabelText("Tint value")).toHaveValue(-12);
-    expect(screen.getByLabelText("Saturation value")).toHaveValue(135);
-    expect(screen.getByLabelText("Vibrance value")).toHaveValue(142);
+    expect(colorSection.getByLabelText("Temperature value")).toHaveValue(24);
+    expect(colorSection.getByLabelText("Tint value")).toHaveValue(-12);
+    expect(colorSection.getByLabelText("Saturation value")).toHaveValue(135);
+    expect(colorSection.getByLabelText("Vibrance value")).toHaveValue(142);
 
-    await replaceNumber(user, screen.getByLabelText("Temperature value"), "999");
+    await replaceNumber(user, colorSection.getByLabelText("Temperature value"), "999");
     expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "temperature")).toBe(100);
 
-    const tintSlider = screen.getByLabelText("Tint slider");
+    const tintSlider = colorSection.getByLabelText("Tint slider");
     fireEvent.change(tintSlider, { target: { value: "-30" } });
     fireEvent.change(tintSlider, { target: { value: "-45" } });
     fireEvent.mouseUp(tintSlider);
@@ -315,19 +316,19 @@ describe("VideoInspectorPanel", () => {
     expect((findItem(view.store, "tl-beach") as any)?.properties?.adjust?.tint).toBeUndefined();
     expect((findItem(view.store, "tl-beach") as any)?.properties?.color?.tint?.value).toBe(-12);
 
-    await replaceNumber(user, screen.getByLabelText("Hue value"), "225");
+    await replaceNumber(user, colorSection.getByLabelText("Hue value"), "225");
     expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "color", "hue")).toBe(180);
 
-    const saturationInput = screen.getByLabelText("Saturation value");
+    const saturationInput = colorSection.getByLabelText("Saturation value");
     await user.click(saturationInput);
     await user.clear(saturationInput);
     fireEvent.blur(saturationInput);
     expect((findItem(view.store, "tl-beach") as any)?.properties?.adjust?.saturation).toBeUndefined();
 
-    await user.click(screen.getByLabelText("Vibrance value"));
-    await user.clear(screen.getByLabelText("Vibrance value"));
-    await user.type(screen.getByLabelText("Vibrance value"), "50");
-    fireEvent.keyDown(screen.getByLabelText("Vibrance value"), { key: "Escape" });
+    await user.click(colorSection.getByLabelText("Vibrance value"));
+    await user.clear(colorSection.getByLabelText("Vibrance value"));
+    await user.type(colorSection.getByLabelText("Vibrance value"), "50");
+    fireEvent.keyDown(colorSection.getByLabelText("Vibrance value"), { key: "Escape" });
     expect((findItem(view.store, "tl-beach") as any)?.properties?.adjust?.vibrance).toBeUndefined();
 
     const updatedDocument = selectEditorState(view.store.getState()).document!;
@@ -369,6 +370,7 @@ describe("VideoInspectorPanel", () => {
       <VideoInspectorPanel activeSection="color" />,
       { document, selectedItemIds: ["tl-beach"] },
     );
+    const colorSection = within(screen.getByTestId("section-color"));
 
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
@@ -391,19 +393,74 @@ describe("VideoInspectorPanel", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
 
-    await replaceNumber(user, screen.getByLabelText("Hue value"), "45");
+    await replaceNumber(user, colorSection.getByLabelText("Hue value"), "45");
     expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
 
-    await replaceNumber(user, screen.getByLabelText("Temperature value"), "10");
+    await replaceNumber(user, colorSection.getByLabelText("Temperature value"), "10");
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     item = findItem(store, "tl-beach")!;
     expect(getTimelineItemPropertyValue(item, "adjust", "temperature")).toBe(30);
     expect(getTimelineItemPropertyValue(item, "color", "hue")).toBe(45);
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("accepts direct numeric input for sliders across inspector sections", async () => {
+    const user = userEvent.setup();
+    const view = renderWithEditorStore(
+      <VideoInspectorPanel activeSection="adjust" />,
+      { selectedItemIds: ["tl-beach"] },
+    );
+
+    const exposureInput = screen.getByLabelText("Exposure value");
+    await replaceNumber(user, exposureInput, "52");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "exposure")).toBe(52);
+    expect(exposureInput).toHaveValue(52);
+    act(() => view.store.dispatch(videoUndoRequested()));
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "exposure")).toBe(0);
+    act(() => view.store.dispatch(videoRedoRequested()));
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "exposure")).toBe(52);
+
+    await replaceNumber(user, screen.getByLabelText("Brightness value"), "999");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "brightness")).toBe(200);
+    expect(screen.getByLabelText("Brightness value")).toHaveValue(200);
+
+    await user.click(exposureInput);
+    await user.clear(exposureInput);
+    fireEvent.blur(exposureInput);
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "exposure")).toBe(52);
+    expect(exposureInput).toHaveValue(52);
+
+    await user.click(exposureInput);
+    await user.clear(exposureInput);
+    await user.type(exposureInput, "-20");
+    fireEvent.keyDown(exposureInput, { key: "Escape" });
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "adjust", "exposure")).toBe(52);
+    expect(exposureInput).toHaveValue(52);
+
+    const filtersSection = within(screen.getByTestId("section-filters"));
+    await replaceNumber(user, filtersSection.getByLabelText("Intensity value"), "65");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "filters", "intensity")).toBe(65);
+
+    const maskSection = within(screen.getByTestId("section-mask"));
+    await replaceNumber(user, maskSection.getByLabelText("Feather value"), "18");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "mask", "maskFeather")).toBe(18);
+
+    const animationSection = within(screen.getByTestId("section-animation"));
+    await replaceNumber(user, animationSection.getByLabelText("Fade In value"), "2.5");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "animation", "fadeIn")).toBe(2.5);
+    expect(animationSection.getByLabelText("Fade In value")).toHaveValue(2.5);
+
+    const audioSection = within(screen.getByTestId("section-audio"));
+    await replaceNumber(user, audioSection.getByLabelText("Balance value"), "-21");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "audioSettings", "balance")).toBe(-21);
+
+    const colorSection = within(screen.getByTestId("section-color"));
+    await replaceNumber(user, colorSection.getByLabelText("Lift value"), "17");
+    expect(getTimelineItemPropertyValue(findItem(view.store, "tl-beach")!, "color", "lift")).toBe(17);
   });
 
   it("dispatches valid clip, text, audio, and project setting operations while rejecting invalid numbers", async () => {
@@ -477,6 +534,19 @@ describe("VideoInspectorPanel", () => {
       style: { color: "#123456", backgroundColor: "#abcdef", backgroundOpacity: 0.5 },
     });
 
+    act(() => {
+      styleView.store.dispatch(videoUndoRequested());
+    });
+    expect(findItem(styleView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { color: "#123456", backgroundColor: "#abcdef", backgroundOpacity: 0.72 },
+    });
+
+    await replaceNumber(user, screen.getByLabelText("Background opacity value"), "35");
+    expect(findItem(styleView.store, "tl-caption")).toMatchObject({
+      type: "text",
+      style: { color: "#123456", backgroundColor: "#abcdef", backgroundOpacity: 0.35 },
+    });
     act(() => {
       styleView.store.dispatch(videoUndoRequested());
     });
